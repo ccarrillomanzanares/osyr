@@ -1,0 +1,4 @@
+# OSYR — BusyBox applets missing from Buildroot's configuration.
+# chpasswd: osyr-firstboot changes the password without passing it on the
+# command line (it reads it from standard input).
+CONFIG_CHPASSWD=y

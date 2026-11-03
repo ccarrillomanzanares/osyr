@@ -1,0 +1,251 @@
+# OSYR — milestone 0 · Buildroot 2026.08.1 · x86_64
+# Disk image (USB/QEMU) BIOS + UEFI · systemd · Wayland (sway + foot) · llama.cpp
+
+# --- Architecture and toolchain ---------------------------------------------
+# Baseline x86-64: boots on any 64-bit PC. AI speed comes from llama.cpp
+# picking its CPU variant at runtime (external.mk).
+BR2_x86_64=y
+BR2_x86_x86_64=y
+BR2_TOOLCHAIN_BUILDROOT_GLIBC=y
+BR2_TOOLCHAIN_BUILDROOT_CXX=y
+BR2_KERNEL_HEADERS_AS_KERNEL=y
+BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_18=y
+BR2_CCACHE=y
+# Top-level parallel build: several packages at once (make -jN).
+BR2_PER_PACKAGE_DIRECTORIES=y
+
+# --- System -----------------------------------------------------------------
+BR2_TARGET_GENERIC_HOSTNAME="osyr"
+BR2_TARGET_GENERIC_ISSUE="OSYR"
+BR2_TARGET_GENERIC_ROOT_PASSWD="osyr"
+BR2_INIT_SYSTEMD=y
+BR2_SYSTEM_BIN_SH_BASH=y
+BR2_TARGET_GENERIC_GETTY_PORT="tty1"
+BR2_ENABLE_LOCALE_WHITELIST="C en_US es_ES fr_FR de_DE it_IT pt_PT ca_ES"
+BR2_GENERATE_LOCALE="en_US.UTF-8 es_ES.UTF-8 fr_FR.UTF-8 de_DE.UTF-8 it_IT.UTF-8 pt_PT.UTF-8 ca_ES.UTF-8"
+BR2_TARGET_TZ_INFO=y
+BR2_TARGET_LOCALTIME="Europe/Madrid"
+BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_OSYR_PATH)/board/osyr/busybox.fragment"
+BR2_ROOTFS_USERS_TABLES="$(BR2_EXTERNAL_OSYR_PATH)/board/osyr/users.txt"
+BR2_ROOTFS_DEVICE_TABLE="system/device_table.txt $(BR2_EXTERNAL_OSYR_PATH)/board/osyr/permissions.txt"
+BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_OSYR_PATH)/board/osyr/rootfs-overlay"
+BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_OSYR_PATH)/board/osyr/post-build.sh"
+BR2_ROOTFS_POST_IMAGE_SCRIPT="$(BR2_EXTERNAL_OSYR_PATH)/board/osyr/post-image.sh"
+
+# --- Kernel: 6.18 LTS (the version validated on both test laptops)
+BR2_LINUX_KERNEL=y
+BR2_LINUX_KERNEL_CUSTOM_VERSION=y
+BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="6.18.10"
+BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y
+BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE="$(BR2_EXTERNAL_OSYR_PATH)/board/osyr/kernel/kernel_base.config"
+BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_OSYR_PATH)/board/osyr/kernel/osyr.fragment"
+BR2_LINUX_KERNEL_INSTALL_TARGET=y
+BR2_LINUX_KERNEL_NEEDS_HOST_LIBELF=y
+
+# --- Firmware: GPU, wifi and network of common laptops ---------------------
+BR2_PACKAGE_LINUX_FIRMWARE=y
+BR2_PACKAGE_LINUX_FIRMWARE_I915=y
+BR2_PACKAGE_LINUX_FIRMWARE_XE=y
+BR2_PACKAGE_LINUX_FIRMWARE_AMDGPU=y
+BR2_PACKAGE_LINUX_FIRMWARE_RADEON=y
+BR2_PACKAGE_LINUX_FIRMWARE_IWLWIFI_7265D=y
+BR2_PACKAGE_LINUX_FIRMWARE_IWLWIFI_8265=y
+BR2_PACKAGE_LINUX_FIRMWARE_IWLWIFI_9XXX=y
+BR2_PACKAGE_LINUX_FIRMWARE_IWLWIFI_22000=y
+BR2_PACKAGE_LINUX_FIRMWARE_IWLWIFI_QUZ=y
+BR2_PACKAGE_LINUX_FIRMWARE_RTL_87XX=y
+BR2_PACKAGE_LINUX_FIRMWARE_RTL_RTW88=y
+BR2_PACKAGE_LINUX_FIRMWARE_RTL_RTW89=y
+BR2_PACKAGE_LINUX_FIRMWARE_RTL_8169=y
+BR2_PACKAGE_LINUX_FIRMWARE_MEDIATEK_MT7921=y
+BR2_PACKAGE_LINUX_FIRMWARE_ATHEROS_10K_QCA9377=y
+BR2_PACKAGE_LINUX_FIRMWARE_BRCM_BCM43XX=y
+
+# --- systemd ----------------------------------------------------------------
+BR2_PACKAGE_SYSTEMD_LOGIND=y
+# Saves the screen brightness at shutdown and restores it at boot
+BR2_PACKAGE_SYSTEMD_BACKLIGHT=y
+# PAM with pam_systemd: without it login opens no logind session and sway gets
+# no seat (libseat: "Could not get primary session").
+BR2_PACKAGE_LINUX_PAM=y
+BR2_PACKAGE_UTIL_LINUX_LOGIN=y
+BR2_PACKAGE_SYSTEMD_NETWORKD=y
+BR2_PACKAGE_SYSTEMD_RESOLVED=y
+BR2_PACKAGE_SYSTEMD_TIMESYNCD=y
+BR2_PACKAGE_SYSTEMD_HOSTNAMED=y
+BR2_PACKAGE_SYSTEMD_SYSEXT=y
+BR2_PACKAGE_SYSTEMD_VCONSOLE=y
+
+# --- Basic utilities --------------------------------------------------------
+BR2_PACKAGE_BASH=y
+BR2_PACKAGE_KBD=y
+BR2_PACKAGE_COREUTILS=y
+BR2_PACKAGE_PROCPS_NG=y
+BR2_PACKAGE_UTIL_LINUX=y
+BR2_PACKAGE_UTIL_LINUX_BINARIES=y
+BR2_PACKAGE_UTIL_LINUX_MOUNT=y
+BR2_PACKAGE_KMOD=y
+BR2_PACKAGE_KMOD_TOOLS=y
+BR2_PACKAGE_E2FSPROGS=y
+# resize2fs: 'osyr update image' grows the written root to fill its partition
+BR2_PACKAGE_E2FSPROGS_RESIZE2FS=y
+# Disk installer (osyr-install): FAT ESP and /home encrypted with LUKS2.
+# With cryptsetup, systemd builds systemd-cryptsetup (unlock at boot).
+BR2_PACKAGE_DOSFSTOOLS=y
+BR2_PACKAGE_DOSFSTOOLS_MKFS_FAT=y
+BR2_PACKAGE_CRYPTSETUP=y
+BR2_PACKAGE_SUDO=y
+BR2_PACKAGE_HTOP=y
+BR2_PACKAGE_LESS=y
+BR2_PACKAGE_CA_CERTIFICATES=y
+BR2_PACKAGE_LIBCURL=y
+BR2_PACKAGE_LIBCURL_CURL=y
+BR2_PACKAGE_OPENSSH=y
+# 'osyr update code': updates scripts and configuration from the repository
+BR2_PACKAGE_GIT=y
+BR2_PACKAGE_ZSTD=y
+
+# --- Network: wired with networkd, wifi with iwd ----------------------------
+BR2_PACKAGE_IWD=y
+BR2_PACKAGE_IPROUTE2=y
+
+# --- Graphics: Wayland (sway + foot) ----------------------------------------
+# wlroots can draw without a GPU (pixman renderer): works on old GPUs
+# without a 3D driver and in QEMU.
+BR2_PACKAGE_MESA3D=y
+# With LLVM: iris and crocus (Intel) require it in mesa 26, as does radeonsi.
+# Buildroot silently drops iris if LLVM is missing: check build/output/.config.
+# Without a driver for the GPU, mesa falls back to llvmpipe, wlroots rejects it
+# for being software and osyr-session retries with pixman.
+BR2_PACKAGE_MESA3D_LLVM=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_IRIS=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_CROCUS=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_RADEONSI=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_R600=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_NOUVEAU=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_VIRGL=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_LLVMPIPE=y
+BR2_PACKAGE_MESA3D_GBM=y
+BR2_PACKAGE_MESA3D_OPENGL_EGL=y
+BR2_PACKAGE_MESA3D_OPENGL_ES=y
+BR2_PACKAGE_SEATD=y
+
+# --- Sound: PipeWire for every application -------------------------------------
+# Native (PipeWire), ALSA (pipewire-alsa: "default" device) and PulseAudio
+# (pipewire-pulse; libpulse from pulseaudio for the apps that load it, without
+# its daemon). WirePlumber manages devices. SOF + UCM: the DSP and digital
+# microphones of Intel laptops (the HP 15s is Ice Lake).
+BR2_PACKAGE_ALSA_LIB=y
+BR2_PACKAGE_ALSA_LIB_UCM=y
+BR2_PACKAGE_ALSA_UTILS=y
+BR2_PACKAGE_ALSA_UTILS_AMIXER=y
+BR2_PACKAGE_ALSA_UTILS_APLAY=y
+BR2_PACKAGE_ALSA_UTILS_ALSAUCM=y
+BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y
+BR2_PACKAGE_ALSA_UCM_CONF=y
+BR2_PACKAGE_SOF_BIN=y
+BR2_PACKAGE_PIPEWIRE=y
+BR2_PACKAGE_LIBSNDFILE=y
+BR2_PACKAGE_LUA=y
+BR2_PACKAGE_LUA_5_4=y
+BR2_PACKAGE_WIREPLUMBER=y
+BR2_PACKAGE_PULSEAUDIO=y
+
+# --- Voice and screen: recognition (whisper), synthesis (espeak), screenshots --
+BR2_PACKAGE_WHISPER_CPP=y
+BR2_PACKAGE_SHERPA_ONNX=y
+BR2_PACKAGE_ESPEAK=y
+BR2_PACKAGE_ESPEAK_AUDIO_BACKEND_NONE=y
+BR2_PACKAGE_GRIM=y
+
+# --- Desktop: lock, idle, notifications, multiple displays ---------------------
+BR2_PACKAGE_SWAYLOCK=y
+BR2_PACKAGE_SWAYIDLE=y
+BR2_PACKAGE_MAKO=y
+BR2_PACKAGE_WL_MIRROR=y
+# Clipboard for the agent and dictation into any window
+BR2_PACKAGE_WL_CLIPBOARD=y
+BR2_PACKAGE_WTYPE=y
+
+# --- Bluetooth: headphones and speakers (PipeWire), keyboards and mice -----------
+BR2_PACKAGE_BLUEZ5_UTILS=y
+BR2_PACKAGE_BLUEZ5_UTILS_CLIENT=y
+BR2_PACKAGE_BLUEZ5_UTILS_PLUGINS_AUDIO=y
+BR2_PACKAGE_BLUEZ5_UTILS_PLUGINS_HID=y
+BR2_PACKAGE_BLUEZ5_UTILS_PLUGINS_HOG=y
+# Without SBC, PipeWire is built without Bluetooth (pipewire.mk needs bluez5 + sbc + glib)
+BR2_PACKAGE_SBC=y
+BR2_PACKAGE_LINUX_FIRMWARE_IBT=y
+BR2_PACKAGE_LINUX_FIRMWARE_RTL_87XX_BT=y
+BR2_PACKAGE_LINUX_FIRMWARE_RTL_88XX_BT=y
+BR2_PACKAGE_LINUX_FIRMWARE_MEDIATEK_MT7921_BT=y
+BR2_PACKAGE_LINUX_FIRMWARE_QUALCOMM_9377_BT=y
+BR2_PACKAGE_SWAY=y
+BR2_PACKAGE_SWAY_SWAYBAR=y
+BR2_PACKAGE_FOOT=y
+BR2_PACKAGE_DEJAVU=y
+BR2_PACKAGE_XKEYBOARD_CONFIG=y
+
+# --- Python (agent and osyr CLI) ---------------------------------------------
+BR2_PACKAGE_PYTHON3=y
+BR2_PACKAGE_PYTHON3_PY_PYC=y
+BR2_PACKAGE_PYTHON3_SSL=y
+BR2_PACKAGE_PYTHON3_READLINE=y
+BR2_PACKAGE_PYTHON3_SQLITE=y
+BR2_PACKAGE_PYTHON3_ZLIB=y
+
+# --- Local AI ---------------------------------------------------------------
+BR2_PACKAGE_LLAMA_CPP=y
+BR2_PACKAGE_LLAMA_CPP_TOOLS=y
+
+# --- Boot: GRUB for BIOS and UEFI (configuration proven in newos) ----------
+BR2_TARGET_GRUB2=y
+BR2_TARGET_GRUB2_I386_PC=y
+BR2_TARGET_GRUB2_X86_64_EFI=y
+BR2_TARGET_GRUB2_BOOT_PARTITION="hd0,msdos1"
+BR2_TARGET_GRUB2_BUILTIN_MODULES_PC="boot linux ext2 fat part_msdos part_gpt normal biosdisk search search_fs_file test"
+BR2_TARGET_GRUB2_BUILTIN_CONFIG_PC="$(BR2_EXTERNAL_OSYR_PATH)/board/osyr/grub-embed.cfg"
+BR2_TARGET_GRUB2_BUILTIN_MODULES_EFI="boot linux ext2 fat part_msdos part_gpt normal efi_gop search search_fs_file test"
+BR2_TARGET_GRUB2_BUILTIN_CONFIG_EFI="$(BR2_EXTERNAL_OSYR_PATH)/board/osyr/grub-embed.cfg"
+
+# --- Images -----------------------------------------------------------------
+# 7 GB ext4 root: fits the model (~3.4 GB with vision) in milestone 0.
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_LABEL="osyr-root"
+BR2_TARGET_ROOTFS_EXT2_SIZE="7168M"
+# BR2_TARGET_ROOTFS_TAR is not set
+BR2_PACKAGE_HOST_GENIMAGE=y
+BR2_PACKAGE_HOST_DOSFSTOOLS=y
+BR2_PACKAGE_HOST_MTOOLS=y
+
+# --- AI providers: pairing (osyr ai pair) ---------------------------------------
+# The key is pasted on the phone or PC; the browser encrypts it with the public key
+# the laptop generates (openssl) and the VPS only sees ciphertext. QR in the terminal.
+BR2_PACKAGE_LIBOPENSSL_BIN=y
+BR2_PACKAGE_LIBQRENCODE=y
+BR2_PACKAGE_LIBQRENCODE_TOOLS=y
+
+# --- Firewall: nothing comes in except replies (osyr-firewall) -------------------
+BR2_PACKAGE_NFTABLES=y
+# Browser: WPE WebKit (Safari's engine, native Wayland) + cog, driven by the
+# agent through WebDriver (osyr web). Multimedia via GStreamer; sound goes out
+# through pulsesink to pipewire-pulse.
+BR2_PACKAGE_WPEWEBKIT=y
+BR2_PACKAGE_WPEWEBKIT_SANDBOX=y
+BR2_PACKAGE_WPEWEBKIT_MULTIMEDIA=y
+BR2_PACKAGE_WPEWEBKIT_WEBDRIVER=y
+BR2_PACKAGE_COG=y
+# HTTPS in the browser: without this libsoup has no TLS ("TLS support is not
+# available") and only http and file pages open. Brings glib-networking
+# (GIO TLS module) and gnutls, which uses /etc/ssl/certs/ca-certificates.crt.
+BR2_PACKAGE_LIBSOUP3_SSL=y
+BR2_PACKAGE_COG_PLATFORM_FDO=y
+BR2_PACKAGE_GST1_PLUGINS_GOOD_PLUGIN_PULSE=y
+# PDF: pdftotext so the agent can read PDFs (osyr files read)
+BR2_PACKAGE_POPPLER=y
+BR2_PACKAGE_POPPLER_UTILS=y
+# Backups of the home folder (osyr backup)
+BR2_PACKAGE_RSYNC=y
+# MIME types: without them WebKit opens local .html files as plain text
+BR2_PACKAGE_SHARED_MIME_INFO=y

@@ -1,0 +1,2 @@
+# OSYR: the wheel group administers, with a password.
+%wheel ALL=(ALL:ALL) ALL

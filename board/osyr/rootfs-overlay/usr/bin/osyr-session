@@ -1,0 +1,65 @@
+#!/bin/sh
+# OSYR — starts the sway session from tty1 (called by ~/.bash_profile).
+# logind (pam_systemd) has already created XDG_RUNTIME_DIR and the session; libseat uses it.
+LOG_DIR="$HOME/.local/state/osyr"
+mkdir -p "$LOG_DIR"
+
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=sway
+[ -n "$XDG_RUNTIME_DIR" ] || export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+
+# On slow computers autologin arrives before the graphics card: on the HP 15-ba
+# (A8-7410, radeon, from USB) the session started at 10.8 s, the card was ready
+# at 12.8 s and udev had not yet given it permissions or assigned it to the
+# seat: sway failed with "Found 0 GPUs" and, unable to open the render node,
+# the GPU probe chose pixman. Wait for udev to finish.
+wait_gpu() {
+    if ! udevadm settle --timeout=1 2>/dev/null; then
+        echo "OSYR: waiting for the graphics card..."
+        udevadm settle --timeout="${1:-45}" 2>/dev/null
+    fi
+}
+wait_gpu
+
+# Without a 3D driver for the GPU (or without a render node), wlroots draws with
+# pixman. Mesa is not allowed to fall back to llvmpipe: it would draw with several
+# CPU threads, the same ones the model needs. The hardware cursor fails on
+# virtio-gpu and simpledrm.
+gpu=$(osyr-gpu-probe 2>/dev/null)
+if [ $? -ne 0 ] && [ -z "$WLR_RENDERER" ]; then
+    export WLR_RENDERER=pixman
+    pixman_forced=1
+fi
+echo "osyr-session: gpu probe: ${gpu:-none}, renderer: ${WLR_RENDERER:-auto}" > "$LOG_DIR/gpu.log"
+export WLR_NO_HARDWARE_CURSORS=1
+
+[ -f "$LOG_DIR/sway.log" ] && mv -f "$LOG_DIR/sway.log" "$LOG_DIR/sway.log.old"
+sway > "$LOG_DIR/sway.log" 2>&1
+rc=$?
+
+# If the card was still missing (udev stuck on another module), wait again
+# and start over, GPU probe included
+if [ $rc -ne 0 ] && [ -z "$OSYR_SESSION_RETRY" ] && grep -q "Found 0 GPUs" "$LOG_DIR/sway.log"; then
+    mv -f "$LOG_DIR/sway.log" "$LOG_DIR/sway-nogpu.log"
+    wait_gpu 60
+    sleep 2
+    [ -n "$pixman_forced" ] && unset WLR_RENDERER  # the GPU probe runs again
+    OSYR_SESSION_RETRY=1 exec "$0"
+fi
+
+# There is a render node but mesa has no driver for that GPU (Intel without iris
+# in milestone 0): EGL fails and sway exits. Retry with pixman.
+if [ $rc -ne 0 ] && [ -z "$WLR_RENDERER" ] &&
+   grep -q "Failed to create renderer" "$LOG_DIR/sway.log"; then
+    mv -f "$LOG_DIR/sway.log" "$LOG_DIR/sway-egl.log"
+    export WLR_RENDERER=pixman
+    sway > "$LOG_DIR/sway.log" 2>&1
+    rc=$?
+fi
+
+# If sway does not start, leave a shell on tty1 instead of an autologin loop.
+echo ""
+echo "OSYR: sway exited (code $rc). Log: $LOG_DIR/sway.log"
+echo "Type 'exec osyr-session' to retry."
+echo "Type 'osyr-diag' to upload the logs for support."
+exec bash

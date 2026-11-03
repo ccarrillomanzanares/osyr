@@ -1,0 +1,22 @@
+[Unit]
+Description=OSYR vision model (llama-server with the vision projector)
+ConditionPathExists=/etc/osyr/llama.conf
+StopWhenUnneeded=yes
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/osyr-llama vision
+# Active only once it answers: the proxy waits for this before passing on the
+# first request (loading the projector takes a few seconds)
+ExecStartPost=/bin/sh -c 'for i in $(seq 240); do curl -sf -m 2 http://127.0.0.1:8085/health >/dev/null && exit 0; sleep 0.5; done; exit 1'
+TimeoutStartSec=180
+DynamicUser=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+Nice=5
+# Like the agent's: if memory runs short, the kernel should kill this one first
+OOMScoreAdjust=600

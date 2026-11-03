@@ -1,0 +1,12 @@
+config BR2_PACKAGE_MAKO
+	bool "mako"
+	depends on BR2_PACKAGE_WAYLAND
+	depends on BR2_PACKAGE_SYSTEMD
+	select BR2_PACKAGE_CAIRO
+	select BR2_PACKAGE_PANGO
+	select BR2_PACKAGE_WAYLAND_PROTOCOLS
+	help
+	  Desktop notifications for sway (those from applications and OSYR's
+	  own alerts: low battery, updates...).
+
+	  https://github.com/emersion/mako

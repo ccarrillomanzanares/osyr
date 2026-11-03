@@ -1,0 +1,11 @@
+# OSYR — wifi: iwd associates, networkd sets the address (iwd with
+# EnableNetworkConfiguration=false). Worse route metric than wired.
+[Match]
+Type=wlan
+
+[Network]
+DHCP=yes
+IgnoreCarrierLoss=3s
+
+[DHCPv4]
+RouteMetric=600

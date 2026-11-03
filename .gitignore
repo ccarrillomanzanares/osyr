@@ -1,0 +1,12 @@
+build/
+models/*.gguf
+*.img
+*.iso
+__pycache__/
+models/*.part
+local/
+models/whisper/
+
+# permisos locales de Claude Code
+.claude/settings.local.json
+models/piper/

@@ -1,0 +1,1101 @@
+#!/usr/bin/env python3
+"""OSYR — agent console (milestone 0, with the v0 agent from milestone 1).
+
+Talks to the active provider (the local model or an external one) and can use two
+tools: 'osyr' (the system CLI, with its JSON contract) and 'look'
+(look at the screen). Whatever changes the system asks for confirmation;
+queries do not. Voice: Super+Space (osyr-voice) or /voice; answers to
+voice are read aloud. Conversations are saved and /resume picks them
+up again. Standard library only: the image does not ship requests.
+"""
+import getpass
+import hashlib
+import json
+import os
+import random
+import readline  # noqa: F401  (history and line editing in input())
+import shlex
+import signal
+import subprocess
+import sys
+import termios
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+sys.path.insert(0, os.environ.get("OSYR_LIB", "/usr/lib/osyr"))
+from osyr import ai as aiconf  # noqa: E402  (active provider: local or external)
+from osyr import cli as osyr_cli  # noqa: E402  (validate commands before running them)
+from osyr import look as looker  # noqa: E402
+from osyr import memory  # noqa: E402  (what the person asked to remember)
+from osyr import net as osyrnet  # noqa: E402  (exact name of the wifi network)
+from osyr import live  # noqa: E402  (update without restarting)
+from osyr import voice  # noqa: E402
+
+PORT = os.environ.get("OSYR_LLAMA_PORT", "8083")
+SLOT = 0  # local model slot for the chat; /look and diag use slot 1 (see osyr-llama)
+BASE = f"http://127.0.0.1:{PORT}"
+MAX_REPLY = 2048     # maximum reply tokens
+HISTORY_SHARE = 0.75  # the conversation fits in 75% of the context
+MAX_STEPS = 6        # tool calls in a row within one turn
+TOOL_OUTPUT = 4000   # characters of tool output the model sees (~1,000 tokens)
+CHATS = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
+                     "osyr", "chats")
+# Technical chat log (collected by osyr-diag): provider, timings, errors with the
+# server's reason and tools used. Never the conversation text or the command
+# arguments (only their first two words: "net status").
+LOG = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
+                   "osyr", "chat.log")
+LOG_MAX = 512 * 1024
+
+
+def dbg(event, **kw):
+    try:
+        os.makedirs(os.path.dirname(LOG), exist_ok=True)
+        if os.path.exists(LOG) and os.path.getsize(LOG) > LOG_MAX:
+            os.replace(LOG, LOG + ".old")
+        with open(LOG, "a") as f:
+            f.write(json.dumps({"t": time.strftime("%Y-%m-%dT%H:%M:%S"), "event": event, **kw},
+                               ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
+def pinfo(p):
+    """The provider without its key: name, model and server."""
+    return {"provider": p.get("name"), "model": p.get("model") or "local", "local": p.get("local"),
+            "host": urllib.parse.urlparse(p.get("url") or "").netloc}
+
+
+SYSTEM = (
+    "You are OSYR, the assistant built into this operating system. "
+    "Answer briefly and in the user's language. "
+    "For anything about this computer (network and wifi, sound, screen brightness, "
+    "AI settings, updates) use the osyr tool and base your answer on its JSON result; "
+    "never invent results. If a result has a hint, follow it or tell the user. "
+    "Use the look tool when the user asks about what is on the screen, and the clipboard "
+    "tool when they mention what they copied or want something copied. "
+    "If something is not among your tools' commands, OSYR cannot do it yet: say so "
+    "plainly and do not invent steps. To install OSYR on the computer's disk, tell the user to "
+    "type /install in this chat while OSYR runs from the USB: it asks for their password, the "
+    "disk (the whole disk is erased) and whether to encrypt their files (then a passphrase is "
+    "asked at every start-up), and copies the system and their files. You cannot run it for them. "
+    "OSYR updates: tell the user to type /update in this chat (it shows what would change and "
+    "asks before applying; /update undo puts back the previous version). You cannot apply them. "
+    "If the user reports a problem with OSYR or the computer that you cannot solve, suggest "
+    "typing /report: it asks what happened and sends logs and hardware data to the OSYR team "
+    "(conversations only if the user turns that on or types /report chats). "
+    "For how to do something in OSYR, read the help with the osyr tool ('doc <words>') "
+    "and answer from it; for the full help, tell them to press Super+F1. "
+    "When the user asks you to remember something about them, save it with 'memory add'."
+)
+
+
+def system_prompt(local=True):
+    """SYSTEM and, with the local model, what the person asked to remember. It is
+    built on every request: what was saved applies from the next message, and it
+    is never sent to a remote provider (it is personal data)."""
+    return SYSTEM + (memory.prompt_block() if local else "")
+TOOLS = [
+    {"type": "function", "function": {
+        "name": "osyr",
+        "description": (
+            "Run an OSYR system command and get its JSON result. Use ONLY these commands:\n"
+            "- net status: network and Internet state\n"
+            "- net wifi scan | net wifi connect <ssid> | net wifi disconnect\n"
+            "  (never put a wifi password in the command or ask for it in the chat: "
+            "OSYR asks the user for it privately)\n"
+            "- audio status: volume and devices | audio volume <0-100|up|down> | "
+            "audio mute <on|off> | audio test\n"
+            "- ui brightness: read the screen brightness | ui brightness <percent>: set it, "
+            "e.g. 'ui brightness 80' for 80% | ui brightness up|down: one small step\n"
+            "- ui lock: when the screen locks by itself | ui lock <minutes|off>: change it\n"
+            "- ui display list | ui display extend | ui display mirror\n"
+            "- bt status | bt scan | bt connect <name>\n"
+            "- sys selftest: test the hardware | sys thermal: CPU temperature and throttling | "
+            "sys power: on battery or plugged in, power profile\n"
+            "- ai status | ai list: providers | ai models [provider]: models it offers\n"
+            "- ai use <provider|local> [--model <id>]: switch AI (to add one, tell the user to type /pair)\n"
+            "- remind add <when> <text>: reminder/alarm, spoken and on screen; when = 10m, 2h, "
+            "1h30m, 18:30, 'tomorrow 9:00' or '2026-10-30 09:00' (quote it if it has spaces)\n"
+            "- remind list | remind cancel <id>\n"
+            "- disk list: connected USB sticks and external disks (their files: files list <path>) | "
+            "disk eject <name>: before unplugging one\n"
+            "- backup run <disk>: copy the user's folder to that disk, in the background | "
+            "backup status | backup restore <disk>\n"
+            "- files find <words> [--in <folder>] [--content]: find the user's files by name (or inside "
+            "text files) | files list [folder] | files read <path> [--from <n>]: text or PDF, in parts\n"
+            "- doc <english words>: the OSYR help on a subject (shortcuts, screen lock, updates, "
+            "browser, install...); use it before explaining how to do something in OSYR\n"
+            "- memory add <text>: remember a fact the user asked you to remember (never passwords) | "
+            "memory list | memory forget <n|all>\n"
+            "- web open <address or search words>: open it in the browser and read it | web read [--more] | "
+            "web go <n>: follow link n | web click <n>: press button n | web fill <n> <text>: type into field n "
+            "(never passwords or card numbers: the user types those) | web back | web status | web close"),
+        "parameters": {"type": "object", "properties": {
+            "command": {"type": "string", "description": "e.g. 'net wifi scan'"}},
+            "required": ["command"]}}},
+    {"type": "function", "function": {
+        "name": "clipboard",
+        "description": ("Read the text the user has copied (action 'get'), or copy a text so the "
+                        "user can paste it (action 'set'). Use it when the user mentions what they "
+                        "copied or asks you to copy something."),
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["get", "set"]},
+            "text": {"type": "string", "description": "for 'set': the text to copy"}},
+            "required": ["action"]}}},
+    {"type": "function", "function": {
+        "name": "look",
+        "description": "Look at the user's screen and answer a question about it.",
+        "parameters": {"type": "object", "properties": {
+            "question": {"type": "string"}}, "required": ["question"]}}},
+]
+# Queries the agent can run without asking (they change nothing)
+READ_ONLY = [("net", "status"), ("net", "wifi", "scan"), ("audio", "status"),
+             ("ai", "status"), ("ai", "list"), ("ai", "models"),
+             ("ui", "display", "list"), ("bt", "status"), ("bt", "scan"), ("sys", "selftest"),
+             ("sys", "thermal"),
+             ("remind", "add"), ("remind", "list"), ("remind", "cancel"), ("doc",), ("files",), ("disk", "list"),
+             ("memory", "list"), ("memory", "add"), ("backup", "status"),
+             # browsing and reading change nothing; pressing buttons and filling fields do (they ask)
+             ("web", "open"), ("web", "read"), ("web", "go"), ("web", "back"), ("web", "status"), ("web", "close")]
+VALID_HINT = ("Valid commands: net status, net wifi scan, net wifi connect <ssid>, "
+              "audio status, audio volume <n>, ui brightness [n], ui lock [minutes|off], ui display list, bt status, "
+              "sys selftest, ai status")
+
+# Movie quotes for the greeting
+QUOTES = [
+    "Greetings, Professor Falken.",
+    "Shall we play a game?",
+    "Would you prefer a nice game of chess?",
+    "A strange game. The only winning move is not to play.",
+    "Wake up, Neo... The Matrix has you...",
+    "Follow the white rabbit.",
+    "Greetings, Programs!",
+    "End of line.",
+    "Open the pod bay doors, HAL.",
+    "I'll be back.",
+]
+
+TYPE_DELAY = 0.025
+DIM, RESET = "\033[2m", "\033[0m"
+
+
+def typewriter(text, delay=TYPE_DELAY, end="\n"):
+    """Writes character by character, like the WOPR terminal."""
+    for ch in text:
+        sys.stdout.write(ch)
+        sys.stdout.flush()
+        if ch != " ":
+            time.sleep(delay)
+    sys.stdout.write(end)
+    sys.stdout.flush()
+
+
+class NoEcho:
+    """No echo while the intro plays and the model loads: anything typed too
+    early is not drawn over the spinner; readline picks it up later at the prompt."""
+
+    def __enter__(self):
+        try:
+            self.saved = termios.tcgetattr(sys.stdin)
+            attrs = termios.tcgetattr(sys.stdin)
+            attrs[3] &= ~termios.ECHO
+            termios.tcsetattr(sys.stdin, termios.TCSANOW, attrs)
+        except (termios.error, ValueError, OSError):
+            self.saved = None
+        return self
+
+    def __exit__(self, *exc):
+        if self.saved is not None:
+            termios.tcsetattr(sys.stdin, termios.TCSANOW, self.saved)
+
+
+def server_ready():
+    try:
+        with urllib.request.urlopen(BASE + "/health", timeout=2) as r:
+            return r.status == 200
+    except (urllib.error.URLError, OSError):
+        return False
+
+
+def wait_for_server():
+    """Waits for llama-server to finish loading the model."""
+    if server_ready():
+        return True
+    sys.stdout.write("LOADING MODEL  ")  # the spinner rewrites the last character
+    sys.stdout.flush()
+    spin = "|/-\\"
+    for i in range(600):  # 5 minutes
+        if server_ready():
+            sys.stdout.write("\rLOADING MODEL ... OK\n")
+            return True
+        sys.stdout.write("\b" + spin[i % 4])
+        sys.stdout.flush()
+        time.sleep(0.5)
+    sys.stdout.write("\rLOADING MODEL ... FAILED\n")
+    print("The local model is not responding. Check: journalctl -u osyr-llama")
+    return False
+
+
+# --- Saved fixed prompt ------------------------------------------------------------
+
+def local_post(path, body, timeout=300):
+    req = urllib.request.Request(BASE + path, data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.load(r)
+
+
+def warm_prefix():
+    """Leaves the fixed prompt (system + tools) already processed in the local model.
+
+    The conversation is rendered with the server's template and cut before the
+    user's turn: that prefix is the same in every conversation. It is processed
+    in the background when the chat opens, while the user types
+    (~50 s on the HP 15s that the first message no longer waits for).
+
+    It also tries to save its state to disk (osyr-llama --slot-save-path)
+    to restore it in milliseconds after a restart. llama.cpp b8117 does not
+    allow that with the vision projector loaded (501 "not supported by
+    multimodal"): that is why vision runs in another server (VISION=ondemand).
+    If anything fails, no harm done: the first message processes it as usual.
+    """
+    try:
+        props = json.load(urllib.request.urlopen(BASE + "/props", timeout=5))
+        model = os.path.basename(props.get("model_path") or "")
+        pr = local_post("/apply-template", {
+            "messages": [{"role": "system", "content": system_prompt()},
+                         {"role": "user", "content": "@@Q@@"}],
+            "tools": TOOLS, "chat_template_kwargs": {"enable_thinking": False}})["prompt"]
+        prefix = pr[:pr.index("@@Q@@")]
+        prefix = prefix[:prefix.rindex("<|im_start|>user")] if "<|im_start|>user" in prefix else ""
+        if len(prefix) < 200:
+            return  # unknown template: do not guess where to cut
+        name = "prefix-" + hashlib.sha256((model + "\0" + prefix).encode()).hexdigest()[:16] + ".bin"
+        try:
+            local_post("/slots/0?action=restore", {"filename": name}, timeout=60)
+            return
+        except urllib.error.HTTPError:
+            pass  # not saved yet (or from another version)
+        local_post("/completion", {"prompt": prefix, "n_predict": 0, "cache_prompt": True, "id_slot": SLOT})
+        local_post("/slots/0?action=save", {"filename": name}, timeout=60)
+    except (urllib.error.URLError, OSError, ValueError, KeyError):
+        pass
+
+
+# --- Context ---------------------------------------------------------------------
+
+def msg_chars(m):
+    return len(m.get("content") or "") + len(json.dumps(m.get("tool_calls") or ""))
+
+
+class Context:
+    """Context budget: without trimming, once the context fills up the server
+    rejects the request and the chat would only show ERROR until /clear.
+    The size is the provider's (the local one reports it in /props)."""
+
+    def __init__(self, provider):
+        self.n_ctx = aiconf.context_of(provider)
+        self.chars_per_token = 3.0  # adjusted with what the server measures
+        self.tools_tokens = len(json.dumps(TOOLS)) // 3
+
+    def reply_tokens(self):
+        return min(MAX_REPLY, self.n_ctx // 4)  # in small contexts, a smaller reserve
+
+    def budget(self):
+        return min(int(self.n_ctx * HISTORY_SHARE), self.n_ctx - self.reply_tokens()) - self.tools_tokens
+
+    def estimate(self, messages):
+        chars = sum(msg_chars(m) for m in messages)
+        return int(chars / self.chars_per_token) + 8 * len(messages)
+
+    def calibrate(self, messages, prompt_tokens):
+        chars = sum(msg_chars(m) for m in messages) + len(json.dumps(TOOLS))
+        if prompt_tokens and chars > 200:
+            self.chars_per_token = max(1.5, min(6.0, chars / prompt_tokens))
+
+    def trim(self, messages, force=False):
+        """Drops the oldest whole turns (question, tool calls and answer),
+        never the system message or the current turn."""
+        dropped = 0
+        while force or self.estimate(messages) > self.budget():
+            users = [i for i, m in enumerate(messages) if m["role"] == "user"]
+            if len(users) < 2:
+                break
+            del messages[users[0]:users[1]]
+            dropped += 1
+            force = False
+        return dropped
+
+
+# --- Model --------------------------------------------------------------------------
+
+class Session:
+    def __init__(self, provider):
+        self.provider = provider
+        self.ctx = Context(provider)
+        self.tools = True       # turned off if the provider does not support tools
+        self.speak_always = False
+        self.warm = None        # thread that prepares the fixed prompt in the local model
+        if provider["local"]:
+            self.warm = threading.Thread(target=warm_prefix, daemon=True)
+            self.warm.start()
+
+    def wait_warm(self):
+        if self.warm is not None:
+            self.warm.join()
+            self.warm = None
+
+    def follow_active(self):
+        """If the active provider changed (/pair, /ai or the agent), switch to it."""
+        p = aiconf.provider()
+        if (p["name"], p.get("model")) == (self.provider["name"], self.provider.get("model")):
+            return
+        if not p["local"]:
+            ok, err = aiconf.reachable(p)
+            if not ok:
+                dbg("unreachable", **pinfo(p), error=str(err)[:300])
+                print(f'{p["name"]} is not reachable ({err}); still using {self.provider["name"]}.')
+                return
+        elif not wait_for_server():
+            return
+        self.provider, self.ctx, self.tools = p, Context(p), True
+        dbg("switch", **pinfo(p), n_ctx=self.ctx.n_ctx)
+        if p["local"]:
+            self.warm = threading.Thread(target=warm_prefix, daemon=True)
+            self.warm.start()
+        where = "this computer" if p["local"] else p["url"]
+        print(f'{DIM}[now using {p["name"]}: {p.get("model") or "local model"}, {where}]{RESET}')
+
+
+def request(messages, sess, stream=True):
+    if messages and messages[0]["role"] == "system":
+        messages = [{"role": "system", "content": system_prompt(sess.provider["local"])}] + messages[1:]
+    body = {"messages": messages, "stream": stream, "max_tokens": sess.ctx.reply_tokens()}
+    if stream:
+        body["stream_options"] = {"include_usage": True}
+    if sess.tools:
+        body["tools"] = TOOLS
+    p = sess.provider
+    if p["local"]:
+        # No reasoning in milestone 0: on a CPU every token counts. Only for the
+        # local one: a strict API rejects parameters it does not know.
+        body["chat_template_kwargs"] = {"enable_thinking": False}
+        body["id_slot"] = SLOT
+    elif p.get("model"):
+        body["model"] = p["model"]
+    req = urllib.request.Request(p["url"].rstrip("/") + "/chat/completions",
+                                 data=json.dumps(body).encode(), headers=aiconf.headers(p))
+    return urllib.request.urlopen(req, timeout=600, context=aiconf.ssl_context(p))
+
+
+def complete(messages, sess):
+    """One model reply, written as it arrives. (text, calls)."""
+    reply, calls = [], {}
+    t0, ntok = time.monotonic(), 0
+    usage = timings = None
+    with request(messages, sess) as r:
+        for raw in r:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            chunk = json.loads(data)
+            usage = chunk.get("usage") or usage
+            timings = chunk.get("timings") or timings
+            delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+            piece = delta.get("content") or ""
+            if piece:
+                ntok += 1
+                reply.append(piece)
+                sys.stdout.write(piece)
+                sys.stdout.flush()
+            for tc in delta.get("tool_calls") or []:  # they arrive in pieces
+                c = calls.setdefault(tc.get("index", 0), {"id": "", "name": "", "arguments": ""})
+                c["id"] = tc.get("id") or c["id"]
+                fn = tc.get("function") or {}
+                c["name"] += fn.get("name") or ""
+                c["arguments"] += fn.get("arguments") or ""
+    dt = time.monotonic() - t0
+    if reply:
+        sys.stdout.write("\n")
+    sess.last = {"seconds": round(dt, 1), "tokens": (timings or {}).get("predicted_n") or ntok,
+                 "prompt_tokens": (usage or {}).get("prompt_tokens"), "chars": sum(map(len, reply))}
+    if usage:
+        sess.ctx.calibrate(messages, usage.get("prompt_tokens"))
+    if not calls:
+        # Speed measured by the server; if it gives none, by the clock
+        if timings and timings.get("predicted_n"):
+            print(f"{DIM}[{timings['predicted_n']} tokens, "
+                  f"{timings.get('predicted_per_second', 0):.1f} tok/s]{RESET}")
+        elif ntok and dt > 0:
+            print(f"{DIM}[{ntok} tokens, {ntok / dt:.1f} tok/s]{RESET}")
+    return "".join(reply), [calls[i] for i in sorted(calls)]
+
+
+def http_error_body(err):
+    try:
+        return err.read().decode("utf-8", "replace").lower()
+    except OSError:
+        return ""
+
+
+# --- Tools ----------------------------------------------------------------------------
+
+def ask_yes(question):
+    try:
+        return input(f"{question} [y/N] ").strip().lower() in ("y", "yes", "s", "si", "sí")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+
+
+def is_read_only(args):
+    words = [a for a in args if not a.startswith("-")]
+    if any(tuple(words[:len(r)]) == r for r in READ_ONLY):
+        return True
+    # Without a value, volume and brightness only query; plain 'sys power' too
+    # (by prefix, 'sys power apply' would pass without asking)
+    return words in (["audio", "volume"], ["ui", "brightness"], ["ui", "lock"], ["sys", "power"])
+
+
+def run_osyr(command, sess=None):
+    try:
+        args = shlex.split(command)
+    except ValueError as e:
+        return {"ok": False, "code": "BAD_COMMAND", "data": {"error": str(e)}}
+    if args and args[0] == "osyr":
+        args = args[1:]
+    args = [a for a in args if a != "--json"]
+    shown = " ".join(shlex.quote(a) if not prev_is_password(args, i) else "******"
+                     for i, a in enumerate(args))
+    print(f"{DIM}[osyr {shown}]{RESET}")
+    err = osyr_cli.validate(args)
+    if err:  # unknown or mistyped command: back to the model, without bothering the user
+        print(f"{DIM}[not a valid command]{RESET}")
+        return {"ok": False, "code": "USAGE", "data": {"error": err}, "hint": VALID_HINT}
+    if [a for a in args if not a.startswith("-")][:3] == ["net", "wifi", "connect"]:
+        return wifi_connect(args)
+    if not is_read_only(args) and not ask_yes(f"Run 'osyr {shown}'?"):
+        return {"ok": False, "code": "USER_DECLINED", "data": {},
+                "hint": "The user did not allow this command."}
+    for _ in range(2):
+        p = subprocess.run(["osyr", *args, "--json"], capture_output=True, text=True,
+                           timeout=180, stdin=subprocess.DEVNULL)
+        try:
+            res = json.loads(p.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            return {"ok": False, "code": "BAD_OUTPUT", "data": {"output": (p.stdout + p.stderr)[-500:]}}
+        # The contract asks for a token for sensitive actions: the user already said yes
+        # (or is asked now, with what the command explains)
+        # A file's content going to a remote provider: like the clipboard, ask first
+        if (sess and not sess.provider["local"] and args[:2] == ["files", "read"] and res.get("ok")
+                and not ask_yes(f'Send the content of {res["data"].get("path")} to {sess.provider["name"]}?')):
+            return {"ok": False, "code": "USER_DECLINED", "data": {},
+                    "hint": "The user did not allow sending this file."}
+        if res.get("code") == "CONFIRM_REQUIRED" and res.get("confirm"):
+            text = res.get("hint") or ""
+            if not ask_yes(f"{text}\nConfirm?"):
+                return {"ok": False, "code": "USER_DECLINED", "data": {}}
+            args = args + ["--confirm", res["confirm"]]
+            continue
+        return res
+    return res
+
+
+def osyr_json(args, timeout=180, secret=None):
+    """secret: goes through stdin (with --password-stdin), never on the command line."""
+    p = subprocess.run(["osyr", *args, "--json"], capture_output=True, text=True, timeout=timeout,
+                       **({"input": secret + "\n"} if secret is not None else {"stdin": subprocess.DEVNULL}))
+    try:
+        return json.loads(p.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"ok": False, "code": "BAD_OUTPUT", "data": {"output": (p.stdout + p.stderr)[-500:]}}
+
+
+def ask_secret(question):
+    try:
+        return getpass.getpass(question)
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return ""
+
+
+def wifi_connect(args):
+    """Connect to a wifi network: the user types the password here, without echo,
+    and it never goes through the model (or the saved conversation). Asking for it
+    is the confirmation; without a password (open or saved network), ask yes/no."""
+    words, extra, skip, ask_new = [], [], False, False
+    for i, a in enumerate(args):
+        if skip:
+            skip = False
+        elif a == "--password":
+            skip = True  # the model's one is not used: the user gives it privately
+        elif a.startswith("--password=") or a == "--password-stdin":
+            pass
+        elif a == "--ask":
+            ask_new = True  # saved network with an old password: ask here, without echo
+        elif a.startswith("-"):
+            extra.append(a)
+            if a == "--device" and i + 1 < len(args):
+                extra.append(args[i + 1])
+                skip = True
+        else:
+            words.append(a)
+    ssid = " ".join(words[3:])
+    scan = osyr_json(["net", "wifi", "scan", *extra], timeout=60)
+    target = osyrnet.match_ssid((scan.get("data") or {}).get("networks") or [], ssid)
+    if target is None:
+        return {"ok": False, "code": "WIFI_NOT_FOUND", "data": {"ssid": ssid},
+                "hint": "Run: osyr net wifi scan, and use one of the names it lists."}
+    ssid = target["ssid"]
+    needs = target["security"] in ("psk", "wep") and not target["connected"] and (not target["known"] or ask_new)
+    cmd = ["net", "wifi", "connect", ssid, *extra]
+    if not needs and not ask_yes(f'Connect to wifi "{ssid}"?'):
+        return {"ok": False, "code": "USER_DECLINED", "data": {}, "hint": "The user did not allow this command."}
+    for attempt in range(3):
+        password = None
+        if needs:
+            again = "Wrong password. " if attempt else ""
+            password = ask_secret(f'{again}Password for wifi "{ssid}" (Enter to cancel): ')
+            if not password:
+                return {"ok": False, "code": "USER_DECLINED", "data": {"ssid": ssid},
+                        "hint": "The user cancelled. Do not ask for the password in the chat."}
+        print(f"{DIM}[connecting to {ssid}...]{RESET}")
+        res = osyr_json(cmd + (["--password-stdin"] if password else []), timeout=120, secret=password)
+        if res.get("code") == "WIFI_AUTH_FAILED" and needs:
+            continue
+        if res.get("code") == "WIFI_AUTH_FAILED" and not needs:
+            needs = True  # the saved one no longer works: ask for the new one
+            continue
+        return res
+    return res
+
+
+def prev_is_password(args, i):
+    return i > 0 and args[i - 1] in ("--password", "--api-key")
+
+
+def run_look(question, sess):
+    print(f"{DIM}[look: {question}]{RESET}")
+    t0 = time.monotonic()
+    res = _run_look(question, sess)
+    dbg("look", **pinfo(sess.provider), ok=res.get("ok"), code=res.get("code"),
+        seconds=round(time.monotonic() - t0, 1),
+        **({"error": res["data"]["error"][:300]} if not res.get("ok") else
+           {"chars": len(res["data"]["answer"])}))
+    return res
+
+
+def _run_look(question, sess):
+    try:
+        answer = looker.describe(question, looker.capture(), sess.provider)
+        return {"ok": True, "data": {"answer": answer}}
+    except urllib.error.HTTPError as e:
+        # the reason given by the server (e.g. the model does not accept images)
+        why = e.read().decode(errors="replace").strip()[:300]
+        return {"ok": False, "code": "LOOK_MODEL_FAILED",
+                "data": {"error": f"HTTP {e.code}" + (f": {why}" if why else "")}}
+    except looker.EmptyAnswer as e:
+        return {"ok": False, "code": "LOOK_MODEL_FAILED", "data": {"error": str(e)}}
+    except (OSError, RuntimeError, ValueError, KeyError, subprocess.TimeoutExpired) as e:
+        return {"ok": False, "code": "LOOK_NO_SCREEN", "data": {"error": str(e)}}
+
+
+CLIP_MAX = 8000  # clipboard characters the model sees
+
+
+def run_clipboard(args, sess):
+    try:
+        return _run_clipboard(args, sess)
+    except (OSError, subprocess.TimeoutExpired) as e:  # no wl-clipboard or no session: does not bring down the chat
+        return {"ok": False, "code": "CLIPBOARD_FAILED", "data": {"error": str(e)}}
+
+
+def _run_clipboard(args, sess):
+    env = dict(os.environ)
+    env.setdefault("WAYLAND_DISPLAY", "wayland-1")
+    if args.get("action") == "set":
+        text = str(args.get("text") or "")
+        print(f"{DIM}[clipboard: copy {len(text)} characters]{RESET}")
+        p = subprocess.run(["wl-copy", "--", text], capture_output=True, text=True, env=env, timeout=10)
+        return ({"ok": True, "data": {"copied": len(text)}} if p.returncode == 0 else
+                {"ok": False, "code": "CLIPBOARD_FAILED", "data": {"error": p.stderr.strip()}})
+    p = subprocess.run(["wl-paste", "--no-newline", "--type", "text"], capture_output=True,
+                       text=True, env=env, timeout=10)
+    if p.returncode != 0:
+        return {"ok": False, "code": "CLIPBOARD_EMPTY", "data": {"error": p.stderr.strip()},
+                "hint": "Tell the user to copy the text first (Ctrl+C)."}
+    text = p.stdout
+    print(f"{DIM}[clipboard: {len(text)} characters]{RESET}")
+    if not sess.provider["local"] and not ask_yes(
+            f'Send what you copied ({len(text)} characters) to {sess.provider["name"]}?'):
+        return {"ok": False, "code": "USER_DECLINED", "data": {},
+                "hint": "The user did not allow sending the clipboard."}
+    cut = len(text) > CLIP_MAX
+    return {"ok": True, "data": {"text": text[:CLIP_MAX], "truncated": cut, "characters": len(text)}}
+
+
+def run_tool(call, sess):
+    try:
+        args = json.loads(call["arguments"] or "{}")
+    except ValueError:
+        args = {}
+    if call["name"] == "osyr":
+        res = run_osyr(str(args.get("command", "")), sess)
+    elif call["name"] == "clipboard":
+        res = run_clipboard(args, sess)
+        dbg("tool", tool="clipboard", ok=res.get("ok"), code=res.get("code"))
+        return json.dumps(res, ensure_ascii=False)  # the text is already truncated
+    elif call["name"] == "look":
+        res = run_look(str(args.get("question") or "Describe the screen."), sess)
+    else:
+        res = {"ok": False, "code": "UNKNOWN_TOOL", "data": {"name": call["name"]}}
+    words = [w for w in str(args.get("command", "")).split() if not w.startswith("-") and w != "osyr"][:2]
+    entry = {"tool": call["name"], "ok": res.get("ok"), "code": res.get("code")}
+    if words:
+        entry["command"] = " ".join(words)
+    if not res.get("ok") and isinstance(res.get("data"), dict) and res["data"].get("error"):
+        entry["error"] = str(res["data"]["error"])[:300]
+    dbg("tool", **entry)
+    return json.dumps(res, ensure_ascii=False)[:TOOL_OUTPUT]
+
+
+# --- One turn ------------------------------------------------------------------------
+
+def turn(messages, sess, text, spoken_lang=None):
+    """User question -> answer, with whatever tools are needed."""
+    messages.append({"role": "user", "content": text})
+    start = len(messages) - 1
+    if sess.ctx.trim(messages):
+        print(f"{DIM}[older messages forgotten to make room]{RESET}")
+    answer = ""
+    for _ in range(MAX_STEPS):
+        try:
+            sess.wait_warm()  # so they do not compete for the server's single slot
+            content, calls = complete(messages, sess)
+        except KeyboardInterrupt:
+            print("\n[interrupted]")
+            del messages[start:]
+            return
+        except urllib.error.HTTPError as e:
+            body = http_error_body(e)
+            dbg("error", **pinfo(sess.provider), http=e.code, body=body[:300])
+            if e.code == 400 and sess.tools and "tool" in body:
+                sess.tools = False  # provider without tools: carry on without them
+                print(f"{DIM}[this provider does not support tools]{RESET}")
+                continue
+            if e.code == 400 and ("context" in body or "exceed" in body) and sess.ctx.trim(messages, force=True):
+                print(f"{DIM}[older messages forgotten to make room]{RESET}")
+                continue
+            print(f"\nERROR: {e}")
+            del messages[start:]
+            return
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            dbg("error", **pinfo(sess.provider), error=f"{type(e).__name__}: {e}"[:300])
+            print(f"\nERROR: {e}")
+            del messages[start:]
+            return
+        dbg("reply", **pinfo(sess.provider), **getattr(sess, "last", {}),
+            tools=[c["name"] for c in calls], empty=not content and not calls)
+        msg = {"role": "assistant", "content": content}
+        if calls:
+            msg["tool_calls"] = [{"id": c["id"] or f"call{i}", "type": "function",
+                                  "function": {"name": c["name"], "arguments": c["arguments"]}}
+                                 for i, c in enumerate(calls)]
+        messages.append(msg)
+        answer = content
+        if not calls:
+            break
+        for c, tc in zip(calls, msg["tool_calls"]):
+            messages.append({"role": "tool", "tool_call_id": tc["id"], "content": run_tool(c, sess)})
+    if answer and (spoken_lang or sess.speak_always):
+        voice.speak(answer, spoken_lang)
+    save(messages)
+
+
+# --- History ---------------------------------------------------------------------------
+
+SESSION_FILE = None
+
+
+def save(messages):
+    global SESSION_FILE
+    if len(messages) < 2:
+        return
+    os.makedirs(CHATS, exist_ok=True)
+    SESSION_FILE = SESSION_FILE or os.path.join(CHATS, time.strftime("%Y%m%d-%H%M%S") + ".json")
+    tmp = SESSION_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(messages[1:], f, ensure_ascii=False)
+    os.replace(tmp, SESSION_FILE)
+
+
+def saved_chats():
+    try:
+        return sorted((f for f in os.listdir(CHATS) if f.endswith(".json")), reverse=True)
+    except OSError:
+        return []
+
+
+def first_question(name):
+    try:
+        with open(os.path.join(CHATS, name)) as f:
+            msgs = json.load(f)
+        q = next((m["content"] for m in msgs if m["role"] == "user"), "")
+        return q.replace("\n", " ")[:60]
+    except (OSError, ValueError):
+        return "?"
+
+
+INSTALL_INFO = "/etc/osyr/install.conf"  # written by osyr-install on the installed system
+
+
+def install():
+    """/install: the installer in this same window. The agent never launches it: erasing a
+    disk is the person's decision, who types the command and then the disk name."""
+    if os.path.exists(INSTALL_INFO):
+        print("OSYR is already installed on this computer's disk. To install it on another "
+              "computer, start that one from the OSYR USB and type /install there.")
+        return
+    print(f"{DIM}The installer asks for your password, the disk to use (it ERASES the whole disk) "
+          f"and whether to encrypt your files.\nCtrl+C cancels before the copy starts.{RESET}")
+    try:
+        subprocess.run(["sudo", "osyr-install"])
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+
+
+def update(words):
+    """/update and /update undo: the update in this window (asks for the password and
+    shows what changes before applying it). The agent never applies it."""
+    if words not in ([], ["undo"]):
+        print("Use /update to install OSYR updates, or /update undo to go back to the previous version.")
+        return
+    what = ("Goes back to the OSYR you had before the last update." if words else
+            "Looks for a new OSYR version (or code updates) and shows it before asking.")
+    print(f"{DIM}{what} It asks for your password.{RESET}")
+    mark = "/run/osyr/reboot-needed"  # touched by 'osyr update' (root) if a restart is needed
+
+    def stamp():
+        try:
+            return os.stat(mark).st_mtime_ns
+        except OSError:
+            return None
+    before = stamp()
+    try:
+        subprocess.run(["sudo", "osyr", "update", "undo" if words else "apply"])
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        return False
+    # A whole version, or something read at boot: a restart is needed
+    if stamp() != before:
+        print("To finish, the computer needs to restart. Your conversations are saved.")
+        if ask_yes("Restart now?"):
+            subprocess.run(["sudo", "systemctl", "reboot"])
+        else:
+            print("Restart it when you are ready.")
+        return False
+    # Code: this session's parts (sway, bar, lock, notifications) are relaunched here,
+    # including what is pending from an update made from a terminal; if the chat
+    # changed, the caller reopens it with the same conversation
+    sid, actions = live.pending_session()
+    if not sid:
+        return False
+    live.mark_applied(sid)
+    return live.apply_session(actions)
+
+
+def relaunch():
+    """The new chat, in the same window and with the same conversation."""
+    print(f"{DIM}[restarting the chat with the new version...]{RESET}")
+    sys.stdout.flush()
+    me = os.path.abspath(sys.argv[0])
+    try:
+        follows = b"--continue" in open(me, "rb").read()
+    except OSError:
+        follows = False
+    if not follows:
+        # an earlier version (/update undo) that cannot continue the conversation
+        print(f"{DIM}[your conversation is saved: /resume brings it back]{RESET}")
+        sys.stdout.flush()
+        os.execv(sys.executable, [sys.executable, me])
+    args = [sys.executable, me, "--continue"]
+    if SESSION_FILE:
+        args.append(os.path.basename(SESSION_FILE))
+    os.execv(sys.executable, args)
+
+
+def report(words=""):
+    """/report [chats]: osyr-diag right here (asks what happened and whether to include screenshots).
+    'chats': this time also the latest conversations (they help to see what went wrong)."""
+    chats = words.strip() == "chats"
+    what = ("logs, hardware data and your last conversations with me" if chats else
+            "logs and hardware data (your conversations only if SEND_CHATS=yes; /report chats sends them once)")
+    print(f"{DIM}Sends a problem report to the OSYR team: {what}. Never keys or wifi passwords.\n"
+          f"It takes about a minute (you will hear a short beep). Ctrl+C cancels.{RESET}")
+    try:
+        subprocess.run(["osyr-diag"] + (["--chats"] if chats else []))
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+
+
+def history():
+    chats = saved_chats()[:10]
+    if not chats:
+        print("No saved conversations.")
+    for i, name in enumerate(chats, 1):
+        stamp = f"{name[6:8]}/{name[4:6]} {name[9:11]}:{name[11:13]}"
+        print(f"{i:>2}  {stamp}  {first_question(name)}")
+    if chats:
+        print("Continue one with /resume <number> (default: the last one).")
+
+
+def load_chat(name):
+    """The saved conversation 'name' (which becomes this session's), or None."""
+    global SESSION_FILE
+    name = os.path.basename(name or "")
+    if name not in saved_chats():
+        return None
+    try:
+        with open(os.path.join(CHATS, name)) as f:
+            old = json.load(f)
+    except (OSError, ValueError):
+        return None
+    SESSION_FILE = os.path.join(CHATS, name)
+    return old
+
+
+def resume(arg, messages):
+    chats = saved_chats()
+    try:
+        name = chats[int(arg or 1) - 1]
+    except (IndexError, ValueError):
+        name = None
+    old = load_chat(name) if name else None
+    if old is None:
+        print("No such conversation. See /history.")
+        return messages
+    print(f"Resumed: {first_question(name)} ({sum(1 for m in old if m['role'] == 'user')} questions)")
+    return messages[:1] + old
+
+
+# --- Voice -----------------------------------------------------------------------------
+
+class VoiceInput(Exception):
+    """A spoken message (Super+Space) arrived while waiting for text."""
+
+
+WAITING_INPUT = False
+
+
+def on_voice(signum, frame):
+    if WAITING_INPUT:
+        raise VoiceInput
+
+
+def read_inbox():
+    try:
+        with open(voice.paths()["inbox"]) as f:
+            data = json.load(f)
+        os.unlink(voice.paths()["inbox"])
+        return data.get("text", "").strip(), data.get("lang")
+    except (OSError, ValueError):
+        return "", None
+
+
+def record_until_enter():
+    if not voice.start():
+        print("Already recording.")
+        return "", None
+    try:
+        input(f"{DIM}[recording... press Enter to stop]{RESET} ")
+    except (EOFError, KeyboardInterrupt):
+        print()
+    wav = voice.stop()
+    if not wav:
+        print("Too short, nothing recorded.")
+        return "", None
+    print(f"{DIM}[transcribing...]{RESET}")
+    try:
+        return voice.transcribe(wav)
+    except (RuntimeError, OSError) as e:
+        print(f"Voice error: {e}")
+        return "", None
+
+
+# --- Main ------------------------------------------------------------------------------
+
+HELP = ("Type a message. /voice to speak (or hold Super+Space), /look [question] to show "
+        "the screen,\n/speak on|off, /history, /resume [n], /clear starts over, /exit quits.\n"
+        "AI: /ai lists them, /ai <name> [model] switches, /pair adds one with its API key.\n"
+        "/install puts OSYR on this computer's disk (from the USB; it erases the disk).\n"
+        "/update installs OSYR updates (/update undo goes back); /report sends a problem report.\n"
+        "Full help, keyboard shortcuts and a locked screen: Super+F1 (or osyr-help).")
+# Usage notice: the same text at first boot, in the help and on the website
+DISCLAIMER = ("OSYR is still in development and can make mistakes (so can its AI): check what it says and what it will do before you confirm.\n"
+              "Do not give it sensitive data or use it for delicate operations (banking, payments, important files).\n"
+              "It is provided as is, without warranty: you use it at your own risk.")
+
+
+def main():
+    global WAITING_INPUT, SESSION_FILE
+    # --continue [conversation]: relaunched after an update (no intro)
+    cont = "--continue" in sys.argv
+    rest = sys.argv[sys.argv.index("--continue") + 1:] if cont else []
+    cont_name = rest[0] if rest else None
+    if not cont:
+        os.system("clear")
+    with NoEcho():
+        if not cont:
+            typewriter("OSYR LOCAL TERMINAL")
+            typewriter("LOGON: osyr")
+            print()
+            typewriter(random.choice(QUOTES).upper(), delay=0.05)
+            print()
+        provider = aiconf.provider()
+        if not provider["local"]:
+            ok, err = aiconf.reachable(provider)
+            if not ok:
+                dbg("unreachable", **pinfo(provider), error=str(err)[:300])
+            if ok:
+                print(f'REMOTE AI: {provider["name"]} ({provider["url"]})')
+            else:
+                print(f'REMOTE AI {provider["name"]} NOT REACHABLE ({err}). USING LOCAL MODEL.')
+                provider = aiconf.provider("local")
+        ready = provider["local"] is False or wait_for_server()
+    if not ready:
+        return 1
+    if not cont:
+        print(HELP + "\n")
+        print(f"{DIM}{DISCLAIMER}{RESET}\n")
+        if saved_chats():
+            print(f"{DIM}Last conversation: {first_question(saved_chats()[0])} (/resume){RESET}\n")
+
+    # osyr-voice delivers here what was dictated with Super+Space
+    pidfile = voice.paths()["chat"]
+    try:
+        with open(pidfile, "w") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+    signal.signal(signal.SIGUSR1, on_voice)
+
+    messages = [{"role": "system", "content": SYSTEM}]
+    if cont_name:
+        messages += load_chat(cont_name) or []
+    # A code update not yet applied in this session (made from a terminal
+    # before opening the chat): sway, bar... The chat is already the new one.
+    sid, actions = live.pending_session()
+    if sid:
+        live.mark_applied(sid)
+        live.apply_session([a for a in actions if a != "chat"])
+    if cont:
+        n = sum(1 for m in messages if m["role"] == "user")
+        print(f"{DIM}[OSYR chat updated; the conversation goes on ({n} earlier questions)]{RESET}\n")
+    sess = Session(provider)
+    dbg("start", **pinfo(provider), n_ctx=sess.ctx.n_ctx)
+    while True:
+        lang = None
+        try:
+            if os.path.exists(voice.paths()["inbox"]):
+                raise VoiceInput  # dictated while the chat was busy
+            WAITING_INPUT = True
+            text = input("> ").strip()
+        except VoiceInput:
+            text, lang = read_inbox()
+            if not text:
+                print()
+                continue
+            print(f"\n{DIM}[voice]{RESET} {text}")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        finally:
+            WAITING_INPUT = False
+        if not text:
+            continue
+        if text in ("/exit", "/quit"):
+            break
+        if text == "/clear":
+            messages = messages[:1]
+            globals()["SESSION_FILE"] = None
+            print("Conversation cleared.")
+            continue
+        if text in ("/help", "/?"):
+            print(HELP)
+            continue
+        if text == "/history":
+            history()
+            continue
+        if text == "/update" or text.startswith("/update "):
+            if update(text.split()[1:]):
+                save(messages)
+                relaunch()
+            continue
+        if text == "/report" or text.startswith("/report "):
+            report(text[7:])
+            continue
+        if text == "/install":
+            install()
+            continue
+        if text == "/pair":
+            subprocess.run(["osyr", "ai", "pair"])
+            sess.follow_active()
+            continue
+        if text == "/ai" or text.startswith("/ai "):
+            words = text.split()[1:]
+            if not words:
+                subprocess.run(["osyr", "ai", "list"])
+                print(f"{DIM}/ai <name> [model] to switch, /ai models <name> to list models{RESET}")
+            elif words[0] == "models":
+                subprocess.run(["osyr", "ai", "models", *words[1:2]])
+            else:
+                subprocess.run(["osyr", "ai", "use", words[0], *(["--model", words[1]] if len(words) > 1 else [])])
+                sess.follow_active()
+            continue
+        if text.startswith("/resume"):
+            messages = resume(text[7:].strip(), messages)
+            continue
+        if text.startswith("/speak"):
+            sess.speak_always = text[6:].strip() != "off"
+            print(f"Spoken replies {'on' if sess.speak_always else 'off'}.")
+            continue
+        if text == "/voice":
+            text, lang = record_until_enter()
+            if not text:
+                continue
+            print(f"{DIM}[voice]{RESET} {text}")
+        if text.startswith("/look"):
+            question = text[5:].strip() or "Describe what is on the screen."
+            res = run_look(question, sess)
+            if res.get("ok"):
+                answer = res["data"]["answer"]
+                print(answer)
+                messages += [{"role": "user", "content": f"(I showed you my screen) {question}"},
+                             {"role": "assistant", "content": answer}]
+                if sess.speak_always:
+                    voice.speak(answer)
+                save(messages)
+            else:
+                print(f"Could not look at the screen: {res.get('data', {}).get('error')}")
+            continue
+        sess.follow_active()  # changed from another terminal (osyr ai use / pair): without restarting the chat
+        turn(messages, sess, text, spoken_lang=lang)
+        sess.follow_active()  # the agent may have switched providers
+
+    try:
+        os.unlink(pidfile)
+    except OSError:
+        pass
+    typewriter("END OF LINE.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,4 @@
+# OSYR — USB sticks, SD cards and external disks: mounted automatically when
+# plugged in (osyr-automount@.service). The system's own disk is skipped there.
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_USAGE}=="filesystem|crypto", ENV{ID_BUS}=="usb", ENV{SYSTEMD_WANTS}+="osyr-automount@%k.service"
+ACTION=="add", SUBSYSTEM=="block", KERNEL=="mmcblk[0-9]p[0-9]*", ENV{ID_FS_USAGE}=="filesystem|crypto", ENV{SYSTEMD_WANTS}+="osyr-automount@%k.service"

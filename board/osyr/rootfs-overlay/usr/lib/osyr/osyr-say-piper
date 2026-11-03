@@ -1,0 +1,29 @@
+#!/bin/bash
+# OSYR — reads aloud with a Piper voice (sherpa-onnx), sentence by sentence: while
+# one plays the next is generated, so it starts speaking in a couple of seconds
+# even if the answer is long. Started by voice.speak() in its own process
+# group (a new utterance cuts it off entirely).
+# Usage: osyr-say-piper VOICE_DIR SENTENCE_FILE   (one sentence per line)
+#   VOICE_DIR: model.onnx, tokens.txt and sid (speaker number, optional)
+dir=$1
+list=$2
+TTS=/opt/sherpa-onnx/bin/sherpa-onnx-offline-tts
+DATA=/usr/share/osyr/models/piper/espeak-ng-data
+sid=$(cat "$dir/sid" 2>/dev/null || echo 0)
+tmp=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/osyr-say.XXXXXX") || exit 1
+trap 'rm -rf "$tmp" "$list"' EXIT
+trap 'exit 143' TERM INT
+
+player=
+i=0
+while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    f="$tmp/$i.wav"
+    "$TTS" --vits-model="$dir/model.onnx" --vits-tokens="$dir/tokens.txt" --vits-data-dir="$DATA" \
+        --num-threads=2 --sid="$sid" --output-filename="$f" "$line" >/dev/null 2>&1 || continue
+    [ -n "$player" ] && wait "$player"
+    pw-play "$f" &
+    player=$!
+    i=$((i + 1))
+done < "$list"
+[ -n "$player" ] && wait "$player"

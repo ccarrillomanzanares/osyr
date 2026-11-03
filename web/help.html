@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSYR — Help and keyboard shortcuts · CCMAI</title>
+<meta name="description" content="OSYR help: unlocking the screen, keyboard shortcuts, chat commands and useful commands.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 116'%3E%3Cpolygon points='50,4 92,30 92,86 50,112 8,86 8,30' fill='%23001100' stroke='%2300ff00' stroke-width='8'/%3E%3Ccircle cx='50' cy='58' r='16' fill='%2300ff00' opacity='0.9'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#000;--ink:#33ff33;--bright:#00ff00;--dim:#008800;--dim2:#006600;--line:#006400;--panel:#001100;--mono:"Consolas","Menlo","DejaVu Sans Mono",monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--mono);background:var(--bg);color:var(--ink);display:flex;flex-direction:column;align-items:center;padding:2rem 1rem;min-height:100vh}
+.screen{width:min(880px,95vw);background:var(--panel);border:1px solid var(--line);border-radius:6px;box-shadow:0 0 30px rgba(0,255,0,.05)}
+.term-bar{padding:9px 14px;border-bottom:1px solid var(--line)}
+.term-title{color:var(--dim);font-size:.72rem;letter-spacing:.05em}
+.term-body{padding:1.2rem 1.8rem}
+h1{color:var(--bright);font-size:1.5rem;letter-spacing:.1em;margin-bottom:.3rem;text-shadow:0 0 10px rgba(0,255,0,.4)}
+h2{color:var(--bright);font-size:.95rem;letter-spacing:.06em;margin:1.6rem 0 .6rem}
+.sub{color:var(--dim);font-size:.85rem}
+.warn{color:#ccff33;font-size:.78rem;margin:1rem 0 0;border:1px solid #556600;border-radius:4px;padding:.5rem .8rem;background:#0b0f00;line-height:1.5}
+table{width:100%;border-collapse:collapse;font-size:.85rem;margin-top:1.2rem}
+th{text-align:left;color:var(--bright);padding:.5rem .6rem;border-bottom:1px solid var(--bright);letter-spacing:.08em;text-transform:uppercase;font-size:.72rem}
+td{padding:.7rem .6rem;border-bottom:1px solid #003300;color:#22cc22;vertical-align:top}
+td a{color:var(--bright);text-decoration:none}
+td a:hover{text-decoration:underline}
+.small{color:var(--dim);font-size:.72rem}
+.sha{color:var(--dim2);font-size:.66rem;word-break:break-all}
+ol{margin-left:1.3rem;font-size:.82rem;line-height:1.6;color:#22cc22}
+ol li{margin:.35rem 0}
+code,pre{color:var(--bright);font-family:inherit}
+pre{background:#000600;border:1px solid #003800;border-radius:4px;padding:.5rem .7rem;font-size:.74rem;margin:.35rem 0;overflow-x:auto;white-space:pre-wrap;word-break:break-all}
+p{font-size:.82rem;line-height:1.6;color:#22cc22}
+a{color:var(--bright)}
+.back{display:inline-block;margin-top:1.8rem;color:var(--bright);text-decoration:none;font-size:.85rem}
+.term-foot{padding:.5rem 1.8rem .7rem;border-top:1px solid var(--line);display:flex;justify-content:space-between;color:var(--dim2);font-size:.68rem}
+.term-foot a{color:var(--dim);text-decoration:none}
+@media(max-width:760px){.term-body{padding:1rem}}
+ul.what{list-style:none;margin:.2rem 0}
+ul.what li{font-size:.82rem;line-height:1.6;color:#22cc22;padding-left:1.1rem;position:relative;margin:.3rem 0}
+ul.what li::before{content:"›";position:absolute;left:0;color:var(--dim)}
+td code{white-space:nowrap}
+.help p{margin:.4rem 0}
+</style>
+</head>
+<body>
+<div class="screen">
+<div class="term-bar"><span class="term-title">osyr@ccmai — /osyr/help</span></div>
+<div class="term-body help">
+@HELP_BODY@
+<a class="back" href="/osyr/">← back to OSYR</a>
+</div>
+<div class="term-foot"><span>© 2026 <a href="https://ccmai.org/">CCMAI</a> · <a href="/kai/">kai</a> · <a href="/miuzika/">miuzika</a> · <a href="/falken/">falken</a></span><span><a href="https://github.com/ccarrillomanzanares/osyr/blob/main/LICENSE">MIT License</a> · no warranty</span><span>@VERSION@</span></div>
+</div>
+</body>
+</html>

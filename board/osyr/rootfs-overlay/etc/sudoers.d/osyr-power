@@ -1,0 +1,3 @@
+# OSYR: suspend without a password when the battery runs out (osyr-status).
+# Without polkit, logind only lets root suspend; only this exact command.
+osyr ALL=(root) NOPASSWD: /usr/bin/systemctl suspend

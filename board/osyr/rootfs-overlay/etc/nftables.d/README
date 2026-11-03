@@ -1,0 +1,3 @@
+# Local firewall rules (*.nft), loaded after the inet osyr table in /etc/nftables.conf.
+# Example, ssh.nft:
+#   add rule inet osyr input tcp dport 22 accept

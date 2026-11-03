@@ -1,0 +1,32 @@
+[Unit]
+Description=OSYR local model (llama-server)
+After=local-fs.target
+ConditionPathExists=/etc/osyr/llama.conf
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/osyr-llama
+DynamicUser=yes
+# Chat template generated at start (osyr-llama)
+RuntimeDirectory=osyr-llama
+# The agent's fixed prompt, already processed (osyr-chat restores it at start)
+CacheDirectory=osyr-llama
+# The model is read from disk: no network, and no writes beyond what is essential.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# The agent and the interface take priority over inference.
+Nice=5
+# If memory runs out, the kernel should kill the model (it restarts by itself) and
+# not the graphical session or the terminal with the user's work
+OOMScoreAdjust=500
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

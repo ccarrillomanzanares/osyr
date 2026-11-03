@@ -1,0 +1,729 @@
+#!/usr/bin/env python3
+"""OSYR — guided test of the machine: what is left to check on real hardware.
+
+It does on its own everything it can (boot, services, disk, self-test, model with
+two messages in a row, temperature under load, on-demand vision, clipboard,
+reminder, Bluetooth, network, browser with cookies, video and sound) and asks a
+person only what needs one: whether the beep, the reminder and the browser
+were heard, whether the video shows, whether the screen description is right,
+plugging in a USB stick, unplugging the charger, unlocking the screen, dictating
+a few words. At the end it saves the result in
+~/.local/state/osyr/hwtest/ and offers to send it with osyr-diag.
+
+  osyr-hwtest            full, with questions
+  osyr-hwtest --auto     no questions (tests that need a person are skipped)
+  osyr-hwtest --no-send  does not offer to send the result
+  osyr-hwtest --only boot,model   only those tests (list with --list)
+"""
+import argparse
+import functools
+import http.server
+import json
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+import urllib.request
+
+sys.path.insert(0, "/usr/lib/osyr")
+from osyr import power, remind, sys as osyr_sys, thermal  # noqa: E402
+
+STATE = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
+                     "osyr", "hwtest")
+PORT = os.environ.get("OSYR_LLAMA_PORT", "8083")
+REMINDER_TEXT = "OSYR hardware test"
+AUTO = False
+results = []
+
+
+def sh(args, timeout=30):
+    return osyr_sys.sh(args, timeout)
+
+
+def osyr_json(*args, timeout=60):
+    rc, out, err = sh(["osyr", *args, "--json"], timeout)
+    try:
+        return json.loads(out)
+    except ValueError:
+        return {"ok": False, "code": "NO_JSON", "data": {"error": (err or out)[-300:]}}
+
+
+def record(test, state, detail):
+    results.append({"test": test, "state": state, "detail": detail})
+    print(f"{state.upper():<4}  {test:<12} {detail}", flush=True)
+
+
+def ask(question):
+    """Yes / no / skip. None if nobody is there (--auto or no terminal)."""
+    if AUTO or not sys.stdin.isatty():
+        return None
+    while True:
+        try:
+            a = input(f"      {question} [y/n, Enter to skip] ").strip().lower()
+        except EOFError:
+            return None
+        if a in ("y", "yes", "s", "si", "sí", "n", "no", ""):
+            break
+    if a in ("y", "yes", "s", "si", "sí"):  # s, si, sí: Spanish yes
+        return True
+    if a in ("n", "no"):
+        return False
+    return None  # Enter: skip
+
+
+def human(test, question, ok_detail, bad_detail):
+    a = ask(question)
+    if a is None:
+        record(test, "skip", "not asked" if AUTO else "skipped")
+    else:
+        record(test, "ok" if a else "fail", ok_detail if a else bad_detail)
+
+
+def wait_enter(text):
+    if AUTO or not sys.stdin.isatty():
+        return False
+    try:
+        a = input(f"      {text} (Enter to go on, n to skip) ").strip().lower()
+    except EOFError:
+        return False
+    return a not in ("n", "no")
+
+
+# --- boot ----------------------------------------------------------------------
+
+def disk_of(dev):
+    rc, out, _ = sh(["lsblk", "-no", "PKNAME,TRAN", dev])
+    parent = out.split()[0] if out else ""
+    if parent:
+        rc, out2, _ = sh(["lsblk", "-dno", "TRAN,MODEL", f"/dev/{parent}"])
+        return parent, out2
+    return "", out
+
+
+def t_boot():
+    fw = "UEFI" if os.path.isdir("/sys/firmware/efi") else "BIOS"
+    _, root, _ = sh(["findmnt", "-no", "SOURCE", "/"])
+    disk, info = disk_of(root) if root.startswith("/dev/") else ("", "")
+    where = "USB stick" if info.startswith("usb") else "internal disk"
+    installed = os.path.exists("/etc/osyr/install.conf")
+    try:
+        sys.path.insert(0, os.environ.get("OSYR_LIB", "/usr/lib/osyr"))
+        from osyr import slots
+        slot = slots.running()[1] if installed else None
+    except Exception:  # noqa: BLE001 (the test reports, it does not crash)
+        slot = None
+    _, home, _ = sh(["findmnt", "-no", "SOURCE", "/home"])
+    info = open("/etc/osyr/install.conf").read() if installed else ""
+    want_crypt = "ENCRYPTED=no" not in info  # installs from before 31 Oct: always encrypted
+    parts = [fw, f"root {root} on {where} ({disk} {info.strip()})"]
+    if installed:
+        parts.append(f"installed, slot {slot or '?'}")
+        crypt = home.startswith("/dev/mapper/")
+        parts.append("/home encrypted" if crypt else f"/home not encrypted ({home or 'same as root'}"
+                     + (", as chosen at install)" if not want_crypt else ")"))
+    state = "ok"
+    if installed and want_crypt and not home.startswith("/dev/mapper/"):
+        state = "fail"
+    record("boot", state, ", ".join(parts))
+    if installed and home.startswith("/dev/mapper/"):
+        human("passphrase", "At start-up, did the passphrase for your files work with your keyboard?",
+              "the passphrase worked at boot", "problem typing the passphrase at boot")
+
+
+def monotonic_of(unit, pattern):
+    rc, out, _ = sh(["journalctl", "-b", "-u", unit, "-o", "short-monotonic", "--no-pager"])
+    for line in out.splitlines():
+        if re.search(pattern, line):
+            m = re.match(r"\[\s*([\d.]+)\]", line)
+            if m:
+                return float(m.group(1))
+    return None
+
+
+def t_boot_time():
+    _, out, _ = sh(["systemd-analyze"])
+    total = out.splitlines()[0].replace("Startup finished in ", "") if out else "?"
+    model = monotonic_of("osyr-llama", r"server is listening|model loaded")
+    detail = f"system {total}"
+    if model:
+        detail += f"; local model ready {model:.0f} s after power on"
+    record("boot-time", "ok", detail)
+
+
+# --- services, disk, memory --------------------------------------------------------
+
+def t_services():
+    _, out, _ = sh(["systemctl", "--failed", "--plain", "--no-legend", "--no-pager"])
+    failed = [l.split()[0] for l in out.splitlines() if l.strip()]
+    _, uout, _ = sh(["systemctl", "--user", "--failed", "--plain", "--no-legend", "--no-pager"])
+    failed += ["user:" + l.split()[0] for l in uout.splitlines() if l.strip()]
+    restarts = []
+    for u in ("serial-getty@ttyS0.service", "osyr-llama.service"):
+        _, n, _ = sh(["systemctl", "show", u, "-p", "NRestarts", "--value"])
+        if n.isdigit() and int(n) > 2:
+            restarts.append(f"{u} restarted {n} times")
+    bad = failed + restarts
+    record("services", "warn" if bad else "ok", ", ".join(bad) if bad else "no failed services")
+    for name, unit in (("firewall", "osyr-firewall.service"), ("update-timer", "osyr-update-check.timer"),
+                       ("power-svc", "osyr-power.service")):
+        _, st, _ = sh(["systemctl", "is-active", unit])
+        _, en, _ = sh(["systemctl", "is-enabled", unit])
+        good = st == "active" or (unit == "osyr-power.service" and en == "enabled")
+        record(name, "ok" if good else "warn", f"{unit}: {st} ({en})")
+
+
+def t_storage():
+    _, out, _ = sh(["journalctl", "-k", "-b", "--no-pager", "-o", "cat"])
+    errs = [l for l in out.splitlines()
+            if re.search(r"I/O error|Medium not present|critical medium error|EXT4-fs error|reset high-speed USB", l)]
+    if errs:
+        record("storage", "warn", f"{len(errs)} disk/USB error line(s) in the kernel log, e.g. {errs[0][:120]}")
+    else:
+        record("storage", "ok", "no disk or USB errors in the kernel log")
+
+
+def t_memory():
+    swaps = open("/proc/swaps").read()
+    zram = [l.split() for l in swaps.splitlines() if "zram" in l]
+    mem = next(int(l.split()[1]) for l in open("/proc/meminfo") if l.startswith("MemTotal"))
+    if zram:
+        record("zram", "ok", f"compressed swap {int(zram[0][2]) / 1048576:.1f} GiB in RAM ({mem / 1048576:.1f} GiB)")
+    else:
+        record("zram", "warn", "no compressed swap (osyr-zram.service)")
+
+
+# --- self-test -------------------------------------------------------------------
+
+def t_selftest():
+    for name, fn in osyr_sys.TESTS:
+        if name == "model":
+            continue  # the model test below covers it in more detail
+        if name == "sound":
+            print("      Testing speaker and microphone: you will hear a short beep...", flush=True)
+        try:
+            state, detail = fn()
+        except Exception as e:
+            state, detail = "fail", f"{type(e).__name__}: {e}"
+        record(name, state, detail)
+        if name == "sound" and state != "fail":
+            human("beep", "Did you hear a short beep from the speaker?",
+                  "beep heard by the user", "the user did NOT hear the beep")
+
+
+# --- model: two messages in a row, speed and temperature under load ---------------
+
+def chat(messages, n_predict=48):
+    body = {"messages": messages, "max_tokens": n_predict, "temperature": 0, "id_slot": 1,
+            "cache_prompt": True, "chat_template_kwargs": {"enable_thinking": False}}
+    req = urllib.request.Request(f"http://127.0.0.1:{PORT}/v1/chat/completions",
+                                 json.dumps(body).encode(), {"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=400) as r:
+        return json.load(r)
+
+
+def t_model():
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/health", timeout=3):
+            pass
+    except OSError:
+        record("model", "fail", "local model not answering (systemctl status osyr-llama)")
+        return
+    temps, stop = [], threading.Event()
+
+    def sample():
+        while not stop.is_set():
+            t = thermal.status()["temp_c"]
+            if t is not None:
+                temps.append(t)
+            stop.wait(2)
+
+    thr0 = thermal.status()["throttle_count"] or 0
+    th = threading.Thread(target=sample, daemon=True)
+    th.start()
+    system = ("You are OSYR, the assistant of an operating system. " * 20).strip()
+    msgs = [{"role": "system", "content": system},
+            {"role": "user", "content": "Name three parts of a computer."}]
+    try:
+        t0 = time.time()
+        r1 = chat(msgs)
+        msgs += [{"role": "assistant", "content": r1["choices"][0]["message"]["content"]},
+                 {"role": "user", "content": "And what does the first one do?"}]
+        r2 = chat(msgs)
+        dt = time.time() - t0
+    except (OSError, KeyError, ValueError) as e:
+        stop.set()
+        record("model", "fail", f"chat request failed: {e}")
+        return
+    stop.set()
+    th.join(3)
+    t1, t2 = r1.get("timings", {}), r2.get("timings", {})
+    record("model", "ok", f'{t1.get("prompt_per_second", 0):.1f} tok/s reading, '
+                          f'{t2.get("predicted_per_second", 0):.1f} tok/s writing ({dt:.0f} s for two messages)')
+    n2 = t2.get("prompt_n")
+    if n2 is None:
+        record("model-cache", "warn", "no timings in the answer")
+    else:
+        record("model-cache", "ok" if n2 < 100 else "fail",
+               f"second message re-read {n2} tokens (good: under 100; the first read {t1.get('prompt_n')})")
+    thr = (thermal.status()["throttle_count"] or 0) - thr0
+    if temps:
+        hot = max(temps)
+        state = "warn" if hot >= thermal.HOT or thr else "ok"
+        record("thermal-load", state, f"CPU up to {hot}°C while the model worked"
+               + (f", throttled {thr} times" if thr else ", no throttling"))
+    else:
+        record("thermal-load", "skip", "no CPU temperature sensor")
+
+
+# --- desktop -------------------------------------------------------------------
+
+def t_clipboard():
+    if not os.environ.get("WAYLAND_DISPLAY"):
+        record("clipboard", "skip", "run it from the desktop terminal (Super+Enter)")
+        return
+    token = f"osyr-hwtest-{os.getpid()}"
+    try:
+        subprocess.run(["wl-copy", token], timeout=5, check=True)
+        _, out, _ = sh(["wl-paste", "--no-newline"], 5)
+    except (OSError, subprocess.SubprocessError) as e:
+        record("clipboard", "fail", str(e))
+        return
+    record("clipboard", "ok" if out == token else "fail",
+           "copy and paste work" if out == token else f"pasted {out[:40]!r} instead")
+
+
+def t_lock():
+    if not os.environ.get("WAYLAND_DISPLAY"):
+        record("screen-lock", "skip", "run it from the desktop terminal")
+        return
+    if not wait_enter("The screen will lock now: unlock it with your password."):
+        record("screen-lock", "skip", "not asked" if AUTO else "skipped")
+        return
+    t0 = time.time()
+    # No timeout: killing swaylock would unlock the screen without the password.
+    try:
+        rc = subprocess.run(["swaylock"]).returncode
+    except OSError as e:
+        record("screen-lock", "fail", str(e))
+        return
+    record("screen-lock", "ok" if rc == 0 else "fail",
+           f"locked and unlocked with the password ({time.time() - t0:.0f} s)" if rc == 0 else f"swaylock exit {rc}")
+
+
+def t_dictation():
+    if not os.environ.get("WAYLAND_DISPLAY"):
+        record("dictation", "skip", "run it from the desktop terminal")
+        return
+    if AUTO or not sys.stdin.isatty():
+        record("dictation", "skip", "not asked")
+        return
+    print("      Dictation: hold Super+Ctrl+Space, say \"hello computer\", release.")
+    print("      The words should be written here; then press Enter (Enter alone skips).")
+    try:
+        t0 = time.time()
+        text = input("      > ").strip()
+    except EOFError:
+        text = ""
+    if not text:
+        record("dictation", "skip", "skipped")
+    else:
+        record("dictation", "ok" if re.search(r"hello|computer|hola", text, re.I) else "warn",
+               f'wrote "{text[:60]}" ({time.time() - t0:.0f} s)')
+
+
+def t_battery_profile():
+    bats = [b for b in os.listdir("/sys/class/power_supply") if b.startswith("BAT")]
+    present = [b for b in bats if osyr_sys.first_line(f"/sys/class/power_supply/{b}/present") != "0"]
+    if not present:
+        record("battery-profile", "skip", "no working battery")
+        return
+    if not power.on_ac():
+        record("battery-profile", "skip", "start the test with the charger plugged in")
+        return
+    if not wait_enter("Unplug the charger now."):
+        record("battery-profile", "skip", "not asked" if AUTO else "skipped")
+        return
+    seen = None
+    for _ in range(20):
+        time.sleep(1)
+        d = osyr_json("sys", "power").get("data", {})
+        if not d.get("on_ac") and d.get("profile") == "battery":
+            seen = d
+            break
+    record("battery-profile", "ok" if seen else "fail",
+           f'battery profile applied (CPU preference {seen.get("epp")})' if seen
+           else "the battery profile was not applied within 20 s")
+    if wait_enter("Plug the charger back in."):
+        back = False
+        for _ in range(20):
+            time.sleep(1)
+            d = osyr_json("sys", "power").get("data", {})
+            if d.get("on_ac") and d.get("profile") == "ac":
+                back = True
+                break
+        record("ac-profile", "ok" if back else "fail",
+               "back to the plugged-in profile" if back else "did not go back within 20 s")
+
+
+# --- reminder (scheduled at the start and checked at the end) ----------------------
+
+def reminder_start():
+    r = osyr_json("remind", "add", "1m", REMINDER_TEXT)
+    if not r.get("ok"):
+        record("reminder", "fail", f'could not schedule: {r.get("code")} {r.get("data")}')
+        return None
+    print("      A test reminder will pop up and speak in 1 minute.", flush=True)
+    return r["data"]["id"]
+
+
+def reminder_check(rid):
+    if rid is None:
+        return
+    for _ in range(90):
+        r = next((x for x in remind.load() if x["id"] == rid), None)
+        if r and r.get("done") == "fired":
+            break
+        time.sleep(1)
+    else:
+        record("reminder", "fail", "the reminder did not fire within 2.5 min")
+        sh(["osyr", "remind", "cancel", rid])
+        return
+    record("reminder", "ok", "fired on time")
+    human("reminder-seen", f'Did you see and hear the reminder "{REMINDER_TEXT}"?',
+          "notification and voice", "the user did NOT see or hear it")
+
+
+# --- network -----------------------------------------------------------------
+
+def t_network():
+    for name, url in (("internet", "https://ccmai.org/osyr/"),
+                      ("pair-server", "https://ccmai.org/osyr-diag/pair")):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "OSYR/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                record(name, "ok", f"{url} answers ({r.status})")
+        except OSError as e:
+            record(name, "fail", f"{url}: {e}")
+    r = osyr_json("update", "code", "check", timeout=120)
+    record("update-check", "ok" if r.get("ok") else "warn", f'{r.get("code")}: {str(r.get("data"))[:120]}')
+
+
+def t_bluetooth_scan():
+    r = osyr_json("bt", "scan", "--seconds", "8", timeout=40)
+    n = len(r.get("data", {}).get("devices", []))
+    record("bt-scan", "ok" if n else "warn",
+           f"{n} Bluetooth device(s) nearby" if n else f'no devices found ({r.get("code")})')
+
+
+# --- browser: real page, window in its place, cookies, video and sound --------------
+
+WEB_URL = os.environ.get("OSYR_HWTEST_URL", "https://ccmai.org/osyr/")
+
+
+def gui_env():
+    env = dict(os.environ)
+    env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    env.setdefault("WAYLAND_DISPLAY", "wayland-1")
+    if "SWAYSOCK" not in env:
+        import glob
+        socks = glob.glob(f'{env["XDG_RUNTIME_DIR"]}/sway-ipc.*.sock')
+        if socks:
+            env["SWAYSOCK"] = socks[0]
+    return env
+
+
+def sway_windows():
+    """[(app_id, workspace, container layout)] of every window."""
+    try:
+        out = subprocess.run(["swaymsg", "-t", "get_tree", "-r"], capture_output=True, text=True,
+                             timeout=5, env=gui_env()).stdout
+        tree = json.loads(out)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return []
+    found = []
+
+    def walk(n, ws, layout):
+        if n.get("type") == "workspace":
+            ws = n.get("name")
+        if n.get("pid") and (n.get("app_id") or n.get("window_properties")):
+            found.append((n.get("app_id") or (n.get("window_properties") or {}).get("class") or "?", ws, layout))
+        for c in n.get("nodes", []) + n.get("floating_nodes", []):
+            walk(c, ws, n.get("layout"))
+    walk(tree, None, None)
+    return found
+
+
+def t_web():
+    from osyr import web
+    t0 = time.time()
+    r = osyr_json("web", "open", WEB_URL, timeout=180)
+    dt = time.time() - t0
+    text = (r.get("data") or {}).get("text") or ""
+    # Having text is not enough: the browser's error page (no TLS, no network) has
+    # text too. The OSYR page says "OSYR"; another URL (OSYR_HWTEST_URL) passes with any text.
+    want = "OSYR" if "ccmai.org/osyr" in WEB_URL else ""
+    if not r.get("ok") or not text or want not in text:
+        record("web-open", "fail", f'{WEB_URL}: {r.get("code")} {text[:160] or str(r.get("data"))[:160]}')
+        sh(["osyr", "web", "close"])
+        return
+    record("web-open", "ok", f"{WEB_URL} opened and read in {dt:.0f} s ({len(text)} characters)")
+
+    time.sleep(1)
+    wins = sway_windows()
+    cog = [w for w in wins if re.search("cog|wpe", w[0], re.I)]
+    if not wins:
+        record("web-window", "skip", "no sway session to look at")
+    elif not cog:
+        record("web-window", "warn", "no browser window found; app_ids: " + ", ".join(sorted({w[0] for w in wins})))
+    else:
+        aid, ws, layout = cog[0]
+        good = ws == "2" and layout == "tabbed"
+        record("web-window", "ok" if good else "warn", f"app_id {aid}, workspace {ws}, layout {layout}"
+               + ("" if good else " (expected workspace 2, tabbed)"))
+
+    # cookies: do they survive closing the browser? (if not, no sign-in lasts)
+    try:
+        sid = web.session(create=False)
+        web.script(sid, "document.cookie = 'osyr_hwtest=1; max-age=3600; path=/'; return document.cookie")
+        sh(["osyr", "web", "close"])
+        osyr_json("web", "open", WEB_URL, timeout=180)
+        sid = web.session(create=False)
+        cookies = web.script(sid, "return document.cookie") or ""
+        web.script(sid, "document.cookie = 'osyr_hwtest=; max-age=0; path=/'; return 1")
+        record("web-cookie", "ok" if "osyr_hwtest=1" in cookies else "warn",
+               "cookies last after closing the browser" if "osyr_hwtest=1" in cookies
+               else "cookies are lost when the browser closes: sign-ins will not last")
+    except (web.WebError, OSError, ValueError) as e:
+        record("web-cookie", "fail", f"{type(e).__name__}: {e} {getattr(e, 'data', '')}")
+
+    t_web_media(web)
+    sh(["osyr", "web", "close"])
+
+
+MEDIA_HTML = """<html><head><title>OSYR media test</title></head><body style="background:#222;color:#eee">
+<video id="v" src="test.webm" muted autoplay loop width="640"></video>
+<audio id="a" src="tone.wav"></audio>
+<button onclick="document.getElementById('a').play().then(() => document.title = 'playing',
+ e => document.title = 'blocked ' + e.name)">Play sound</button></body></html>"""
+
+CODECS_JS = """const v = document.createElement('video'), a = document.createElement('audio');
+return {h264: v.canPlayType('video/mp4; codecs="avc1.42E01E"'), vp9: v.canPlayType('video/webm; codecs="vp9"'),
+ av1: v.canPlayType('video/mp4; codecs="av01.0.05M.08"'), aac: a.canPlayType('audio/mp4; codecs="mp4a.40.2"'),
+ opus: a.canPlayType('audio/webm; codecs="opus"'), mse: typeof MediaSource !== 'undefined'};"""
+
+
+def t_web_media(web):
+    import tempfile
+    d = tempfile.mkdtemp(prefix="osyr-hwtest-")
+    gen = [["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=10:size=640x360:rate=25",
+            "-c:v", "libvpx", "-deadline", "realtime", "-b:v", "800k", f"{d}/test.webm"],
+           ["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=660:duration=3",
+            "-af", "volume=0.5", "-c:a", "pcm_s16le", f"{d}/tone.wav"]]
+    for g in gen:
+        rc, _, err = sh(g, 60)
+        if rc != 0:
+            record("web-video", "fail", f"could not make the test files: {err[-160:]}")
+            return
+    with open(f"{d}/media.html", "w") as f:
+        f.write(MEDIA_HTML)
+    # over HTTP, like a real website: with file:// WebKit's web process (in its
+    # sandbox) cannot reach the files in /tmp and the video reports "not supported"
+    srv = http.server.ThreadingHTTPServer(
+        ("127.0.0.1", 0), functools.partial(QuietHandler, directory=d))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        t_web_media_page(web, f"http://127.0.0.1:{srv.server_address[1]}/media.html")
+    finally:
+        srv.shutdown()
+
+
+class QuietHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+
+def t_web_media_page(web, url):
+    r = osyr_json("web", "open", url, timeout=120)
+    if not r.get("ok"):
+        record("web-video", "fail", f'{r.get("code")} {str(r.get("data"))[:160]}')
+        return
+    try:
+        sid = web.session(create=False)
+        codecs = web.script(sid, CODECS_JS)
+        record("web-codecs", "ok" if codecs.get("h264") and codecs.get("aac") else "warn",
+               ", ".join(f"{k} {v or 'no'}" for k, v in codecs.items()))
+        time.sleep(4)
+        v = web.script(sid, "const v = document.getElementById('v'); return {t: v.currentTime, "
+                            "w: v.videoWidth, err: v.error ? v.error.code : 0}")
+        good = v.get("t", 0) > 1 and v.get("w", 0) > 0
+        record("web-video", "ok" if good else "fail",
+               f'video playing ({v["w"]} px wide, {v["t"]:.1f} s in)' if good else f"video not playing: {v}")
+        if good:
+            human("web-video-seen", "Do you see moving colour test bars in the browser window (Super+2)?",
+                  "the user saw the video", "the user did NOT see the video")
+        # the sound with a real click (WebDriver), as a person would do it
+        web.wd("POST", f"/session/{sid}/element/{web.element(sid, 1)}/click", {})
+        time.sleep(1.5)
+        a = web.script(sid, "const a = document.getElementById('a'); return {t: a.currentTime, "
+                            "paused: a.paused, title: document.title}")
+        good = a.get("t", 0) > 0.3
+        record("web-audio", "ok" if good else "fail",
+               f'sound playing ({a["t"]:.1f} s)' if good else f"sound not playing: {a}")
+        if good:
+            human("web-sound", "Did you hear a tone from the browser?",
+                  "the user heard the browser", "the user did NOT hear the browser")
+    except (web.WebError, OSError, ValueError, KeyError, TypeError, StopIteration) as e:
+        record("web-video", "fail", f"{type(e).__name__}: {e} {getattr(e, 'data', '')}")
+
+
+# --- on-demand vision: first look (starts the server) and the second one -----------------
+
+def rss_mib(pattern):
+    _, out, _ = sh(["pgrep", "-f", pattern])
+    total = 0
+    for pid in out.split():
+        try:
+            for line in open(f"/proc/{pid}/status"):
+                if line.startswith("VmRSS:"):
+                    total += int(line.split()[1])
+        except OSError:
+            pass
+    return total // 1024
+
+
+def mem_available_mib():
+    return next(int(l.split()[1]) for l in open("/proc/meminfo") if l.startswith("MemAvailable")) // 1024
+
+
+def t_vision():
+    from osyr import ai
+    if not ai.provider().get("local"):
+        record("vision", "skip", "the active AI is not the local model (osyr ai use local)")
+        return
+    conf = open("/etc/osyr/llama.conf").read() if os.path.exists("/etc/osyr/llama.conf") else ""
+    m = re.search(r"^VISION=(\w+)", conf, re.M)
+    mode = m.group(1) if m else "ondemand"
+    free0 = mem_available_mib()
+    q = "What is on the screen? Answer in one short sentence."
+    times, answer = [], ""
+    for _ in range(2):  # the first starts the vision server; the second finds it running
+        t0 = time.time()
+        r = osyr_json("ai", "look", q, timeout=900)
+        times.append(time.time() - t0)
+        if not r.get("ok"):
+            record("vision", "fail", f'{r.get("code")} {str(r.get("data"))[:200]}')
+            return
+        answer = r["data"]["answer"]
+    record("vision", "ok", f"mode {mode}: first look {times[0]:.0f} s, second {times[1]:.0f} s")
+    rss = rss_mib("llama-server.*--mmproj")
+    record("vision-mem", "ok" if mem_available_mib() > 300 else "warn",
+           f"vision server {rss} MiB resident; free memory {free0} → {mem_available_mib()} MiB")
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/health", timeout=5):
+            record("vision-agent", "ok", "the agent's model still answers")
+    except OSError as e:
+        record("vision-agent", "fail", f"the agent's model stopped answering: {e}")
+    human("vision-right", f'The model saw: "{answer[:120]}". Is that right?',
+          f"right: {answer[:80]}", f"wrong: {answer[:80]}")
+
+
+# --- USB: automount, write, notice and eject ---------------------------------------------
+
+def t_usb():
+    from osyr import disk
+    _, st, _ = sh(["systemctl", "is-active", "osyr-diskwatch.service"])
+    record("diskwatch", "ok" if st == "active" else "warn", f"osyr-diskwatch.service: {st}")
+    before = {d["name"] for d in disk.mounted()}
+    if not wait_enter("Plug in a USB stick or SD card (only a tiny test file is written and deleted)."):
+        record("usb-mount", "skip", "not asked" if AUTO else "skipped")
+        return
+    new = None
+    for _ in range(30):
+        time.sleep(1)
+        new = next((d for d in disk.mounted() if d["name"] not in before), None)
+        if new:
+            break
+    if not new:
+        _, ls, _ = sh(["lsblk", "-o", "NAME,TRAN,FSTYPE,SIZE,MOUNTPOINTS"])
+        record("usb-mount", "fail", "nothing mounted in 30 s under /run/media/osyr; "
+               + " | ".join(l for l in ls.splitlines() if "usb" in l or "mmc" in l)[:200])
+        return
+    record("usb-mount", "ok", f'{new["name"]}: {new["fs"]}, {new["size"]}, {new["device"]}')
+    f = os.path.join(new["path"], ".osyr-hwtest")
+    try:
+        with open(f, "w") as fh:
+            fh.write("OSYR hardware test\n")
+        ok = open(f).read() == "OSYR hardware test\n"
+        os.remove(f)
+        record("usb-write", "ok" if ok else "fail", "wrote, read and deleted a test file" if ok else "read back differs")
+    except OSError as e:
+        record("usb-write", "warn", f"cannot write: {e}")
+    human("usb-notice", "Did a notice about the disk appear on the screen?",
+          "mount notice seen", "no mount notice")
+    r = osyr_json("disk", "eject", new["name"], timeout=150)
+    record("usb-eject", "ok" if r.get("ok") else "fail",
+           "ejected: it can be unplugged" if r.get("ok") else f'{r.get("code")} {str(r.get("data"))[:160]}')
+
+
+TESTS = [("boot", t_boot), ("boot-time", t_boot_time), ("services", t_services),
+         ("storage", t_storage), ("memory", t_memory), ("selftest", t_selftest),
+         ("model", t_model), ("vision", t_vision), ("clipboard", t_clipboard),
+         ("bluetooth", t_bluetooth_scan), ("network", t_network), ("web", t_web),
+         ("battery", t_battery_profile), ("usb", t_usb), ("lock", t_lock),
+         ("dictation", t_dictation)]
+
+
+def main():
+    global AUTO
+    p = argparse.ArgumentParser(prog="osyr-hwtest", description="Guided test of this computer")
+    p.add_argument("--auto", action="store_true", help="no questions: skip what needs a person")
+    p.add_argument("--no-send", action="store_true", help="do not offer to send the result")
+    p.add_argument("--only", help="comma-separated tests")
+    p.add_argument("--list", action="store_true", help="list the tests")
+    a = p.parse_args()
+    if a.list:
+        print(" ".join(n for n, _ in TESTS) + " reminder")
+        return 0
+    AUTO = a.auto
+    only = set(a.only.split(",")) if a.only else None
+    print("OSYR hardware test: about 10 minutes. Answer y (yes) or n (no); Enter skips a question.\n", flush=True)
+    rid = reminder_start() if only is None or "reminder" in only else None
+    for name, fn in TESTS:
+        if only and name not in only:
+            continue
+        try:
+            fn()
+        except KeyboardInterrupt:
+            print()
+            record(name, "skip", "interrupted")
+            break
+        except Exception as e:  # a broken test does not bring down the others
+
+            record(name, "fail", f"{type(e).__name__}: {e}")
+    reminder_check(rid)
+
+    os.makedirs(STATE, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    counts = {s: sum(r["state"] == s for r in results) for s in ("ok", "warn", "fail", "skip")}
+    report = {"date": stamp, "auto": AUTO, "counts": counts, "results": results}
+    for path in (f"{STATE}/hwtest-{stamp}.json", f"{STATE}/last.json"):
+        with open(path, "w") as f:
+            json.dump(report, f, indent=1, ensure_ascii=False)
+    with open(f"{STATE}/last.txt", "w") as f:
+        f.writelines(f'{r["state"].upper():<4}  {r["test"]:<15} {r["detail"]}\n' for r in results)
+    print(f'\n{counts["ok"]} ok, {counts["warn"]} warnings, {counts["fail"]} failed, {counts["skip"]} skipped.'
+          f" Saved in {STATE}/last.txt")
+    if not a.no_send and not AUTO and sys.stdin.isatty():
+        try:
+            go = input("Send the result for support with osyr-diag now? [Y/n] ").strip().lower()
+        except EOFError:
+            go = "n"
+        if go in ("", "y", "yes", "s", "si", "sí"):
+            return subprocess.run(["osyr-diag", "--no-screenshots", "--quick"]).returncode
+    return 1 if counts["fail"] else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

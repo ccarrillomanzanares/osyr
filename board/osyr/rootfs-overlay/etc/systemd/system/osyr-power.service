@@ -1,0 +1,13 @@
+[Unit]
+Description=OSYR power profile (battery saving / full power)
+Documentation=file:/etc/osyr/power.conf
+# At boot, before the model: so it starts with the profile's threads already
+Before=osyr-llama.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/osyr sys power apply
+
+[Install]
+WantedBy=multi-user.target

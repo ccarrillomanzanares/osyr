@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+# OSYR — system CLI; the code is in /usr/lib/osyr/osyr.
+import sys
+
+sys.path.insert(0, "/usr/lib/osyr")
+from osyr.cli import main  # noqa: E402
+
+sys.exit(main())

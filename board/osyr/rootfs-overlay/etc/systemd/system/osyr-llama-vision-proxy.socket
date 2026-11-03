@@ -1,0 +1,10 @@
+[Unit]
+Description=OSYR vision model, started on first use (/look)
+
+[Socket]
+# /look and 'osyr ai look' connect here; systemd starts the proxy and, with it,
+# the server with the vision projector (osyr-llama vision, on 8085)
+ListenStream=127.0.0.1:8084
+
+[Install]
+WantedBy=sockets.target

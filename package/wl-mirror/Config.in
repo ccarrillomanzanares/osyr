@@ -1,0 +1,11 @@
+config BR2_PACKAGE_WL_MIRROR
+	bool "wl-mirror"
+	depends on BR2_PACKAGE_WAYLAND
+	depends on BR2_PACKAGE_MESA3D_OPENGL_EGL
+	depends on BR2_PACKAGE_MESA3D_OPENGL_ES
+	select BR2_PACKAGE_WAYLAND_PROTOCOLS
+	help
+	  Mirror one display onto another (sway does not do it by itself).
+	  Used by 'osyr ui display mirror'.
+
+	  https://github.com/Ferdi265/wl-mirror

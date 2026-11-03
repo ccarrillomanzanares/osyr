@@ -1,0 +1,13 @@
+config BR2_PACKAGE_SHERPA_ONNX
+	bool "sherpa-onnx"
+	depends on BR2_x86_64
+	depends on BR2_TOOLCHAIN_USES_GLIBC
+	depends on BR2_INSTALL_LIBSTDCPP
+	help
+	  Local neural voice (Piper/VITS models) for reading aloud:
+	  sherpa-onnx-offline-tts with its onnxruntime, in /opt/sherpa-onnx.
+	  Official release binary (like sof-bin): building it here would
+	  download a prebuilt onnxruntime mid-build anyway.
+	  scripts/download-model.sh puts the voices in models/piper.
+
+	  https://github.com/k2-fsa/sherpa-onnx

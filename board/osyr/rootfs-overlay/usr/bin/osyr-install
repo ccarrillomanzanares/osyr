@@ -1,0 +1,521 @@
+#!/usr/bin/env python3
+"""OSYR — disk installer. It runs from the USB and ERASES THE WHOLE DISK.
+
+Resulting disk (MBR, like the USB: boots the same on BIOS and UEFI):
+  sector 0      GRUB boot.img (446 bytes; the partition table is preserved)
+  sector 1..    GRUB core for BIOS (core-pc.img), in the gap before p1
+  partition 1   FAT32 ESP: EFI/BOOT/BOOTX64.EFI, osyr/grub/grub.cfg and grubenv
+  partition 2   root A (ext4): copy of the system running on the USB
+  partition 3   root B (ext4, empty): written by 'osyr update image' (A/B)
+  partition 4   /home, encrypted (LUKS2, systemd-cryptsetup asks for the passphrase at boot)
+                or unencrypted if so chosen (--no-encrypt)
+
+The root is not encrypted: OSYR boots without an initramfs. The kernel is read
+from /boot/bzImage of the active root, chosen by the grubenv slot variable
+(osyr/slots.py; 'osyr update image' writes the other root and tests it with try).
+The disk's GRUB cores (/usr/lib/osyr/boot, from post-build.sh) look for
+/osyr/grub/grub.cfg: they do not mix it up with the USB, which looks for /boot/grub/grub.cfg.
+
+The system and /home are copied from the USB as they are: password, language,
+wifi, AI providers and chat history stay the same on the disk.
+
+Usage: sudo osyr-install                 (interactive)
+       sudo osyr-install --list          (disks it can be installed on)
+       sudo osyr-install --disk /dev/sdX --confirm sdX --passphrase-file F
+       sudo osyr-install --disk /dev/sdX --confirm sdX --no-encrypt
+
+While copying, screen locking and blanking on idle are paused
+(/run/osyr/no-idle, see osyr-idle): on the HP 15-ba the screen went
+black at the end of a long copy.
+"""
+import argparse
+import json
+import os
+import secrets
+import shutil
+import subprocess
+import sys
+import threading
+import time
+
+BOOT = os.environ.get("OSYR_INSTALL_BOOT", "/usr/lib/osyr/boot")
+WORK = "/run/osyr-install"
+INSTALL_INFO = "/etc/osyr/install.conf"
+GiB = 1024 ** 3
+ESP_MIB = 256
+MIN_DISK = 24 * 10 ** 9          # 24 GB: ESP + two 8 GiB roots + /home
+MIN_PASSPHRASE = 8
+NO_IDLE = "/run/osyr/no-idle"
+
+sys.path.insert(0, "/usr/lib/osyr")
+from osyr.term import read_password  # noqa: E402
+from osyr.slots import grub_cfg, grubenv  # noqa: E402  (shared with update image)
+
+
+class InstallError(Exception):
+    pass
+
+
+class DiskBusy(InstallError):
+    """The disk is still in use: it has not been touched."""
+
+
+def run(args, input=None):
+    p = subprocess.run(args, input=input, capture_output=True, text=True)
+    if p.returncode != 0:
+        raise InstallError(f"{' '.join(args)}: {(p.stderr or p.stdout).strip()[-400:]}")
+    return p.stdout
+
+
+def step(text):
+    print(f"  * {text}", flush=True)
+
+
+# --- disks --------------------------------------------------------------------------
+
+def source_disk():
+    """Disk the running system booted from (the USB), from the device of /."""
+    dev = os.stat("/").st_dev
+    path = os.path.realpath(f"/sys/dev/block/{os.major(dev)}:{os.minor(dev)}")
+    # /sys/devices/.../block/sda/sda2 -> sda; if / is on a disk without partitions, the disk itself
+    return os.path.basename(os.path.dirname(path)) if os.path.exists(f"{path}/partition") \
+        else os.path.basename(path)
+
+
+def disks():
+    out = json.loads(run(["lsblk", "-J", "-b", "-o",
+                          "NAME,PATH,SIZE,TYPE,MODEL,TRAN,RM,RO,FSTYPE,LABEL,MOUNTPOINTS"]))
+    src = source_disk()
+    res = []
+    for d in out.get("blockdevices", []):
+        if d.get("type") != "disk" or d["name"].startswith(("zram", "loop", "sr", "fd")):
+            continue
+        why = None
+        if d["name"] == src:
+            why = "OSYR is running from this disk"
+        elif d.get("ro"):
+            why = "read-only"
+        elif int(d.get("size") or 0) < MIN_DISK:
+            why = f"too small (needs {MIN_DISK // 10 ** 9} GB)"
+        d["unusable"] = why
+        res.append(d)
+    return res
+
+
+def human(n):
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1000 or unit == "TB":
+            return f"{n:.0f} {unit}" if unit in ("B", "KB") else f"{n:.1f} {unit}"
+        n /= 1000
+
+
+def describe(d):
+    kind = {"usb": "USB", "nvme": "NVMe", "sata": "SATA", "ata": "ATA", "mmc": "SD/eMMC",
+            "virtio": "virtio"}.get(d.get("tran") or "", d.get("tran") or "disk")
+    return f"{d['name']}  {human(d['size'])}  {kind}  {(d.get('model') or '').strip()}"
+
+
+def contents(d):
+    """What is on the disk now, for the summary of what gets erased."""
+    lines = []
+    for c in d.get("children") or []:
+        what = " ".join(x for x in (c.get("fstype"), c.get("label")) if x) or "unknown data"
+        lines.append(f"      {c['name']}  {human(c['size'])}  {what}")
+    return lines or ["      (no partitions found)"]
+
+
+def parts_of(path):
+    """The disk's partitions in order, once udev has created them."""
+    return lsblk_list(path, "part")
+
+
+def lsblk_list(path, kind):
+    """Devices of one type under path (lsblk nests them or not depending on the disk type)."""
+    rows = (l.split() for l in run(["lsblk", "-ln", "-o", "PATH,TYPE", path]).splitlines())
+    return [r[0] for r in rows if len(r) == 2 and r[1] == kind]
+
+
+def free_disk(d):
+    """Releases whatever the system has open on that disk (swap, mounts, LUKS)."""
+    for c in d.get("children") or []:
+        for mp in c.get("mountpoints") or []:
+            if mp:
+                subprocess.run(["umount", "-R", mp], capture_output=True)
+        for h in lsblk_list(c["path"], "crypt"):
+            subprocess.run(["umount", h], capture_output=True)
+            subprocess.run(["cryptsetup", "close", h], capture_output=True)
+        subprocess.run(["swapoff", c["path"]], capture_output=True)
+    # Whatever could not be released (a program with a file open on a mounted USB):
+    # stop here, before touching the table, not halfway with the kernel seeing the old one
+    rows = run(["lsblk", "-ln", "-o", "PATH,TYPE,MOUNTPOINTS", d["path"]]).splitlines()
+    swaps = open("/proc/swaps").read().split()
+    busy = [r.split()[0] for r in rows if len(r.split()) > 2 or r.split()[1:2] == ["crypt"]
+            or r.split()[0] in swaps]
+    if busy:
+        raise DiskBusy(f"{', '.join(busy)} still in use (close what uses it, or restart and try again)")
+
+
+# --- installation steps ------------------------------------------------------------------
+
+def slot_size(size):
+    """Each root: 1/8 of the disk, between 8 and 16 GiB (the USB's is 7)."""
+    return max(8 * GiB, min(16 * GiB, size // 8 // GiB * GiB))
+
+
+def partition(path, size):
+    sig = secrets.randbits(32) | 1
+    root = slot_size(size) // (1024 * 1024)
+    layout = (f"label: dos\nlabel-id: 0x{sig:08x}\nunit: sectors\n\n"
+              f"start=2048, size={ESP_MIB}MiB, type=ef, bootable\n"
+              f"size={root}MiB, type=83\n"
+              f"size={root}MiB, type=83\n"
+              f"type=83\n")
+    # --wipe: sfdisk erases old signatures on the disk and the partitions (there is no wipefs)
+    run(["sfdisk", "--wipe", "always", "--wipe-partitions", "always", path], input=layout)
+    subprocess.run(["blockdev", "--rereadpt", path], capture_output=True)
+    run(["udevadm", "settle", "-t", "30"])
+    for _ in range(20):
+        parts = parts_of(path)
+        if len(parts) == 4 and all(os.path.exists(p) for p in parts):
+            return sig, parts
+        time.sleep(0.5)
+    raise InstallError("the new partitions did not appear")
+
+
+def blkid(dev, tag):
+    return run(["blkid", "-s", tag, "-o", "value", dev]).strip()
+
+
+def copy_tree(src, dst, entries, label):
+    """cp -a of some entries from src to dst, with the percentage based on used space."""
+    total = sum(du(os.path.join(src, e)) for e in entries) or 1
+    base = used(dst)
+    proc = subprocess.Popen(["cp", "-a", *[os.path.join(src, e) for e in entries], dst + "/"],
+                            stderr=subprocess.PIPE, text=True)
+    stop = threading.Event()
+
+    def progress():
+        while not stop.wait(2):
+            pct = min(99, (used(dst) - base) * 100 // total)
+            print(f"\r    {label}: {pct}%", end="", flush=True)
+
+    t = threading.Thread(target=progress, daemon=True)
+    t.start()
+    err = proc.communicate()[1]
+    stop.set()
+    t.join()
+    print(f"\r    {label}: {'100%' if proc.returncode == 0 else 'failed'}", flush=True)
+    if proc.returncode != 0:
+        raise InstallError(f"copy failed: {err.strip()[-400:]}")
+
+
+def du(path):
+    p = subprocess.run(["du", "-sxb", path], capture_output=True, text=True)
+    try:
+        return int(p.stdout.split()[0])
+    except (ValueError, IndexError):
+        return 0
+
+
+def used(path):
+    st = os.statvfs(path)
+    return (st.f_blocks - st.f_bfree) * st.f_frsize
+
+
+def install_grub(path, esp, sig, uuid_a, uuid_b):
+    core = open(f"{BOOT}/core-pc.img", "rb").read()
+    if 512 + len(core) > 2048 * 512:
+        raise InstallError("the BIOS GRUB image does not fit before the first partition")
+    mbr = open(f"{BOOT}/boot.img", "rb").read()[:440]   # 440..511: signature and table, untouched
+    with open(path, "r+b") as f:
+        f.write(mbr)
+        f.seek(512)
+        f.write(core)
+        f.flush()
+        os.fsync(f.fileno())
+    os.makedirs(f"{esp}/EFI/BOOT", exist_ok=True)
+    os.makedirs(f"{esp}/osyr/grub", exist_ok=True)
+    shutil.copyfile(f"{BOOT}/bootx64.efi", f"{esp}/EFI/BOOT/BOOTX64.EFI")
+    open(f"{esp}/osyr/grub/grub.cfg", "w").write(grub_cfg(sig, uuid_a, uuid_b))
+    open(f"{esp}/osyr/grub/grubenv", "wb").write(grubenv("a"))
+
+
+def configure_root(root, sig, home_uuid, disk, encrypted):
+    """Root A knows it is on a disk: /home (encrypted or not) and the installation data."""
+    if encrypted:
+        open(f"{root}/etc/crypttab", "w").write(
+            "# Encrypted /home: systemd-cryptsetup asks for the passphrase on the console at boot.\n"
+            "# tries=0: asks again if it is mistyped (root is locked:\n"
+            "# emergency mode would be of no use).\n"
+            f"home UUID={home_uuid} none luks,discard,tries=0\n")
+    with open(f"{root}/etc/fstab", "a") as f:
+        f.write(("/dev/mapper/home" if encrypted else f"UUID={home_uuid}") + " /home ext4 defaults 0 2\n")
+    with open(f"{root}{INSTALL_INFO}", "w") as f:
+        f.write(f"# Written by osyr-install\nDATE={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
+                f"DISK_ID=0x{sig:08x}\nSLOT=a\nMODEL={(disk.get('model') or '').strip()}\n"
+                f"ENCRYPTED={'yes' if encrypted else 'no'}\n")
+    # the USB's journal does not belong to this machine
+    shutil.rmtree(f"{root}/var/log/journal", ignore_errors=True)
+    os.makedirs(f"{root}/var/log/journal", exist_ok=True)
+
+
+def idle_pause(on):
+    """Screen locking and blanking paused during the copy (osyr-idle checks it)."""
+    try:
+        if on:
+            os.makedirs(os.path.dirname(NO_IDLE), exist_ok=True)
+            open(NO_IDLE, "w").close()
+        else:
+            os.unlink(NO_IDLE)
+    except OSError:
+        pass
+
+
+ERASED = False  # from here on the disk is no longer what it was
+
+
+def needed_space(disk, source="/"):
+    """None if it fits; otherwise, why. Before erasing anything: a large /home on the
+    USB does not fit in the data partition of a small disk."""
+    size = int(disk["size"])
+    slot = slot_size(size)
+    home_part = size - 2 * slot - ESP_MIB * 2 ** 20
+    home = du(f"{source.rstrip('/')}/home")
+    system = du(source) - home  # -x: only the root (on the USB, /home is inside it)
+    margin = 1.1
+    if system * margin > slot:
+        return f"the system needs {human(system)} and each system slot has {human(slot)}"
+    if home * margin + 512 * 2 ** 20 > home_part:
+        return f"your files need {human(home)} and there is room for {human(home_part)}"
+    return None
+
+
+def install(disk, passphrase, source="/"):
+    """passphrase None: unencrypted /home."""
+    global ERASED
+    path = disk["path"]
+    src, mnt = f"{WORK}/src", f"{WORK}/target"
+    esp, home = f"{WORK}/esp", f"{WORK}/home"
+    for d in (src, mnt, esp, home):
+        os.makedirs(d, exist_ok=True)
+    mapper = "osyr-install-home"
+    mounted = []
+    idle_pause(True)
+    try:
+        step(f"Erasing {disk['name']} and creating partitions")
+        free_disk(disk)
+        ERASED = True
+        sig, (p_esp, p_a, p_b, p_home) = partition(path, int(disk["size"]))
+
+        step("Creating file systems")
+        run(["mkfs.vfat", "-F", "32", "-n", "OSYR_EFI", p_esp])
+        run(["mkfs.ext4", "-q", "-F", "-L", "osyr-a", p_a])
+        run(["mkfs.ext4", "-q", "-F", "-L", "osyr-b", p_b])
+
+        if passphrase:
+            step("Encrypting the partition for your files (LUKS2)")
+            run(["cryptsetup", "luksFormat", "--type", "luks2", "--batch-mode", "--label", "osyr-home",
+                 "--key-file", "-", p_home], input=passphrase)
+            run(["cryptsetup", "open", "--key-file", "-", p_home, mapper], input=passphrase)
+            mounted.append(("crypt", mapper))
+            home_dev = f"/dev/mapper/{mapper}"
+        else:
+            home_dev = p_home
+        run(["mkfs.ext4", "-q", "-F", "-L", "osyr-home", home_dev])
+
+        # A bind mount of / sees the root without what is mounted on top (/proc, /run, /tmp...)
+        for dev, where, opts in ((p_a, mnt, []), (source, src, ["--bind"]), (p_esp, esp, []),
+                                 (home_dev, home, [])):
+            run(["mount", *opts, dev, where])
+            mounted.append(("mount", where))
+
+        step("Copying the system (several minutes)")
+        entries = sorted(e for e in os.listdir(src) if e not in ("home", "lost+found"))
+        copy_tree(src, mnt, entries, "system")
+        os.makedirs(f"{mnt}/home", exist_ok=True)
+        os.chmod(f"{mnt}/home", 0o755)
+        step("Copying your files")
+        homes = sorted(os.listdir(f"{src}/home"))
+        if homes:
+            copy_tree(f"{src}/home", home, homes, "home")
+
+        step("Setting up the boot loader (BIOS and UEFI)")
+        uuid_a, uuid_b = blkid(p_a, "UUID"), blkid(p_b, "UUID")
+        configure_root(mnt, sig, blkid(p_home, "UUID"), disk, bool(passphrase))
+        install_grub(path, esp, sig, uuid_a, uuid_b)
+        run(["sync"])
+    finally:
+        idle_pause(False)
+        for kind, what in reversed(mounted):
+            if kind == "mount":
+                subprocess.run(["umount", what], capture_output=True)
+            else:
+                subprocess.run(["cryptsetup", "close", what], capture_output=True)
+
+
+# --- dialogue ---------------------------------------------------------------------------
+
+
+def ask(prompt):
+    try:
+        return input(prompt).strip()
+    except EOFError:
+        return ""
+
+
+def choose_disk(candidates):
+    usable = [d for d in candidates if not d["unusable"]]
+    print("Disks in this computer:")
+    for d in candidates:
+        print(f"  {describe(d)}" + (f"   [{d['unusable']}]" if d["unusable"] else ""))
+    if not usable:
+        return None
+    if len(usable) == 1:
+        return usable[0]
+    names = [d["name"] for d in usable]
+    while True:
+        ans = ask(f"Disk to install on ({', '.join(names)}; Enter to cancel): ")
+        if not ans:
+            return None
+        for d in usable:
+            if ans in (d["name"], d["path"]):
+                return d
+
+
+def ask_encrypt():
+    print("\nEncrypt your files (/home)? Recommended on a laptop: if it is lost or stolen,")
+    print("nobody can read them. You will type a passphrase every time the computer starts.")
+    return ask("Encrypt them? [Y/n] ").lower() not in ("n", "no")
+
+
+def ask_passphrase():
+    print("\nChoose a passphrase: it will be asked every time the computer starts.")
+    print("If you forget it, your files cannot be recovered.")
+    for _ in range(3):
+        p1 = read_password("Passphrase: ")
+        if not p1:
+            return None
+        if len(p1) < MIN_PASSPHRASE:
+            print(f"At least {MIN_PASSPHRASE} characters.")
+            continue
+        if read_password("Repeat it: ") == p1:
+            return p1
+        print("They do not match.")
+    return None
+
+
+def main():
+    p = argparse.ArgumentParser(prog="osyr-install", description="Install OSYR on a disk (erases the whole disk)")
+    p.add_argument("--list", action="store_true", help="list the disks and whether OSYR can be installed on them")
+    p.add_argument("--json", action="store_true", help="with --list: machine-readable output")
+    p.add_argument("--disk", help="disk to install on, e.g. /dev/sda")
+    p.add_argument("--confirm", metavar="NAME", help="the disk name again (e.g. sda): confirms erasing it")
+    p.add_argument("--passphrase-file", help="file with the passphrase for /home (otherwise it is asked)")
+    p.add_argument("--no-encrypt", action="store_true", help="do not encrypt /home (no passphrase at start-up)")
+    args = p.parse_args()
+
+    if args.list:
+        ds = disks()
+        if args.json:
+            print(json.dumps([{"name": d["name"], "size": int(d["size"]), "model": (d.get("model") or "").strip(),
+                               "transport": d.get("tran"), "usable": not d["unusable"],
+                               "reason": d["unusable"]} for d in ds]))
+        else:
+            for d in ds:
+                print(describe(d) + (f"   [{d['unusable']}]" if d["unusable"] else ""))
+        return 0
+    if os.geteuid() != 0:
+        print("Run it as administrator: sudo osyr-install", file=sys.stderr)
+        return 1
+    if os.path.exists(INSTALL_INFO):
+        print("This OSYR is already installed on a disk. To install again, start the computer "
+              "from the OSYR USB and run osyr-install there.", file=sys.stderr)
+        return 1
+    for tool in ("sfdisk", "mkfs.vfat", "mkfs.ext4", "cryptsetup", "blkid", "lsblk", "udevadm"):
+        if not shutil.which(tool):
+            print(f"Missing {tool}: this OSYR image cannot install to disk.", file=sys.stderr)
+            return 1
+    for f in ("boot.img", "core-pc.img", "bootx64.efi"):
+        if not os.path.exists(f"{BOOT}/{f}"):
+            print(f"Missing {BOOT}/{f}: this OSYR image cannot install to disk.", file=sys.stderr)
+            return 1
+
+    candidates = disks()
+    if args.disk:
+        disk = next((d for d in candidates if args.disk in (d["name"], d["path"])), None)
+        if not disk:
+            print(f"No such disk: {args.disk}", file=sys.stderr)
+            return 1
+        if disk["unusable"]:
+            print(f"Cannot install on {disk['name']}: {disk['unusable']}", file=sys.stderr)
+            return 1
+    else:
+        print("OSYR installer. It ERASES the whole disk you choose.\n")
+        disk = choose_disk(candidates)
+        if not disk:
+            print("No disk chosen: nothing was changed.")
+            return 1
+
+    slot = slot_size(int(disk["size"]))
+    print(f"\nTarget: {describe(disk)}")
+    print("  Everything on it will be ERASED:")
+    print("\n".join(contents(disk)))
+    print(f"  New layout: boot {ESP_MIB} MB, system A {slot // GiB} GiB, system B {slot // GiB} GiB "
+          f"(for updates), your files {human(int(disk['size']) - 2 * slot - ESP_MIB * 2 ** 20)}")
+    print("  The system and your files on this USB are copied as they are "
+          "(password, language, wifi, chats).")
+
+    problem = needed_space(disk)
+    if problem:
+        print(f"This disk is too small: {problem}. Nothing was changed.", file=sys.stderr)
+        return 1
+
+    confirm = args.confirm
+    if confirm is None:
+        confirm = ask(f"\nType the disk name ({disk['name']}) to erase it and install OSYR: ")
+    if confirm != disk["name"]:
+        print("Not confirmed: nothing was changed.")
+        return 1
+
+    if args.no_encrypt:
+        passphrase = None
+    elif args.passphrase_file:
+        passphrase = open(args.passphrase_file).read().rstrip("\n")
+        if len(passphrase) < MIN_PASSPHRASE:
+            print(f"The passphrase needs at least {MIN_PASSPHRASE} characters.", file=sys.stderr)
+            return 1
+    elif not ask_encrypt():
+        passphrase = None
+        print("Your files will NOT be encrypted.")
+    else:
+        passphrase = ask_passphrase()
+        if not passphrase:
+            print("No passphrase: nothing was changed.")
+            return 1
+
+    print(f"\nInstalling OSYR on {disk['name']}...")
+    t0 = time.time()
+    try:
+        install(disk, passphrase)
+    except (InstallError, KeyboardInterrupt) as e:
+        why = "cancelled" if isinstance(e, KeyboardInterrupt) else f"FAILED: {e}"
+        print(f"\nThe installation {why}", file=sys.stderr)
+        if ERASED:
+            print("The disk was already erased and does not start; you can run osyr-install again.",
+                  file=sys.stderr)
+        else:
+            print("Nothing was changed on the disk.", file=sys.stderr)
+        return 1
+    print(f"\nOSYR is installed on {disk['name']} ({(time.time() - t0) / 60:.0f} min).")
+    print("Turn the computer off, remove the USB and turn it on"
+          + (": it will ask for the passphrase." if passphrase else "."))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(130)

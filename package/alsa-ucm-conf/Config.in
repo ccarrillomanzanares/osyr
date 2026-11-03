@@ -1,0 +1,9 @@
+config BR2_PACKAGE_ALSA_UCM_CONF
+	bool "alsa-ucm-conf"
+	depends on BR2_PACKAGE_ALSA_LIB
+	help
+	  ALSA UCM profiles: they describe how to use each card's speakers,
+	  headphones and microphones. Essential with SOF (digital microphones
+	  on Intel laptops); PipeWire/WirePlumber use them.
+
+	  https://github.com/alsa-project/alsa-ucm-conf

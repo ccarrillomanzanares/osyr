@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""OSYR — first start: language, keyboard, time zone, own password and
+network. Started by sway before the chat as long as
+~/.local/state/osyr/firstboot-done does not exist. Enter keeps each value as is.
+
+The image ships with osyr/osyr and root/osyr: passwords anyone knows, with
+sudo. Here the osyr password is changed and root is locked (administration is
+done with sudo). Passwords never go on the command line.
+"""
+import getpass
+import json
+import os
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, "/usr/lib/osyr")
+from osyr.term import read_password  # noqa: E402
+
+DEFAULT_PASSWORD = "osyr"
+FLAG = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"),
+                    "osyr", "firstboot-done")
+MIN_LEN = 6
+
+
+def say(text, delay=0.02):
+    for ch in text:
+        sys.stdout.write(ch)
+        sys.stdout.flush()
+        if ch != " ":
+            time.sleep(delay)
+    print()
+
+
+def ask(prompt, default=""):
+    try:
+        ans = input(prompt).strip()
+    except EOFError:
+        return default
+    return ans or default
+
+
+SUDO_PASSWORD = DEFAULT_PASSWORD  # changes if the user sets their own
+
+LANGUAGES = [("es_ES.UTF-8", "Español"), ("en_US.UTF-8", "English"), ("ca_ES.UTF-8", "Català"),
+             ("fr_FR.UTF-8", "Français"), ("de_DE.UTF-8", "Deutsch"), ("it_IT.UTF-8", "Italiano"),
+             ("pt_PT.UTF-8", "Português")]
+# (sway xkb layout, text console keymap, name)
+KEYBOARDS = [("es", "es", "Español (España)"), ("latam", "la-latin1", "Español (Latinoamérica)"),
+             ("us", "us", "English (US)"), ("gb", "uk", "English (UK)"), ("fr", "fr", "Français"),
+             ("de", "de", "Deutsch"), ("it", "it", "Italiano"), ("pt", "pt-latin1", "Português")]
+TIMEZONES = ["Europe/Madrid", "Atlantic/Canary", "Europe/Lisbon", "Europe/London", "Europe/Paris",
+             "Europe/Berlin", "Europe/Rome", "America/Mexico_City", "America/Bogota",
+             "America/Argentina/Buenos_Aires", "America/New_York", "UTC"]
+ZONEINFO = "/usr/share/zoneinfo"
+
+
+def pick(title, items, current):
+    """Numbered list; returns the chosen index or None (Enter = keep it)."""
+    for i, label in enumerate(items, 1):
+        print(f'{i:>2}  {label}{"   <- now" if label == current else ""}')
+    while True:
+        ans = ask(f"{title} (number, Enter to keep): ")
+        if not ans:
+            return None
+        if ans.isdigit() and 1 <= int(ans) <= len(items):
+            return int(ans) - 1
+        print("Not in the list.")
+
+
+def write_root_file(path, content):
+    ok, err = sudo(["sh", "-c", f"cat > {path}"], SUDO_PASSWORD, content)
+    if not ok:
+        print(f"Could not write {path}: {err}")
+    return ok
+
+
+def set_language():
+    say("LANGUAGE")
+    cur = os.environ.get("LANG", "")
+    i = pick("Language", [n for _, n in LANGUAGES], next((n for c, n in LANGUAGES if c == cur), ""))
+    if i is not None and write_root_file("/etc/locale.conf", f"LANG={LANGUAGES[i][0]}\n"):
+        print(f"{LANGUAGES[i][1]}: applied at the next login.")
+
+
+def set_keyboard():
+    say("KEYBOARD")
+    conf = os.path.expanduser("~/.config/sway/config.d/10-osyr-keyboard.conf")
+    try:
+        cur = open(conf).read().split("xkb_layout")[1].split()[0]
+    except (OSError, IndexError):
+        cur = "es"
+    i = pick("Keyboard", [n for _, _, n in KEYBOARDS], next((n for x, _, n in KEYBOARDS if x == cur), ""))
+    if i is None:
+        return
+    xkb, console, name = KEYBOARDS[i]
+    os.makedirs(os.path.dirname(conf), exist_ok=True)
+    with open(conf, "w") as f:
+        f.write(f"# OSYR — keyboard chosen at first start\ninput type:keyboard xkb_layout {xkb}\n")
+    subprocess.run(["swaymsg", "input", "type:keyboard", "xkb_layout", xkb], capture_output=True)
+    write_root_file("/etc/vconsole.conf", f"KEYMAP={console}\n")
+    print(f"{name}: applied.")
+
+
+def set_timezone():
+    say("TIME ZONE")
+    try:
+        cur = os.path.relpath(os.path.realpath("/etc/localtime"), ZONEINFO)
+    except ValueError:
+        cur = ""
+    print(f"Now: {cur}  ({time.strftime('%H:%M')})")
+    i = pick("Time zone", TIMEZONES + ["Other (type its name)"], cur)
+    if i is None:
+        return
+    tz = TIMEZONES[i] if i < len(TIMEZONES) else ask("Name, e.g. America/Lima: ")
+    if not tz or not os.path.isfile(os.path.join(ZONEINFO, tz)):
+        print("Unknown time zone; left as it was.")
+        return
+    ok, err = sudo(["ln", "-sf", os.path.join(ZONEINFO, tz), "/etc/localtime"], SUDO_PASSWORD)
+    print(f"{tz}: applied." if ok else f"Could not change it: {err}")
+
+
+def sudo(args, password, stdin_rest="", retry=True):
+    """sudo -S: the first line of input is the sudo password. With -k it always
+    asks for it: if sudo had it cached it would not read that line and it would
+    reach the command (chpasswd, as if it were a user)."""
+    global SUDO_PASSWORD
+    try:
+        p = subprocess.run(["sudo", "-k", "-S", "-p", "", *args], input=f"{password}\n{stdin_rest}",
+                           capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return False, "it took too long"
+    err = (p.stderr or p.stdout).strip()
+    if p.returncode != 0 and retry and password == SUDO_PASSWORD and not stdin_rest and \
+            ("Sorry, try again" in err or "incorrect password" in err):
+        # no longer the default one (--force after changing it): ask once and remember it
+        SUDO_PASSWORD = read_password("Your current password: ")
+        return sudo(args, SUDO_PASSWORD, retry=False)
+    return p.returncode == 0, err
+
+
+def set_password():
+    global SUDO_PASSWORD
+    say("PASSWORD")
+    print(f'This computer still uses the default password "{DEFAULT_PASSWORD}", which anyone knows.')
+    while True:
+        if ask("Choose your own password now? [Y/n] ", "y").lower() not in ("y", "yes", "s", "si", "sí"):
+            print("Skipped. You can do it later with: passwd")
+            return False
+        current = SUDO_PASSWORD
+        new = read_password("New password: ")
+        if len(new) < MIN_LEN:
+            print(f"Too short: at least {MIN_LEN} characters.")
+            continue
+        if new != read_password("Repeat it: "):
+            print("They do not match. Try again.")
+            continue
+        user = getpass.getuser()
+        ok, err = sudo(["chpasswd"], current, f"{user}:{new}\n")
+        if not ok:  # it was no longer the default one
+            current = read_password("Current password: ")
+            ok, err = sudo(["chpasswd"], current, f"{user}:{new}\n")
+        if not ok:
+            print(f"Could not change it: {err or 'wrong current password'}")
+            continue
+        SUDO_PASSWORD = new
+        locked, _ = sudo(["passwd", "-l", "root"], new)
+        print("Password changed." + (" The root account is locked; use sudo." if locked else ""))
+        return True
+
+
+def disclaimer():
+    """Usage notice, once, before anything else (the chat repeats it at every start)."""
+    say("BEFORE YOU START")
+    print("OSYR is still in development, so it can make mistakes, and so can its AI assistant:\n"
+          "check what it says, and what it is going to do, before you confirm.\n"
+          "Do not give it sensitive data (bank or health details, other people's personal data)\n"
+          "and do not use it for delicate operations (banking, payments, important files).\n"
+          "OSYR is provided \"as is\", without warranty of any kind: you use it at your own risk,\n"
+          "and its authors are not liable for any damage or loss of data (MIT License).\n"
+          "With a remote AI provider, what you write is sent to that provider.")
+    ask("Press Enter to continue. ")
+
+
+def osyr(*args, secret=None):
+    """secret: through stdin (with --password-stdin), never on the command line."""
+    try:
+        p = subprocess.run(["osyr", *args, "--json"], capture_output=True, text=True, timeout=120,
+                           input=(secret + "\n") if secret is not None else None)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "code": "TIMEOUT", "hint": "It took too long."}
+    try:
+        return json.loads(p.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"ok": False, "code": "BAD_OUTPUT"}
+
+
+def network():
+    say("NETWORK")
+    st = osyr("net", "status")
+    if st.get("ok"):
+        print("Already connected to the Internet.")
+        return True
+    while True:
+        print("Looking for wifi networks (up to a minute on slow computers)...")
+        scan = osyr("net", "wifi", "scan")
+        nets = (scan.get("data") or {}).get("networks") or []
+        if not nets:
+            print(scan.get("hint") or "No wifi networks found.")
+            if ask("Try again? [Y/n] ", "y").lower() not in ("y", "yes", "s", "si", "sí"):
+                return False
+            continue
+        for i, n in enumerate(nets[:15], 1):
+            print(f'{i:>2}  {n["ssid"]}  ({n["security"]}, {n["signal_dbm"]} dBm)')
+        choice = ask("Number of your network (Enter to skip): ")
+        if not choice:
+            print("Skipped. Later: osyr net wifi scan / osyr net wifi connect <name>")
+            return False
+        try:
+            net = nets[int(choice) - 1]
+        except (ValueError, IndexError):
+            continue
+        args, secret = ["net", "wifi", "connect", net["ssid"]], None
+        if net["security"] != "open" and not net["known"]:
+            secret = read_password(f'Password for "{net["ssid"]}": ')
+            args.append("--password-stdin")
+        print("Connecting...")
+        res = osyr(*args, secret=secret)
+        if res.get("ok"):
+            print(f'Connected ({(res.get("data") or {}).get("ipv4")}).')
+            return True
+        print(f'Could not connect: {res.get("code")}. {res.get("hint") or ""}')
+
+
+def main():
+    if os.path.exists(FLAG) and "--force" not in sys.argv:
+        return 0
+    os.system("clear")
+    say("OSYR FIRST START", 0.05)
+    print("A few quick questions. Press Enter to keep what is there.\n")
+    try:
+        disclaimer()
+        for step in (set_language, set_keyboard, set_timezone, set_password, network):
+            try:
+                step()
+            except (OSError, subprocess.SubprocessError, ValueError) as e:
+                # a failing step does not repeat the whole first start on every start
+                print(f"This step failed ({e}); skipped. Run it again with: osyr-firstboot --force")
+            print()
+    except KeyboardInterrupt:
+        print("\nSkipped. Run it again with: osyr-firstboot --force")
+    os.makedirs(os.path.dirname(FLAG), exist_ok=True)
+    open(FLAG, "w").close()
+    print()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,13 @@
+# OSYR's own packages. Each new package: package/<name>/Config.in +
+# <name>.mk (+ .hash), and a line here.
+source "$BR2_EXTERNAL_OSYR_PATH/package/alsa-ucm-conf/Config.in"
+source "$BR2_EXTERNAL_OSYR_PATH/package/grim/Config.in"
+source "$BR2_EXTERNAL_OSYR_PATH/package/mako/Config.in"
+source "$BR2_EXTERNAL_OSYR_PATH/package/sherpa-onnx/Config.in"
+source "$BR2_EXTERNAL_OSYR_PATH/package/sof-bin/Config.in"
+source "$BR2_EXTERNAL_OSYR_PATH/package/swayidle/Config.in"
+source "$BR2_EXTERNAL_OSYR_PATH/package/swaylock/Config.in"
+source "$BR2_EXTERNAL_OSYR_PATH/package/whisper-cpp/Config.in"
+source "$BR2_EXTERNAL_OSYR_PATH/package/wl-clipboard/Config.in"
+source "$BR2_EXTERNAL_OSYR_PATH/package/wl-mirror/Config.in"
+source "$BR2_EXTERNAL_OSYR_PATH/package/wtype/Config.in"

@@ -1,0 +1,21 @@
+# osyr-diag receiver on the VPS. Install:
+#   sudo install -m 644 scripts/osyr-diag-receiver.service /etc/systemd/system/
+#   sudo systemctl enable --now osyr-diag-receiver
+# Apache (ccmai.org vhost on 443), with 'a2enmod proxy proxy_http':
+#   ProxyPass        /osyr-diag/ http://127.0.0.1:8091/osyr-diag/
+#   ProxyPassReverse /osyr-diag/ http://127.0.0.1:8091/osyr-diag/
+[Unit]
+Description=OSYR diagnostics receiver (osyr-diag uploads)
+After=network.target
+
+[Service]
+User=ccmai
+ExecStart=/usr/bin/python3 -I /home/ccmai/osyr/scripts/diag-server.py --dir /home/ccmai/osyr-diag
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/ccmai/osyr-diag
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

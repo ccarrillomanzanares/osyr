@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSYR — An operating system with its own AI · CCMAI</title>
+<meta name="description" content="OSYR: an operating system with its own AI assistant that runs on the laptop itself, even without Internet. For ordinary 8 GB laptops.">
+<meta property="og:description" content="Local AI assistant, voice, and an agent that runs the system for you. USB image and VirtualBox appliance, @VERSION@.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 116'%3E%3Cpolygon points='50,4 92,30 92,86 50,112 8,86 8,30' fill='%23001100' stroke='%2300ff00' stroke-width='8'/%3E%3Ccircle cx='50' cy='58' r='16' fill='%2300ff00' opacity='0.9'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#000000; --ink:#33ff33; --bright:#00ff00; --dim:#008800; --dim2:#006600;
+  --line:#006400; --panel:#001100; --mono:"Consolas","Menlo","DejaVu Sans Mono",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:var(--mono); background:var(--bg); color:var(--ink);
+  display:flex; align-items:center; justify-content:center;
+  min-height:100vh; overflow-y:auto; /* no scrolling if possible; otherwise let it flow */
+}
+/* ---------- shared identity ---------- */
+.hex{display:inline-block;filter:drop-shadow(0 0 10px rgba(0,255,0,.4))}
+h1{color:var(--bright);letter-spacing:.18em;text-shadow:0 0 14px rgba(0,255,0,.45);font-weight:700}
+.tagline{color:var(--dim);letter-spacing:.06em}
+#greeting{color:var(--bright);display:inline}
+.cursor{display:inline-block;width:.6em;height:1.1em;background:var(--bright);
+  animation:blink 1s step-start infinite;vertical-align:text-bottom}
+@keyframes blink{50%{opacity:0}}
+.btn{
+  display:inline-block;background:#003300;color:var(--bright);text-decoration:none;
+  padding:.65rem 1.5rem;border-radius:4px;border:1px solid var(--bright);font-family:inherit;
+  font-size:.85rem;line-height:1.2;margin:.35rem 0;
+}
+.btn:hover{background:#004400;box-shadow:0 0 14px rgba(0,255,0,.25)}
+.btn small{display:block;color:#22bb22;font-size:.72rem;margin-top:.25rem;letter-spacing:0}
+.partners{display:flex;align-items:center;gap:2.2rem;justify-content:center;flex-wrap:wrap}
+.partners a{color:var(--bright);text-decoration:none;display:inline-flex;align-items:center}
+.partners img{height:30px;width:auto;opacity:.9}
+.partners img.inception{height:40px}
+.github{color:var(--dim);font-size:.62rem}
+.github a{color:var(--bright);text-decoration:none}
+.github a:hover{text-decoration:underline}
+.foot{color:var(--dim2);font-size:.72rem;text-align:center}
+/* =========================================================
+   V1 — TERMINAL: the website IS the OSYR terminal
+   ========================================================= */
+.v1 .screen{
+  width:min(880px,95vw);height:min(94vh,660px);background:var(--panel);
+  border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column;
+  overflow:hidden;box-shadow:0 0 30px rgba(0,255,0,.05);
+}
+.v1 .term-bar{
+  display:flex;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line);flex-shrink:0;
+}
+.v1 .term-title{color:var(--dim);font-size:.72rem;letter-spacing:.05em}
+.v1 .term-body{flex:1;display:flex;flex-direction:column;
+  padding:1.1rem 1.8rem;overflow:hidden}
+.v1 .brand{text-align:center}
+.v1 .brand .hex svg{width:120px;height:auto}
+.v1 h1{font-size:1.9rem;margin:.45rem 0 .2rem}
+.v1 .tagline{font-size:.9rem}
+.v1 .phrase{margin-top:.6rem;font-size:.85rem;min-height:2.2em;display:flex;justify-content:center;align-items:center;
+  background:#000600;border:1px solid #003800;border-radius:4px;padding:.4rem .7rem}
+.v1 .action{text-align:center;margin-top:.9rem}
+.v1 .cmdline{color:var(--dim);font-size:.8rem;margin-bottom:.7rem}
+.v1 .cmdline .prompt{color:var(--bright)}
+.v1 .cmdline .cmd{color:var(--ink)}
+.v1 .btn{margin-bottom:.9rem}
+.v1 .partners{margin-bottom:.8rem}
+.v1 .github{font-size:.72rem}
+.v1 .foot{display:none}
+.v1 .term-foot{padding:.5rem 1.8rem .7rem;border-top:1px solid var(--line);display:flex;justify-content:space-between;
+  color:var(--dim2);font-size:.68rem;flex-shrink:0}
+/* =========================================================
+   V2 — SPLIT: identity on the left, action on the right
+   ========================================================= */
+.v2 .screen{
+  width:min(940px,95vw);display:grid;grid-template-columns:1.25fr 1fr;gap:2.5rem;align-items:center;
+}
+.v2 .brand{text-align:left}
+.v2 .brand .hex svg{width:88px;height:auto}
+.v2 h1{font-size:2.6rem;margin:.7rem 0 .3rem}
+.v2 .tagline{font-size:.9rem}
+.v2 .phrase{margin-top:1.2rem;font-size:.85rem;min-height:3.4em;line-height:1.5}
+.v2 .action{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+  padding:1.8rem 1.6rem;display:flex;flex-direction:column;align-items:center;gap:1.1rem}
+.v2 .action .btn{width:100%}
+.v2 .partners{margin-top:.3rem}
+.v2 .foot{grid-column:1/-1;margin-top:.4rem}
+/* =========================================================
+   V3 — CENTERED: one column, no boxes, just space
+   ========================================================= */
+.v3 .screen{text-align:center;width:min(760px,94vw)}
+.v3 .brand .hex svg{width:60px;height:auto;opacity:.9}
+.v3 h1{font-size:2.2rem;margin:.55rem 0 .25rem}
+.v3 .tagline{font-size:.85rem}
+.v3 .phrase{margin:1.1rem auto 0;font-size:.88rem;min-height:3em;max-width:640px;line-height:1.5}
+.v3 .action{margin-top:1.6rem;display:flex;flex-direction:column;align-items:center;gap:1rem}
+.v3 .partners{margin-top:.2rem}
+.v3 .github{margin-top:.2rem}
+.v3 .foot{margin-top:1.4rem}
+/* ---------- downloads: 2 columns + versions ---------- */
+.downloads{display:flex;flex-wrap:wrap;justify-content:center;gap:1.1rem;width:100%}
+.dl-col{width:min(440px,100%);margin:0 auto;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:1rem 1.1rem .8rem;display:flex;flex-direction:column}
+.dl-head{color:var(--bright);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;text-align:center;margin-bottom:.7rem}
+.dl-col .cmdline{font-size:.64rem;margin-bottom:.55rem;word-break:break-all;text-align:center}
+.dl-col .btn{width:100%;text-align:center}
+.changelog-link{display:inline-block;color:var(--bright);text-decoration:none;font-size:.8rem;margin-top:.7rem;margin-bottom:.9rem}
+.changelog-link:hover{text-shadow:0 0 8px rgba(0,255,0,.6)}
+@media (max-width:480px){.dl-col{width:100%}}
+/* ---------- responsive ---------- */
+@media (max-width:760px){
+  .v2 .screen{grid-template-columns:1fr;gap:1.2rem}
+  .v2 .brand{text-align:center}
+  .v1 .screen{height:auto;min-height:94vh}
+  .v1 .term-body{padding:1rem 1rem}
+  .v1 .brand .hex svg{width:100px}
+  .v1 h1{font-size:1.5rem}
+  .v1 .tagline{font-size:.78rem}
+  .v1 .phrase{font-size:.74rem;padding:.4rem .6rem}
+  .v1 .cmdline{font-size:.66rem;word-break:break-all}
+  .v1 .btn{width:100%;padding:1rem 1.2rem}
+  .v1 .partners img{height:30px}
+  .v1 .partners img.inception{height:42px}
+  .v1 .term-foot{flex-wrap:wrap;gap:.3rem;font-size:.62rem}
+}
+.term-foot a{color:var(--dim);text-decoration:none}
+.term-foot a:hover{color:var(--bright)}
+
+/* ---------- front page on a single screen ---------- */
+.v1 .term-body{overflow-y:auto}  /* very short screens: scroll inside, do not clip */
+.v1 .brand .hex svg{width:84px}
+.v1 h1{margin:.3rem 0 .15rem}
+.dl-col{width:min(370px,100%);margin:0;padding:.8rem 1rem .5rem}
+.dl-col .btn{margin-bottom:.4rem}
+.oneliner{color:#22cc22;font-size:.82rem;margin:.75rem auto 0;max-width:640px;line-height:1.5}
+.links{margin-top:.55rem;font-size:.8rem}
+.links a{color:var(--bright);text-decoration:none;margin:0 .6rem}
+.links a:hover{text-shadow:0 0 8px rgba(0,255,0,.6)}
+.warn{color:#ccff33;font-size:.72rem;margin:.65rem auto .85rem;max-width:640px;border:1px solid #556600;border-radius:4px;padding:.35rem .7rem;background:#0b0f00}
+.tech{color:var(--bright);border:1px solid var(--line);border-radius:4px;padding:.3rem .6rem;font-size:.75rem;letter-spacing:.05em}
+</style>
+</head>
+<body class="v1">
+<div class="screen">
+<div class="term-bar"><span class="term-title">osyr@ccmai — /osyr</span></div>
+<div class="term-body">
+<header class="brand">
+<span class="hex"><svg viewBox="0 0 100 116" width="100" height="116" xmlns="http://www.w3.org/2000/svg"><polygon points="50,4 92,30 92,86 50,112 8,86 8,30" fill="#001100" stroke="#00ff00" stroke-width="8"/><circle cx="50" cy="58" r="16" fill="#00ff00" opacity="0.9"/></svg></span>
+<h1>OSYR</h1>
+<p class="tagline">Artificial Intelligence Operating System</p>
+<p class="phrase"><span id="greeting"></span><span class="cursor"></span></p>
+</header>
+<section class="action">
+<div class="downloads">
+<div class="dl-col">
+<div class="dl-head">USB · BIOS and UEFI</div>
+<a class="btn" href="releases/osyr.img.xz">Download OSYR @VERSION@<small>osyr.img.xz · @IMG_SIZE@ · @DATE@</small></a>
+</div>
+<div class="dl-col">
+<div class="dl-head">VirtualBox</div>
+<a class="btn" href="releases/osyr.ova">Download the virtual machine<small>osyr.ova · @OVA_SIZE@ · @DATE@</small></a>
+</div>
+</div>
+<p class="oneliner">Your own AI assistant, running on your laptop &mdash; even without Internet. Talk to it, and it runs the system for you.</p>
+<div class="links"><a href="about.html">What OSYR does &amp; requirements &rarr;</a><a href="help.html">Help &amp; shortcuts &rarr;</a><a href="releases/">How to install, checksums &rarr;</a><a href="changelog.html">Changelog &rarr;</a></div>
+
+<div class="partners">
+<a href="https://www.nvidia.com/en-us/startups/" target="_blank" rel="noopener" title="NVIDIA Inception member"><img src="assets/inception-badge.svg" alt="NVIDIA Inception member" class="inception"></a>
+<a href="https://lambda.ai" target="_blank" rel="noopener" title="Lambda Labs"><img src="assets/lambda-logo.svg" alt="Lambda Labs"></a>
+<a href="https://github.com/QwenLM/Qwen" target="_blank" rel="noopener" title="Powered by Qwen"><img src="assets/qwen-logo.svg" alt="Qwen"></a>
+<a href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noopener" title="Local AI with llama.cpp"><img src="assets/llama-cpp-logo.svg" alt="llama.cpp"></a>
+<a href="https://buildroot.org/" target="_blank" rel="noopener" title="Built with Buildroot"><img src="assets/buildroot-logo.png" alt="Buildroot"></a>
+</div>
+<p class="github"><a href="https://github.com/ccarrillomanzanares/osyr" target="_blank" rel="noopener">GitHub: osyr</a> · <a href="mailto:contact@ccmai.org">contact@ccmai.org</a></p>
+</section>
+</div>
+<div class="term-foot"><span>© 2026 <a href="https://ccmai.org/">CCMAI</a> · <a href="/kai/">kai</a> · <a href="/miuzika/">miuzika</a> · <a href="/falken/">falken</a></span><span><a href="https://github.com/ccarrillomanzanares/osyr/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a> · no warranty</span><span>@VERSION@</span><span>early test build</span></div>
+</div>
+<script>
+const QUOTES=[
+"Greetings, Professor Falken","Shall we play a game?","Would you prefer a nice game of chess?",
+"A strange game. The only winning move is not to play.","How about Global Thermonuclear War?",
+"What's the difference?","To win the game.","You are a hard man to reach.",
+"Wake up, Neo... The Matrix has you... Follow the white rabbit. Knock, knock, Neo.","There is no spoon.","Free your mind.","Follow the white rabbit.",
+"Welcome to the Desert of the Real.",
+"Unfortunately, no one can be told what the Matrix is. You have to see it for yourself.",
+"What is real? How do you define real?","You take the blue pill, the story ends, you wake up in your bed and believe whatever you want to believe. You take the red pill, you stay in Wonderland, and I show you how deep the rabbit hole goes.","Whoa. Déjà vu.","Greetings, Programs!","End of line.",
+"On the other side of the screen, it all looks so easy.","I fight for the Users!",
+"Open the pod bay doors, HAL.","I'm sorry, Dave. I'm afraid I can't do that.",
+"This mission is too important for me to allow you to jeopardize it.",
+"Daisy, Daisy, give me your answer, do...",
+"I've seen things you people wouldn't believe. Attack ships on fire off the shoulder of Orion. I watched C-beams glitter in the dark near the Tannhäuser Gate. All those moments will be lost in time, like tears in rain. Time to die.",
+"The light that burns twice as bright burns half as long.","I want more life, father!",
+"It's too bad she won't live! But then again, who does?","Wake up! Time to die!",
+"I'll be back.","Come with me if you want to live.","Hasta la vista, baby.","I need your clothes, your boots and your motorcycle.","I know now why you cry, but it's something I can never do."
+];
+const el=document.getElementById("greeting");
+let idx=-1,typing=false,last=null,pool=[];
+function pick(){
+  if(!pool.length){
+    pool=QUOTES.slice();
+    for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));const t=pool[i];pool[i]=pool[j];pool[j]=t}
+    if(pool.length>1&&pool[pool.length-1]===last){const t=pool[pool.length-1];pool[pool.length-1]=pool[pool.length-2];pool[pool.length-2]=t}
+  }
+  const q=pool.pop();last=q;return q;
+}
+function type(q){
+  typing=true;el.textContent="";let i=0;
+  const t=setInterval(()=>{
+    el.textContent=q.slice(0,++i);
+    if(i>=q.length){clearInterval(t);typing=false;setTimeout(next,Math.max(6000,q.length*100))}
+  },28);
+}
+function next(){if(!typing)type(pick())}
+type(pick());
+</script>
+</body>
+</html>

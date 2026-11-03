@@ -1,0 +1,9 @@
+#!/bin/sh
+# OSYR — Super+O: type an address or what to search for and open it in the
+# browser (osyr web open). Same look as the launcher (Super+D).
+q=$(printf '' | wmenu -p "Open or search:" -f "DejaVu Sans Mono 10" \
+    -N 000000 -n 00ff66 -S 00ff66 -s 000000) || exit 0
+[ -n "$q" ] || exit 0
+out=$(osyr web open "$q" --json 2>&1) && exit 0
+python3 -I -c 'import sys; sys.path.insert(0, "/usr/lib/osyr"); from osyr import notify
+notify.send("Browser", sys.argv[1][-200:])' "$out"

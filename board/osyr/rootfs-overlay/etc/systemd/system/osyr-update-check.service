@@ -1,0 +1,27 @@
+[Unit]
+Description=OSYR update check (tells the desktop, installs nothing)
+Documentation=file:/etc/osyr/update.conf
+# No network-online.target: wait-online waits for every interface (including
+# unplugged Ethernet) and failed after 2 min. Without a network, it waits for tomorrow.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/osyr update code notify
+# Do not compete with the model or the session
+Nice=10
+IOSchedulingClass=idle
+# Runs as root (git in /var/lib/osyr/src; the desktop notice switches to osyr),
+# but without writing outside its own paths or touching devices or the kernel.
+# ProtectHome=read-only: it checks the free space in /home/.osyr-update.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/osyr /run/osyr-update
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictRealtime=yes
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_CHOWN CAP_FOWNER

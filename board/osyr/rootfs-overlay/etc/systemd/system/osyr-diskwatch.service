@@ -1,0 +1,12 @@
+# OSYR — shows an on-screen warning for disk or USB errors in the kernel log.
+[Unit]
+Description=OSYR: warn about disk and USB errors
+
+[Service]
+ExecStart=/usr/lib/osyr/osyr-diskwatch
+Restart=on-failure
+RestartSec=30
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

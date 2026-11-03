@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<!-- OSYR — pairing page (served by scripts/diag-server.py at /osyr-diag/pair).
+     The API key is encrypted here, in the browser, with the laptop's public key
+     (RSA-OAEP, SHA-256): the server only sees ciphertext. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>OSYR · Connect an AI provider</title>
+<style>
+  :root { color-scheme: light dark; --accent: #3a7bd5; }
+  body { font: 16px/1.45 system-ui, sans-serif; max-width: 30rem; margin: 0 auto; padding: 1.2rem; }
+  h1 { font-size: 1.35rem; margin: 0 0 .3rem; }
+  p.lead { margin: 0 0 1.2rem; opacity: .8; }
+  label { display: block; font-weight: 600; margin: 1rem 0 .3rem; }
+  input, select, button { width: 100%; box-sizing: border-box; font: inherit; padding: .65rem .7rem;
+    border-radius: .5rem; border: 1px solid #8884; background: transparent; color: inherit; }
+  #code { text-transform: uppercase; letter-spacing: .15em; font-family: ui-monospace, monospace; }
+  .row { display: flex; gap: .5rem; } .row input { flex: 1; } .row button { width: auto; }
+  button.primary { background: var(--accent); color: #fff; border: 0; margin-top: 1.4rem; font-weight: 600; }
+  button:disabled { opacity: .5; }
+  .hint { font-size: .85rem; opacity: .75; margin-top: .3rem; }
+  .msg { margin-top: 1rem; padding: .8rem; border-radius: .5rem; display: none; }
+  .ok { background: #2e7d3226; display: block; } .err { background: #c6282826; display: block; }
+  #custom { display: none; }
+</style>
+</head>
+<body>
+<h1>Connect an AI provider to OSYR</h1>
+<p class="lead">Your OSYR computer is showing a code. Pick the provider and paste its API key: it is
+encrypted on this device and only your OSYR computer can read it.</p>
+
+<label for="code">Code shown on OSYR</label>
+<input id="code" autocomplete="off" autocapitalize="characters" placeholder="ABC-123" maxlength="8">
+
+<label for="preset">Provider</label>
+<select id="preset"></select>
+<div class="hint" id="keylink"></div>
+
+<div id="custom">
+  <label for="url">API URL (OpenAI-compatible)</label>
+  <input id="url" type="url" placeholder="https://api.example.com/v1" autocomplete="off">
+  <label for="header">Header for the key</label>
+  <select id="header">
+    <option value="Authorization">Authorization: Bearer &lt;key&gt;</option>
+    <option value="X-API-Key">X-API-Key: &lt;key&gt;</option>
+    <option value="api-key">api-key: &lt;key&gt;</option>
+  </select>
+  <label for="ctx">Context size in tokens <span style="font-weight:400;opacity:.7">(optional: llama-server's -c; OSYR asks if the server does not say)</span></label>
+  <input id="ctx" inputmode="numeric" placeholder="32768" autocomplete="off">
+</div>
+
+<label for="key">API key</label>
+<div class="row">
+  <input id="key" type="password" autocomplete="off" spellcheck="false">
+  <button type="button" id="show">Show</button>
+</div>
+
+<label for="model">Model <span style="font-weight:400;opacity:.7">(optional: OSYR lists them)</span></label>
+<input id="model" autocomplete="off" spellcheck="false">
+
+<button class="primary" id="send">Send to my OSYR computer</button>
+<div class="msg" id="msg"></div>
+
+<script>
+const PRESETS = [
+  { name: "openai", label: "OpenAI", url: "https://api.openai.com/v1",
+    key_header: "Authorization", keys: "https://platform.openai.com/api-keys" },
+  { name: "claude", label: "Anthropic Claude", url: "https://api.anthropic.com/v1",
+    key_header: "Authorization", keys: "https://console.anthropic.com/settings/keys" },
+  { name: "gemini", label: "Google Gemini", url: "https://generativelanguage.googleapis.com/v1beta/openai",
+    key_header: "Authorization", keys: "https://aistudio.google.com/apikey" },
+  { name: "ollama", label: "Ollama Cloud", url: "https://ollama.com/v1",
+    key_header: "Authorization", keys: "https://ollama.com/settings/keys" },
+  { name: "openrouter", label: "OpenRouter", url: "https://openrouter.ai/api/v1",
+    key_header: "Authorization", keys: "https://openrouter.ai/keys" },
+  { name: "custom", label: "Other (OpenAI-compatible server)", url: "", key_header: "Authorization" },
+];
+const $ = id => document.getElementById(id);
+const base = location.pathname.replace(/\/+$/, "");
+
+for (const [i, p] of PRESETS.entries()) {
+  const o = document.createElement("option");
+  o.value = i; o.textContent = p.label; $("preset").append(o);
+}
+function presetChanged() {
+  const p = PRESETS[$("preset").value];
+  $("custom").style.display = p.name === "custom" ? "block" : "none";
+  $("keylink").textContent = "";
+  if (p.keys) {
+    const a = document.createElement("a");
+    a.href = p.keys; a.target = "_blank"; a.rel = "noopener noreferrer";
+    a.textContent = "Get a " + p.label + " API key";
+    $("keylink").append(a);
+  }
+}
+$("preset").onchange = presetChanged;
+presetChanged();
+
+const c = new URLSearchParams(location.search).get("c");
+if (c) $("code").value = c.slice(0, 3) + "-" + c.slice(3, 6);
+
+$("show").onclick = () => {
+  const k = $("key");
+  k.type = k.type === "password" ? "text" : "password";
+  $("show").textContent = k.type === "password" ? "Show" : "Hide";
+};
+
+function say(text, ok) {
+  const m = $("msg");
+  m.textContent = text; m.className = "msg " + (ok ? "ok" : "err");
+}
+
+function pemToDer(pem) {
+  const b64 = pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  return Uint8Array.from(atob(b64), ch => ch.charCodeAt(0)).buffer;
+}
+
+$("send").onclick = async () => {
+  const code = $("code").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const p = PRESETS[$("preset").value];
+  const key = $("key").value.trim();
+  const provider = {
+    name: p.name, label: p.label,
+    url: p.name === "custom" ? $("url").value.trim() : p.url,
+    key_header: p.name === "custom" ? $("header").value : p.key_header,
+    model: $("model").value.trim(),
+  };
+  // The server's -c: behind a proxy that only exposes /v1, OSYR cannot see it
+  const ctx = parseInt($("ctx").value, 10);
+  if (p.name === "custom" && ctx >= 1024) provider.context = ctx;
+  if (code.length !== 6) return say("Type the 6-character code shown on your OSYR computer.");
+  if (!/^https?:\/\//.test(provider.url)) return say("Type the API URL.");
+  if (!key && p.name !== "custom") return say("Paste the API key.");
+  if (!window.crypto || !crypto.subtle) return say("This browser cannot encrypt. Try another one.");
+  $("send").disabled = true;
+  try {
+    const r = await fetch(base + "/key?c=" + code, { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status === 404 ? "Unknown or expired code. Run 'osyr ai pair' again."
+                                                : (await r.json()).error || "Server error");
+    let key_enc = "";
+    if (key) {
+      const pub = await crypto.subtle.importKey("spki", pemToDer((await r.json()).pubkey),
+                                                { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
+      const enc = await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, new TextEncoder().encode(key));
+      key_enc = btoa(String.fromCharCode(...new Uint8Array(enc)));
+    }
+    const s = await fetch(base + "/submit", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, provider, key_enc }),
+    });
+    if (!s.ok) throw new Error((await s.json()).error || "Server error");
+    $("key").value = "";
+    say("Sent. Go back to your OSYR computer to finish.", true);
+  } catch (e) {
+    say(e.message);
+    $("send").disabled = false;
+  }
+};
+</script>
+</body>
+</html>

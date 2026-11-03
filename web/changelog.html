@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSYR — Changelog · CCMAI</title>
+<meta name="description" content="OSYR changelog — what changes in each version of OSYR.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 116'%3E%3Cpolygon points='50,4 92,30 92,86 50,112 8,86 8,30' fill='%23001100' stroke='%2300ff00' stroke-width='8'/%3E%3Ccircle cx='50' cy='58' r='16' fill='%2300ff00' opacity='0.9'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#000000;--ink:#33ff33;--bright:#00ff00;--dim:#008800;--dim2:#006600;--line:#006400;--panel:#001100;--mono:"Consolas","Menlo","DejaVu Sans Mono",monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--mono);background:var(--bg);color:var(--ink);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:2rem 1rem}
+.screen{width:min(880px,95vw);background:var(--panel);border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column;box-shadow:0 0 30px rgba(0,255,0,.05)}
+.term-bar{display:flex;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line)}
+.term-title{color:var(--dim);font-size:.72rem;letter-spacing:.05em}
+.term-body{padding:1.2rem 1.8rem;overflow:hidden}
+.brand{text-align:center}
+.hex{display:inline-block;filter:drop-shadow(0 0 10px rgba(0,255,0,.4))}
+h1{color:var(--bright);font-size:1.7rem;letter-spacing:.18em;margin:.4rem 0 .2rem;text-shadow:0 0 14px rgba(0,255,0,.45)}
+.tagline{color:var(--dim);font-size:.85rem;letter-spacing:.06em;margin-bottom:1.4rem}
+.changelog{max-height:70vh;overflow-y:auto;padding-right:.5rem}
+.ver-block{border-left:2px solid var(--line);padding:.2rem 0 1.2rem 1.1rem;margin-bottom:.4rem}
+.ver-block h2{color:var(--bright);font-size:1.05rem;letter-spacing:.06em;margin:.6rem 0 .4rem;text-shadow:0 0 8px rgba(0,255,0,.35)}
+.ver-block h3{color:#00cc00;font-size:.82rem;margin:.5rem 0 .3rem}
+.ver-block ul{list-style:none}
+.ver-block li{font-size:.78rem;line-height:1.5;color:#22cc22;padding-left:1rem;position:relative;margin:.15rem 0}
+.ver-block li::before{content:"›";position:absolute;left:0;color:var(--dim)}
+.ver-block code{color:var(--bright)}
+.back{display:inline-block;margin-top:1.4rem;color:var(--bright);text-decoration:none;font-size:.85rem}
+.back:hover{text-shadow:0 0 8px rgba(0,255,0,.6)}
+.term-foot{padding:.5rem 1.8rem .7rem;border-top:1px solid var(--line);display:flex;justify-content:space-between;color:var(--dim2);font-size:.68rem}
+@media(max-width:760px){.term-body{padding:1rem 1rem}.ver-block li{font-size:.72rem}}
+.dl{font-size:.72rem;color:var(--dim);margin:.1rem 0 .4rem}
+.dl a{color:var(--bright);text-decoration:none}
+.dl a:hover{text-shadow:0 0 8px rgba(0,255,0,.6)}
+.dl.retired{color:#005500}
+li.sub{margin-left:1.4rem;list-style:none;position:relative}
+li.sub:before{content:"– ";color:var(--dim)}
+.changelog{scrollbar-color:#00ff00 #002200}
+.changelog::-webkit-scrollbar{width:8px}
+.changelog::-webkit-scrollbar-track{background:#002200}
+.changelog::-webkit-scrollbar-thumb{background:#00ff00;border-radius:4px}
+.md5{color:var(--dim2);font-size:.6rem}
+.term-foot a{color:var(--dim);text-decoration:none}
+.term-foot a:hover{color:var(--bright)}
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="term-bar"><span class="term-title">osyr@ccmai — /osyr/changelog</span></div>
+  <div class="term-body">
+    <header class="brand">
+      <span class="hex"><svg viewBox="0 0 100 116" width="70" height="81" xmlns="http://www.w3.org/2000/svg"><polygon points="50,4 92,30 92,86 50,112 8,86 8,30" fill="#001100" stroke="#00ff00" stroke-width="8"/><circle cx="50" cy="58" r="16" fill="#00ff00" opacity="0.9"/></svg></span>
+      <h1>OSYR</h1>
+      <p class="tagline">changelog</p>
+    </header>
+    <div class="changelog">
+
+<div class="ver-block">
+<h2>v0.30.0 — 2026-11-04</h2>
+<p class="dl"><a href="/osyr/releases/">download</a> · <a href="https://github.com/ccarrillomanzanares/osyr/releases/tag/v0.30.0">source</a> · new install from the image</p>
+<p>OSYR is the new name of the system previously called AIOS, a name already used by many other projects. The version numbers continue. Releases are now signed with a new key, so a computer with AIOS installed cannot update to OSYR: write the new image to a USB stick and install it again (first ask the assistant to make a backup of your files to a USB disk).</p>
+<p>First release of OSYR: a small Linux system for 8 GB laptops with an AI assistant that runs on the computer itself. Chat and voice, a browser the assistant can read and use, files, reminders, questions about what is on the screen, Bluetooth, sound, USB disks, installation to disk with optional encryption, signed updates of code and of the whole system with a way back.</p>
+<h3>security</h3>
+<ul><li>Wi-Fi passwords, AI provider keys and the problem-report token never appear in the list of running programs: they are passed privately instead of on the command line.</li><li>When a saved Wi-Fi password has changed, the assistant asks for the new one without showing it on screen.</li><li>Every release and system image is signed with the OSYR release key; the downloads page links the signed manifest and explains how to check it.</li><li>The background update check runs with the least access it needs.</li></ul>
+<h3>fixes</h3>
+<ul><li>A stopped chat or voice process is no longer confused with an unrelated program that got the same process number.</li><li>Going back to the previous system version works from the emergency console too.</li><li>Listing disks no longer fails when a USB stick was removed without ejecting it, and USB disks with odd names are mounted in the right place.</li><li>Problem reports no longer miss an error while packing, and screenshots with spaces in their names are included.</li><li>Downloaded models are checked against their published checksums.</li></ul>
+</div>
+
+
+    </div>
+    <a class="back" href="/osyr/">← back to OSYR</a>
+  </div>
+  <div class="term-foot"><span>© 2026 <a href="https://ccmai.org/">CCMAI</a> · <a href="/kai/">kai</a> · <a href="/miuzika/">miuzika</a> · <a href="/falken/">falken</a></span><span><a href="https://github.com/ccarrillomanzanares/osyr/blob/main/LICENSE">MIT License</a> · no warranty</span><span>@VERSION@</span></div>
+</div>
+</body>
+</html>

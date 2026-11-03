@@ -1,0 +1,15 @@
+#!/bin/sh
+# OSYR — screenshot (Print Screen key) in ~/Pictures/Screenshots.
+# osyr-diag uploads the latest ones when asking for support. The 50 most recent are kept.
+DIR="$HOME/Pictures/Screenshots"
+mkdir -p "$DIR"
+# From a terminal outside sway (tty, serial console): sway's socket
+[ -n "$WAYLAND_DISPLAY" ] || export WAYLAND_DISPLAY=wayland-1
+[ -n "$XDG_RUNTIME_DIR" ] || export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+f="$DIR/osyr-$(date +%Y%m%d-%H%M%S).png"
+if ! grim "$f"; then
+    echo "osyr-screenshot: grim failed (is sway running?)" >&2
+    exit 1
+fi
+ls -1t "$DIR"/osyr-*.png 2>/dev/null | tail -n +51 | while read -r old; do rm -f "$old"; done
+echo "$f"

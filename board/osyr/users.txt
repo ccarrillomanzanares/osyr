@@ -1,0 +1,7 @@
+# user uid group gid password home shell groups comment
+# uid/gid fixed at 1000: in mkusers -1 means "system uid" (<1000) and logind
+# would treat osyr as a system user (user-light session, no systemd --user).
+# Not in the input group: sway opens the devices through logind/libseat, and
+# with it any osyr process could read the raw keyboard (passwords included).
+# Password "osyr" (=osyr in clear text). To be changed in the installer (milestone 4).
+osyr 1000 osyr 1000 =osyr /home/osyr /bin/bash audio,video,render,wheel,systemd-journal OSYR user

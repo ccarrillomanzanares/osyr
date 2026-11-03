@@ -1,0 +1,109 @@
+#!/bin/sh
+# OSYR — starts llama-server with /etc/osyr/llama.conf.
+#   osyr-llama          the agent's model (osyr-llama.service, port 8083)
+#   osyr-llama vision   the same model with the vision projector, for /look
+#                       (osyr-llama-vision.service, on 8085; systemd starts it
+#                       on first use through 8084 and stops it after 10 min idle)
+# The model is read with mmap: both processes share its pages in memory and
+# vision only adds the projector (~700 MB) and its cache while in use.
+set -e
+role=${1:-agent}
+CONF=/etc/osyr/llama.conf
+MODELS=/usr/share/osyr/models
+[ -f "$CONF" ] && . "$CONF"
+# Battery profile (osyr sys power): fewer threads while unplugged
+[ -f /run/osyr/llama-power.conf ] && . /run/osyr/llama-power.conf
+
+pick() { # pick <find pattern> <exclude mmproj: yes/no>
+    if [ "$2" = yes ]; then
+        find "$MODELS" -maxdepth 1 -name "$1" ! -name '*mmproj*' | sort | head -n1
+    else
+        find "$MODELS" -maxdepth 1 -name "$1" | sort | head -n1
+    fi
+}
+
+if [ -n "$MODEL" ] && [ -f "$MODELS/$MODEL" ]; then
+    model="$MODELS/$MODEL"
+else
+    [ -n "$MODEL" ] && echo "osyr-llama: $MODELS/$MODEL not found, autodetecting" >&2
+    model=$(pick '*.gguf' yes)
+fi
+if [ -z "$model" ]; then
+    echo "osyr-llama: no model in $MODELS (build with 'make model' first)" >&2
+    exit 1
+fi
+
+if [ -n "$MMPROJ" ] && [ -f "$MODELS/$MMPROJ" ]; then
+    mmproj="$MODELS/$MMPROJ"
+else
+    mmproj=$(pick '*mmproj*.gguf' no)
+fi
+
+# VISION=ondemand (default): the agent's server runs without the projector. That
+# way it uses less RAM and llama.cpp can save the fixed prompt to disk (it does
+# not allow it with --mmproj). VISION=always: a single server with everything, as before.
+vision=${VISION:-ondemand}
+
+# Context: "auto" = what fits in this computer's RAM, capped for speed
+# (16K with 8 GB, 32K with 12 GB or more); see /usr/lib/osyr/osyr/gguf.py
+ctx=${CTX:-auto}
+if [ "$ctx" = auto ]; then
+    ctx=$(python3 -I /usr/lib/osyr/osyr/gguf.py auto "$model" "$mmproj") || ctx=16384
+fi
+
+if [ "$role" = vision ]; then
+    # A screenshot scaled to 1024 px is ~1,000-1,500 tokens; 8K is plenty
+    ctx=8192
+    [ -n "$mmproj" ] || { echo "osyr-llama: no vision projector in $MODELS" >&2; exit 1; }
+fi
+
+threads=${THREADS:-auto}
+if [ "$threads" = auto ]; then
+    threads=$(lscpu -p=Core,Socket 2>/dev/null | grep -v '^#' | sort -u | wc -l)
+    [ "$threads" -gt 0 ] 2>/dev/null || threads=$(nproc)
+fi
+# Prompt: here compute power does count and SMT threads help. All but one,
+# so the graphical session stays responsive.
+threads_batch=${THREADS_BATCH:-auto}
+if [ "$threads_batch" = auto ]; then
+    threads_batch=$(( $(nproc) - 1 ))
+    [ "$threads_batch" -ge "$threads" ] || threads_batch=$threads
+fi
+
+# Two slots sharing the context cache (--kv-unified: each can use the whole
+# context, with no extra memory): the chat goes to 0 and /look and diag to 1, so
+# they do not wipe the chat's already processed prompt (minutes on a slow CPU).
+if [ "$role" = vision ]; then
+    set -- -m "$model" --mmproj "$mmproj" \
+        --host 127.0.0.1 --port "${VISION_PORT:-8085}" \
+        -c "$ctx" -t "$threads" -tb "$threads_batch" -np 1 --jinja
+    echo "osyr-llama vision: $(basename "$model") + $(basename "$mmproj"), ctx $ctx"
+    # shellcheck disable=SC2086
+    exec /usr/bin/llama-server "$@" $EXTRA_ARGS
+fi
+set -- -m "$model" \
+    --host "${HOST:-127.0.0.1}" --port "${PORT:-8083}" \
+    -c "$ctx" -t "$threads" -tb "$threads_batch" -np 2 --kv-unified --jinja
+[ "$vision" = always ] || mmproj=
+[ -n "$mmproj" ] && set -- "$@" --mmproj "$mmproj"
+
+# Template with a stable history so the prompt cache works across messages
+# (see stable_template in gguf.py). If the model does not need it, its own one.
+tpl="${RUNTIME_DIRECTORY:-/tmp}/chat-template.jinja"
+if python3 -I /usr/lib/osyr/osyr/gguf.py template "$model" "$tpl" 2>/dev/null; then
+    set -- "$@" --chat-template-file "$tpl"
+fi
+
+# State of the agent's fixed prompt (system + tools) saved on disk:
+# osyr-chat restores it and the first message does not wait for it to be processed
+# (~50 s on the HP 15s). See warm_prefix in osyr-chat. The 3 most recent are kept.
+slots="${CACHE_DIRECTORY:-/var/cache/osyr-llama}/slots"
+if mkdir -p "$slots" 2>/dev/null; then
+    # shellcheck disable=SC2012  # our own names, no spaces
+    ls -t "$slots"/*.bin 2>/dev/null | tail -n +4 | xargs -r rm -f
+    set -- "$@" --slot-save-path "$slots"
+fi
+
+echo "osyr-llama: $(basename "$model")${mmproj:+ + $(basename "$mmproj")}, ctx $ctx, $threads threads ($threads_batch for the prompt)"
+# shellcheck disable=SC2086  # EXTRA_ARGS is word-split on purpose
+exec /usr/bin/llama-server "$@" $EXTRA_ARGS

@@ -1,0 +1,19 @@
+[Unit]
+Description=OSYR firewall (nftables: nothing comes in unless asked for)
+Documentation=file:/etc/nftables.conf
+# Before there is any network: there is never a moment with everything open
+DefaultDependencies=no
+Wants=network-pre.target
+Before=network-pre.target shutdown.target
+After=local-fs.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/nftables.conf
+ExecReload=/usr/sbin/nft -f /etc/nftables.conf
+ExecStop=/usr/sbin/nft destroy table inet osyr
+
+[Install]
+WantedBy=sysinit.target

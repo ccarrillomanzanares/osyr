@@ -1,0 +1,33 @@
+#!/bin/sh
+# OSYR — compressed swap in RAM (zram), half the memory and at most 8 GiB.
+# The model takes ~6 GiB of 8 and there is no swap partition: without this, when
+# memory fills up the system freezes or the kernel kills something bluntly.
+# Little-used memory is compressed (~2:1) instead of being lost.
+# osyr-zram start | stop   (called by osyr-zram.service)
+set -e
+dev=/sys/block/zram0
+case "$1" in
+start)
+    [ -e /etc/osyr/zram.disable ] && { echo "osyr-zram: disabled"; exit 0; }
+    modprobe zram num_devices=1
+    [ "$(cat $dev/disksize)" = 0 ] || { echo "osyr-zram: already set up"; exit 0; }
+    mem_kib=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+    size_kib=$((mem_kib / 2))
+    [ $size_kib -le 8388608 ] || size_kib=8388608
+    echo "${size_kib}K" > $dev/disksize
+    mkswap /dev/zram0 >/dev/null
+    swapon -p 100 /dev/zram0
+    echo "osyr-zram: $((size_kib / 1024)) MiB, $(cat $dev/comp_algorithm | sed 's/.*\[\(.*\)\].*/\1/')"
+    ;;
+stop)
+    # At shutdown systemd has already removed the swap (dev-zram0.swap) and the reset
+    # can return EBUSY for a moment: none of this must leave the service failed
+    swapoff /dev/zram0 2>/dev/null || true
+    [ -e $dev/reset ] && { echo 1 > $dev/reset 2>/dev/null || true; }
+    exit 0
+    ;;
+*)
+    echo "usage: osyr-zram start|stop" >&2
+    exit 2
+    ;;
+esac

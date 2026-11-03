@@ -1,0 +1,259 @@
+#!/bin/sh
+# OSYR — collects logs and machine data into a .tar.gz and uploads it to the
+# diagnostics receiver (/etc/osyr/diag.conf). Works from the tty1 shell even
+# if sway has not started.
+#   osyr-diag                   collect and upload; asks before including the
+#                               last 3 screenshots (without a terminal, leaves them out)
+#   osyr-diag --local           collect only (leaves the .tar.gz in /tmp)
+#   osyr-diag --screenshots     include the screenshots without asking
+#   osyr-diag --no-screenshots  no screenshots, without asking
+#   osyr-diag --quick           no self-test or model measurement (osyr-hwtest
+#                               has just done them, and calls it this way)
+#   osyr-diag --message TEXT    the problem description, without asking for it
+#   osyr-diag --chats|--no-chats  include (or not) the latest conversations with the
+#                               assistant this time; default is SEND_CHATS from
+#                               /etc/osyr/diag.conf or ~/.config/osyr/diag.conf (no)
+# With a terminal (and without --quick or --message) it first asks what happened:
+# what the person writes goes into description.txt, the first thing to read.
+# It never collects AI provider keys, wifi passwords or the text of
+# reminders (only how many there are). Conversations only if asked for.
+CONF=/etc/osyr/diag.conf
+TOKEN_FILE=/etc/osyr/diag.token
+SEND_CHATS=no
+[ -f "$CONF" ] && . "$CONF"
+USER_CONF="${XDG_CONFIG_HOME:-$HOME/.config}/osyr/diag.conf"
+# (if the user's file lacks the line, the system value applies)
+if [ -f "$USER_CONF" ]; then
+    u=$(sed -n 's/^SEND_CHATS=//p' "$USER_CONF" | tail -1)
+    [ -n "$u" ] && SEND_CHATS=$u
+fi
+
+upload=yes
+shots=ask
+quick=no
+message=
+asked=no
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --local) upload=no ;;
+        --screenshots) shots=yes ;;
+        --no-screenshots) shots=no ;;
+        --quick) quick=yes ;;
+        --chats) SEND_CHATS=yes ;;
+        --no-chats) SEND_CHATS=no ;;
+        --message) [ $# -ge 2 ] || { echo "osyr-diag: --message needs a text" >&2; exit 2; }
+                   message=$2; asked=yes; shift ;;
+        *) echo "usage: osyr-diag [--local] [--quick] [--message TEXT] [--chats|--no-chats] [--screenshots|--no-screenshots]" >&2; exit 2 ;;
+    esac
+    shift
+done
+
+host=$(hostname 2>/dev/null || echo osyr)
+name="osyr-diag-$host-$(date +%Y%m%d-%H%M%S)"
+work=$(mktemp -d) || exit 1
+dir="$work/$name"
+mkdir -p "$dir"
+trap 'rm -rf "$work"' EXIT
+
+# run <file> <command...>: saves output and errors; nothing can hang the
+# collection (limit RUN_TIMEOUT seconds, 20 by default)
+run() {
+    out="$dir/$1"; shift
+    { echo "\$ $*"; timeout "${RUN_TIMEOUT:-20}" "$@" 2>&1; echo "[exit $?]"; } > "$out"
+}
+copy() { # copy <source> <destination in the bundle>
+    [ -r "$1" ] && cp "$1" "$dir/$2" 2>/dev/null
+}
+
+# --- What happened, in the person's own words (before the minutes of collecting) ---
+if [ "$asked" = no ] && [ "$quick" = no ] && [ -t 0 ]; then
+    echo "OSYR diag: what happened? Write what you were doing, what you expected and what went wrong."
+    echo "  Several lines are fine; press Enter on an empty line to finish (or just Enter to skip)."
+    echo "  Do not write passwords or other private data."
+    n=0
+    while [ $n -lt 60 ] && printf "> " && IFS= read -r line && [ -n "$line" ]; do
+        message="$message$line
+"
+        n=$((n + 1))
+    done
+fi
+if [ -n "$message" ]; then
+    printf '%s\n' "$message" > "$dir/description.txt"
+    echo "OSYR diag: your description is included."
+fi
+
+echo "OSYR diag: collecting..."
+
+# --- System and hardware -----------------------------------------------------
+run system.txt sh -c 'cat /etc/os-release; echo; uname -a; echo; uptime; echo;
+    cat /proc/cmdline; echo; [ -d /sys/firmware/efi ] && echo "boot: UEFI" || echo "boot: BIOS"'
+# Which image it comes from and what code was applied later (osyr update code)
+run build-info.txt sh -c 'cat /etc/osyr/build-info; echo; echo "code-commit: $(cat /var/lib/osyr/code-commit 2>/dev/null || echo none)"'
+run cpu.txt lscpu
+run memory.txt sh -c 'free -h; echo; cat /proc/swaps; echo; cat /sys/block/zram0/mm_stat 2>/dev/null;
+    echo; cat /proc/meminfo'
+# Temperature, throttling and power profile (the model heats up the CPU)
+run power.txt sh -c 'osyr sys thermal; echo; osyr sys power; echo;
+    for p in /sys/devices/system/cpu/cpufreq/policy0/*; do printf "%s: " "${p##*/}"; cat "$p" 2>/dev/null || echo; done;
+    echo; cat /run/osyr/llama-power.conf 2>/dev/null; systemctl status osyr-power --no-pager 2>&1 | tail -5'
+# Only how many reminders there are: their text belongs to the user
+run reminders.txt sh -c 'osyr remind list --json | python3 -c "import json,sys; print(len(json.load(sys.stdin)[\"data\"][\"reminders\"]), \"reminder(s)\")"'
+run disks.txt sh -c 'lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS; echo; df -h'
+run pci.txt lspci -nnk
+run usb.txt lsusb
+run modules.txt lsmod
+run dmi.txt sh -c 'cd /sys/class/dmi/id 2>/dev/null &&
+    for f in sys_vendor product_name product_version board_name bios_vendor bios_version bios_date; do
+        printf "%s: %s\n" "$f" "$(cat $f 2>/dev/null)"; done'
+
+# --- Graphics ----------------------------------------------------------------
+run graphics.txt sh -c 'ls -l /dev/dri; echo;
+    for c in /sys/class/drm/card* /sys/class/drm/renderD*; do
+        [ -e "$c/device/driver" ] || continue
+        printf "%s: driver=%s" "${c##*/}" "$(basename "$(readlink "$c/device/driver")")"
+        [ -r "$c/status" ] && printf " status=%s" "$(cat "$c/status")"
+        echo
+    done; echo; env | grep -E "^(WLR_|XDG_|WAYLAND_)" | sort'
+run gpu-probe.txt sh -c 'EGL_LOG_LEVEL=debug osyr-gpu-probe'
+for f in "$HOME"/.local/state/osyr/*.log "$HOME"/.local/state/osyr/*.log.old; do
+    [ -f "$f" ] && cp "$f" "$dir/" 2>/dev/null
+done
+
+# --- Hardware self-test (a beep is heard: speaker -> microphone) -------------
+if [ "$quick" = no ]; then
+    echo "OSYR diag: testing the hardware (you will hear a short beep)..."
+    RUN_TIMEOUT=300
+    run selftest.txt osyr sys selftest
+    RUN_TIMEOUT=20
+    grep -E "^(OK|WARN|FAIL) " "$dir/selftest.txt" | sed 's/^/  /'
+fi
+# Last guided test (osyr-hwtest): results, no user data
+hw="${XDG_STATE_HOME:-$HOME/.local/state}/osyr/hwtest"
+copy "$hw/last.txt" hwtest.txt
+copy "$hw/last.json" hwtest.json
+
+# --- Sound -------------------------------------------------------------------
+run audio.txt sh -c 'osyr audio status; echo; wpctl status; echo; cat /proc/asound/cards;
+    echo; aplay -l; echo; arecord -l; echo; systemctl --user status pipewire pipewire-pulse wireplumber --no-pager'
+run audio-dump.json pw-dump
+# Codec (pins, jacks and their detection), ALSA controls and audio processes
+# (without root you cannot see who has the card open): with no speaker or no microphone, this shows whether it is the kernel or PipeWire
+run audio-codec.txt sh -c 'for f in /proc/asound/card*/codec#*; do echo "== $f"; cat "$f"; done'
+run audio-alsa.txt sh -c 'for c in /proc/asound/card[0-9]*; do n=${c##*card}; echo "== card $n";
+    amixer -c "$n" contents; done; echo; echo "== audio processes (two pipewire/wireplumber = two instances fighting for the card):";
+    for p in /proc/[0-9]*; do c=$(cat "$p/comm" 2>/dev/null); case "$c" in pipewire*|wireplumber)
+        echo "${p#/proc/} $c uid=$(awk "/^Uid:/{print \$2}" "$p/status")";; esac; done;
+    echo; systemctl list-units --no-pager "pipewire*" "wireplumber*"'
+
+# --- Latest screenshots (Print Screen key): what the user saw ----------------
+# They may show conversations or other private things: ask first (default
+# no) and, without a terminal to ask, leave them out.
+# (one per line: names may contain spaces)
+shotlist=$(ls -1t "$HOME"/Pictures/Screenshots/*.png 2>/dev/null | head -n 3)
+if [ -n "$shotlist" ] && [ "$shots" = ask ]; then
+    shots=no
+    if [ -t 0 ]; then
+        echo "OSYR diag: your last screenshot(s):"
+        printf '%s\n' "$shotlist" | while IFS= read -r f; do echo "  $(date -r "$f" '+%Y-%m-%d %H:%M')  ${f##*/}"; done
+        printf "Include them? They may show your conversations or other private things. [y/N] "
+        read -r ans
+        case "$ans" in y|Y|yes|s|S|si|sí) shots=yes ;; esac
+    fi
+fi
+if [ -n "$shotlist" ] && [ "$shots" = yes ]; then
+    mkdir -p "$dir/screenshots"
+    printf '%s\n' "$shotlist" | while IFS= read -r f; do
+        # up to 4 MB per screenshot, so the bundle does not get huge
+        [ "$(stat -c %s "$f")" -le 4194304 ] && cp "$f" "$dir/screenshots/"
+    done
+    echo "OSYR diag: including $(ls "$dir/screenshots" | wc -l) screenshot(s)"
+fi
+
+# --- Conversations with the assistant (only with SEND_CHATS=yes or --chats) ---------
+case "$SEND_CHATS" in yes|YES|y|true|1)
+    chats="${XDG_DATA_HOME:-$HOME/.local/share}/osyr/chats"
+    list=$(find "$chats" -maxdepth 1 -name '*.json' -mtime -7 2>/dev/null | sort -r | head -n 5)
+    if [ -n "$list" ]; then
+        mkdir -p "$dir/chats"
+        total=0
+        for f in $list; do
+            s=$(stat -c %s "$f")
+            [ $((total + s)) -le 2097152 ] || continue
+            cp "$f" "$dir/chats/" && total=$((total + s))
+        done
+        echo "OSYR diag: including your last $(ls "$dir/chats" | wc -l) conversation(s) with the assistant (SEND_CHATS=yes)"
+    fi ;;
+esac
+
+# --- systemd and journal (osyr is in systemd-journal: it sees the system one) -
+run journal-boot.txt journalctl -b --no-pager -o short-monotonic
+run journal-prev-boot.txt journalctl -b -1 --no-pager -o short-monotonic -n 3000
+run journal-errors.txt journalctl -b --no-pager -p warning
+run systemd-failed.txt systemctl --failed --no-pager
+run llama.txt sh -c 'systemctl status osyr-llama --no-pager; echo;
+    journalctl -b -u osyr-llama --no-pager -n 300; echo;
+    curl -s -m 5 http://127.0.0.1:8083/health; echo'
+copy /etc/osyr/llama.conf llama.conf
+
+# Model speed on this machine: one short answer; "timings" carries
+# tokens/s for reading the prompt (prompt_per_second) and for generation
+# (predicted_per_second). Skipped if llama-server is not ready.
+# A prompt of about 300 tokens: a short one does not show the reading speed
+bench_prompt() {
+    i=0; p=""
+    while [ $i -lt 12 ]; do
+        p="$p An operating system manages memory, processes, files and devices for the programs that run on a computer."
+        i=$((i + 1))
+    done
+    echo "$p Explain in three sentences what an operating system does."
+}
+if [ "$quick" = no ] && curl -s -m 5 http://127.0.0.1:8083/health 2>/dev/null | grep -q '"ok"'; then
+    echo "OSYR diag: measuring model speed (up to 3 min)..."
+    RUN_TIMEOUT=200
+    run bench.txt curl -s -m 180 http://127.0.0.1:8083/completion \
+        -H "Content-Type: application/json" \
+        -d "{\"prompt\": \"$(bench_prompt)\", \"n_predict\": ${BENCH_TOKENS:-64}, \"cache_prompt\": false, \"id_slot\": 1}"
+    RUN_TIMEOUT=20
+    speed=$(grep -o '"predicted_per_second":[0-9.]*' "$dir/bench.txt" | cut -d: -f2 | cut -c1-5)
+    pspeed=$(grep -o '"prompt_per_second":[0-9.]*' "$dir/bench.txt" | cut -d: -f2 | cut -c1-5)
+    [ -n "$speed" ] && echo "OSYR diag: model speed: $speed tokens/s writing, $pspeed tokens/s reading the prompt"
+fi
+run models.txt ls -l /usr/share/osyr/models
+
+# --- Network (no secrets: /var/lib/iwd holds the wifi keys and is left alone) -
+run network.txt sh -c 'ip addr; echo; ip route; echo; networkctl status --no-pager; echo;
+    cat /etc/resolv.conf; echo; iwctl station list 2>/dev/null'
+
+# --- Pack --------------------------------------------------------------------
+tarball="/tmp/$name.tar.gz"
+# The image's tar is BusyBox's, without -z: compress separately (in two steps
+# rather than a pipe, so a tar failure does not go unnoticed)
+tar -cf "/tmp/$name.tar" -C "$work" "$name" || { echo "OSYR diag: tar failed" >&2; rm -f "/tmp/$name.tar"; exit 1; }
+gzip -f "/tmp/$name.tar" || { echo "OSYR diag: gzip failed" >&2; rm -f "/tmp/$name.tar"; exit 1; }
+size=$(du -h "$tarball" | cut -f1)
+echo "OSYR diag: saved $tarball ($size)"
+[ "$upload" = yes ] || exit 0
+
+if [ -z "$URL" ] || [ ! -s "$TOKEN_FILE" ]; then
+    echo "OSYR diag: no upload configured ($CONF, $TOKEN_FILE). Copy the file by hand." >&2
+    exit 1
+fi
+echo "OSYR diag: uploading to $URL ..."
+# The token goes in a header file (-H @file): in the arguments ps would show it
+
+hdr=$(mktemp) || exit 1
+printf 'Authorization: Bearer %s\n' "$(cat "$TOKEN_FILE")" > "$hdr"
+resp=$(curl -sS -m 120 --fail-with-body \
+    -H @"$hdr" \
+    -H "X-OSYR-Host: $host" \
+    -H "Content-Type: application/gzip" \
+    --data-binary "@$tarball" "$URL" 2>&1)
+rc=$?
+rm -f "$hdr"
+if [ $rc -eq 0 ]; then
+    echo "OSYR diag: uploaded as $resp"
+else
+    echo "OSYR diag: upload failed: $resp" >&2
+    echo "OSYR diag: check the network ('ip addr', 'iwctl') and retry, or copy $tarball by hand." >&2
+    exit 1
+fi

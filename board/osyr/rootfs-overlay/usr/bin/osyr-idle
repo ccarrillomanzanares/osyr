@@ -1,0 +1,31 @@
+#!/bin/sh
+# OSYR — lock and turn off the screen when idle (swayidle).
+#   osyr-idle             runs swayidle with the time from ~/.config/osyr/idle.conf
+#                         (LOCK_MINUTES, 20 by default; 0 = never). The screen
+#                         turns off 5 min after locking. Started by sway, and
+#                         "osyr ui lock <min>" restarts it when the time changes.
+#   osyr-idle lock | screen-off | screen-on   what swayidle runs
+# While /run/osyr/no-idle exists (osyr-install during the copy) nothing is locked
+# or turned off. It always locks before suspending.
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/osyr/idle.conf"
+NO_IDLE=/run/osyr/no-idle
+
+case "$1" in
+    lock) [ -e "$NO_IDLE" ] || exec swaylock -f ;;
+    screen-off) [ -e "$NO_IDLE" ] || exec swaymsg "output * power off" ;;
+    screen-on) exec swaymsg "output * power on" ;;
+    "")
+        LOCK_MINUTES=20
+        [ -r "$CONF" ] && . "$CONF"
+        case "$LOCK_MINUTES" in ''|*[!0-9]*) LOCK_MINUTES=20 ;; esac
+        if [ "$LOCK_MINUTES" -eq 0 ]; then
+            exec swayidle -w before-sleep 'swaylock -f'
+        fi
+        s=$((LOCK_MINUTES * 60))
+        exec swayidle -w \
+            timeout "$s" 'osyr-idle lock' \
+            timeout $((s + 300)) 'osyr-idle screen-off' resume 'osyr-idle screen-on' \
+            before-sleep 'swaylock -f'
+        ;;
+    *) echo "usage: osyr-idle [lock|screen-off|screen-on]" >&2; exit 2 ;;
+esac

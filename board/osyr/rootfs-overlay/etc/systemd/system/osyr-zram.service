@@ -1,0 +1,19 @@
+[Unit]
+Description=OSYR compressed swap in RAM (zram)
+Documentation=file:/usr/bin/osyr-zram
+# No After=local-fs.target: tmp.mount comes after swap.target and before
+# local-fs.target, and the cycle made systemd drop the /tmp mount at boot
+# (bluetooth.service then mounted it late, hiding whatever was there)
+DefaultDependencies=no
+After=systemd-modules-load.service
+Before=swap.target osyr-llama.service
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/osyr-zram start
+ExecStop=/usr/bin/osyr-zram stop
+
+[Install]
+WantedBy=swap.target
