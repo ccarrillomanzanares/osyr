@@ -403,6 +403,12 @@ HP Notebook, board 82F6, AMD A8-7410 (Mullins, Radeon R5, `radeon`), 6.7 GiB, BI
 - **mesa with LLVM** (29 Oct): iris and crocus (Intel), radeonsi (AMD) and llvmpipe require it in mesa 26; iris also needs the precompiled compiler (host-mesa3d + libclc). Buildroot silently drops iris if LLVM is missing. Before (28 Oct) it went without LLVM and on Intel and modern AMD sway drew with pixman.
 - **Each image for real hardware bundles all the verified changes**: the build → download → write USB → test cycle is long. Verify on the VPS everything possible beforehand (Kconfig, build, QEMU, scripts run inside the image).
 
+## First install on the HP 15-ba (4 Nov, v0.30.0)
+
+- Diag `20261104-205124`: AMD A8-7410, 6.7 GiB, UEFI, `/home` on its own partition (not encrypted), battery absent (`BAT1`). Self-test 11/11, no failed units; sway starts and wifi connects (both pending on this machine).
+- Slow CPU: local model 1.2 tok/s generating, 3.1 tok/s reading the prompt (first reply 189 s, the next 15 s); dictation 32 s for 1.3 s of speech. A remote provider makes sense here.
+- **Bug** (reported by the user): `/pair` right after opening the chat, then "hello": the answer came only after the local model finished loading. The chat waited for the local warm-up (fixed prompt, minutes on this CPU) even with a remote provider. Fix: `wait_warm` only waits when the active provider is local. Native test `chat-switch-during-warmup` (`tests/slow_llama.py`, 60 s warm-up): fails before, passes after.
+
 ## Proposed improvements (reviewed 4 Nov)
 
 Done: firewall (`nftables`), dictation into any window (`wtype`), reminders, clipboard tool, temperature in the bar and self-test, battery profile, update timer, file and help tools, browser (WPE + cog), disk installer with encrypted `/home` and own A/B (no RAUC), prompt cache kept across messages.

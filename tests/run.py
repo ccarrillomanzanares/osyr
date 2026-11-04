@@ -293,6 +293,21 @@ def native():
                           [(rb"> $", "hello"), (rb"Remote answer", "/exit")], timeout=60)
         report("chat-remote-provider", ok and "REMOTE AI: mock" in out, out[-200:])
 
+        # Switching to a remote provider while the local model is still warming up
+        # (/pair right after opening the chat on a slow CPU): the remote answers at once
+        sport = free_port()
+        slow = subprocess.Popen(["python3", "-B", f"{ROOT}/tests/slow_llama.py", str(sport), "60"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        procs.append(slow)
+        time.sleep(1)
+        subprocess.run(cli + ["ai", "use", "local"], env=cenv, capture_output=True)
+        t0 = time.time()
+        ok, out = pty_run(chat, dict(chat_env, OSYR_LLAMA_PORT=str(sport), XDG_CONFIG_HOME=f"{tmp}/cfg"),
+                          [(rb"> $", "/ai mock"), (rb"\[y/N\]", "y"), (rb"> $", "hello"),
+                           (rb"(Remote answer|Local answer)", "/exit")], timeout=50)
+        report("chat-switch-during-warmup", ok and "Remote answer" in out and time.time() - t0 < 30,
+               f"{time.time() - t0:.0f} s; " + out[-200:])
+
         # Saved fixed prompt: the first time it is processed and saved; the second time
         # it is restored and a new message only processes the question
         probe = (f"import importlib.machinery as M, importlib.util as U, json\n"

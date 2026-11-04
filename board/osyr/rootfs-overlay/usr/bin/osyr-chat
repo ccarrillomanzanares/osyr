@@ -354,7 +354,9 @@ class Session:
             self.warm.start()
 
     def wait_warm(self):
-        if self.warm is not None:
+        # Only the local model shares its slot with the warm-up. A remote provider
+        # does not wait for it (on a slow CPU it takes minutes after /pair).
+        if self.warm is not None and self.provider["local"]:
             self.warm.join()
             self.warm = None
 
