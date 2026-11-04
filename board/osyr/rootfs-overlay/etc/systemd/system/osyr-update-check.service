@@ -14,7 +14,13 @@ IOSchedulingClass=idle
 # but without writing outside its own paths or touching devices or the kernel.
 # ProtectHome=read-only: it checks the free space in /home/.osyr-update.
 ProtectSystem=strict
-ReadWritePaths=/var/lib/osyr /run/osyr-update
+# State and Runtime directories create /var/lib/osyr and /run/osyr-update (0755
+# root, as update.py and image.py do) and make them writable: on a fresh install
+# they do not exist yet, and ReadWritePaths alone failed with 226/NAMESPACE
+# (HP 15-ba, 4 Nov). The runtime one is kept: image downloads are reused.
+StateDirectory=osyr
+RuntimeDirectory=osyr-update
+RuntimeDirectoryPreserve=yes
 ProtectHome=read-only
 PrivateTmp=yes
 PrivateDevices=yes
