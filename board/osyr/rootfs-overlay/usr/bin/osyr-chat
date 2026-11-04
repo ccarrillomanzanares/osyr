@@ -89,7 +89,7 @@ SYSTEM = (
     "(conversations only if the user turns that on or types /report chats). "
     "For how to do something in OSYR, read the help with the osyr tool ('doc <words>') "
     "and answer from it; for the full help, tell them to press Super+F1. "
-    "When the user asks you to remember something about them, save it with 'memory add'."
+    "When the user asks you to remember something about them, save it with the remember tool."
 )
 
 
@@ -129,8 +129,8 @@ TOOLS = [
             "text files) | files list [folder] | files read <path> [--from <n>]: text or PDF, in parts\n"
             "- doc <english words>: the OSYR help on a subject (shortcuts, screen lock, updates, "
             "browser, install...); use it before explaining how to do something in OSYR\n"
-            "- memory add <text>: remember a fact the user asked you to remember (never passwords) | "
-            "memory list | memory forget <n|all>\n"
+            "- memory list: what you remember about the user | memory forget <n|all> "
+            "(to save something, use the remember tool)\n"
             "- web open <address or search words>: open it in the browser and read it | web read [--more] | "
             "web go <n>: follow link n | web click <n>: press button n | web fill <n> <text>: type into field n "
             "(never passwords or card numbers: the user types those) | web back | web status | web close"),
@@ -141,11 +141,20 @@ TOOLS = [
         "name": "clipboard",
         "description": ("Read the text the user has copied (action 'get'), or copy a text so the "
                         "user can paste it (action 'set'). Use it when the user mentions what they "
-                        "copied or asks you to copy something."),
+                        "copied or asks you to copy something. Never use it to remember facts "
+                        "(that is the remember tool)."),
         "parameters": {"type": "object", "properties": {
             "action": {"type": "string", "enum": ["get", "set"]},
             "text": {"type": "string", "description": "for 'set': the text to copy"}},
             "required": ["action"]}}},
+    {"type": "function", "function": {
+        "name": "remember",
+        "description": ("Save a fact about the user that they asked you to remember (e.g. 'Recuerda que "
+                        "...', 'Remember that ...'), for future conversations. Never passwords, PINs or keys."),
+        "parameters": {"type": "object", "properties": {
+            "text": {"type": "string", "description": "the fact, short and complete, "
+                     "e.g. 'The user's sister is called Ana'"}},
+            "required": ["text"]}}},
     {"type": "function", "function": {
         "name": "look",
         "description": "Look at the user's screen and answer a question about it.",
@@ -652,6 +661,10 @@ def run_tool(call, sess):
         res = run_clipboard(args, sess)
         dbg("tool", tool="clipboard", ok=res.get("ok"), code=res.get("code"))
         return json.dumps(res, ensure_ascii=False)  # the text is already truncated
+    elif call["name"] == "remember":
+        text = str(args.get("text") or "").strip()
+        res = (run_osyr("memory add " + shlex.quote(text), sess) if text else
+               {"ok": False, "code": "USAGE", "data": {"error": "remember needs the text"}})
     elif call["name"] == "look":
         res = run_look(str(args.get("question") or "Describe the screen."), sess)
     else:
