@@ -132,7 +132,7 @@ To pick up in a new session: read this section, the status table and `git log`.
 - **Unpublished**: (historical: superseded by the push of 30 Oct). Do not push or regenerate/publish the `.xz` unless the user asks. `osyr update code` on the HP will see nothing until there is a push and a signed release (`scripts/release.sh vX.Y.Z`, key `~/.ssh/osyr-release` on the VPS).
 - **VPS**: `osyr-diag` receiver active (`osyr-diag-receiver`, Apache `/osyr-diag/` on ccmai.org; bundles in `~/osyr-diag/`). The VPS also runs another llama-server with Qwen3.6-35B (Docker, `llama-qwen`, behind Caddy on :8443 with `X-API-Key`): do not use its key without permission.
 - **Next step of milestone 0**: boot on the HP 15s, run `osyr-diag` (uploads self-test, screenshots and logs) and review here what arrives.
-- **Pending decision with the user**: the "Proposed improvements" below (they asked for them to review).
+- **Decision with the user**: the "Proposed improvements" below (reviewed 4 Nov: most are done; the rest are in "Still open").
 
 ## First boot on the HP 15s (29 Oct, night)
 
@@ -193,7 +193,7 @@ No new image except where marked. Tested on the host what can be (Python functio
 - `osyr-diag`: tar and gzip in two steps (with the pipe a tar failure went unseen), screenshots with spaces in the name, an empty `SEND_CHATS` in the user's file does not override the system one. `osyr-zram stop` never leaves the unit failed at shutdown.
 - **Image:** kernel fragment without `MODULE_SIG=n` (lockdown selects it, it cannot be removed; commented); post-build also sets 0755 on `usr/lib/osyr/osyr-*`; wl-mirror selects wayland-protocols; sherpa-onnx explains why there are no `LICENSE_FILES` (the binary does not ship the texts). `download-model.sh` checks the sha256 of Qwen, mmproj and whisper (the ones from Hugging Face's `x-linked-etag`; the local ones match).
 - **`osyr-update-check.service`** hardened: `ProtectSystem=strict` (writes only `/var/lib/osyr` and `/run/osyr-update`), `ProtectHome=read-only` (checks free space in `/home/.osyr-update`), no devices or kernel, minimal capabilities (switches to `osyr` to notify). vm-check `update-check-service` really starts the unit.
-- **VPS:** `diag-server.py` purges `hits` and `last_by_ip`, deletes `.part` at startup and if the upload fails. **Pending: restart `osyr-diag-receiver` (sudo).**
+- **VPS:** `diag-server.py` purges `hits` and `last_by_ip`, deletes `.part` at startup and if the upload fails. Receiver restarted (3 Nov, with the rename).
 - **Publishing:** `publish.sh vbox` refuses if the published `osyr.img.xz` is not the image commit; the website installs `web/assets` (the five logos on the front page, previously only on the server). The downloads page links the signed manifest, the `.sig`, `update-signers` and the `ssh-keygen -Y verify` command to check it.
 - **Signature tests:** vm `image-bad-signature` (manifest signed by another key → "not signed by an OSYR release key"); install `update-image-tampered` (manifest altered after signing it with the good key → `image check` fails).
 - **Docs:** README (v0.29.2, Piper, image A/B), ARCHITECTURE (own A/B without RAUC, whisper.cpp + Piper in the base, three fixed tools, USB image and .ova instead of ISO), this file (gate passed, "B empty").
@@ -279,7 +279,7 @@ No new image except where marked. Tested on the host what can be (Python functio
 - `/pair` from the agent: the hint no longer sends you to the terminal. After `/pair` or `osyr ai use` it no longer says "Restart the chat": the chat follows the active provider before each message (also if it was changed from another terminal).
 - Help: "Useful commands" says that almost everything can be asked of the assistant; `/update`, `/report` in the chat table.
 - The clipboard no longer brings the chat down without `wl-paste` (happened in the native test: the model chose the clipboard instead of memory; a one-off, two more runs 17/17).
-- **Pairing**: the "ccmai.org server" provider removed from the page (the user's decision: they set up their server by hand). In "Other" there is an optional context field (the `-c`), which reaches the laptop. Pending: restart `osyr-diag-receiver` on the VPS (it reads `pair.html` at startup).
+- **Pairing**: the "ccmai.org server" provider removed from the page (the user's decision: they set up their server by hand). In "Other" there is an optional context field (the `-c`), which reaches the laptop. `osyr-diag-receiver` restarted on the VPS (3 Nov).
 - **Usage notice**: it now says that OSYR is in development and can make mistakes, and so can its AI (chat, first boot, help and website).
 - Wifi not showing up at first boot: the user saw it again on the 2014 one with v0.26; the fix (`a9b05e9`) is later than v0.26, it goes in the next image.
 - `tests/run.py native` 17/17 (new: `chat-install-runs-installer`, `chat-update-runs-update`, `chat-report-runs-diag`).
@@ -288,7 +288,7 @@ No new image except where marked. Tested on the host what can be (Python functio
 
 - **Bug** (the user, on hardware, 31 Oct): cog did not open https pages ("TLS support is not available"). `libsoup3` without `BR2_PACKAGE_LIBSOUP3_SSL`: without `glib-networking` there is no GIO TLS module (`/usr/lib/gio/modules` did not even exist). Only http and file opened.
 - **Why the tests did not catch it**: `web-*` uses `file://` pages, and `hwtest-web-open` opens `https://ccmai.org/osyr/` but gave OK with any text, and the error page also has text. Now it requires the text to say "OSYR" (with `OSYR_HWTEST_URL`, any text is enough).
-- **Fix**: `BR2_PACKAGE_LIBSOUP3_SSL=y` → glib-networking + gnutls + p11-kit (trust in `/etc/ssl/certs/ca-certificates.crt`). Checked in `.config` after applying the defconfig. **It enables gnutls and p11-kit, which change packages already built** (ffmpeg moves to `--enable-gnutls`, systemd to `-Dp11kit=enabled`): the next image, with `make clean all`. Pending: build and `make test` (`hwtest-web-open` now really tests https).
+- **Fix**: `BR2_PACKAGE_LIBSOUP3_SSL=y` → glib-networking + gnutls + p11-kit (trust in `/etc/ssl/certs/ca-certificates.crt`). Checked in `.config` after applying the defconfig. **It enables gnutls and p11-kit, which change packages already built** (ffmpeg moves to `--enable-gnutls`, systemd to `-Dp11kit=enabled`): the next image, with `make clean all`. Built and tested: `hwtest-web-open` passes against https://ccmai.org/osyr/ in v0.30.0 (test-vm 135/135).
 
 ## /install in the chat (1 Nov)
 
@@ -300,7 +300,7 @@ No new image except where marked. Tested on the host what can be (Python functio
 - **Bug**: with a llama-server behind a proxy that only exposes `/v1` (the ccmai.org one: Caddy does not let `/props` through), `detect_context` took `meta.n_ctx_train` from `/v1/models` (262144 in Qwen3.6-35B) as the real context; the server runs with `-c 32768` and long conversations would have failed. `/pair` left it like that with no way to correct it.
 - **Fix**: the training context (`ai.TRAINING`) is no longer taken as valid: `osyr ai add` asks for it (or `AI_NEEDS_CONTEXT` with `model_max` if not interactive) and `osyr ai use --model` does not apply it. The pairing page sends `context` if known (optional field in "Other") and `diag-server.py` lets it through (integer 1024–10M); `pair.py` uses it instead of detecting it.
 - Backwards compatible: v0.26 ignores the pairing `context`. For an already installed v0.26: `sed -i 's/262144/32768/' ~/.config/osyr/ai.json`.
-- Tested on the host: new mock `train-ctx` (without `--context` → `AI_NEEDS_CONTEXT`, interactive asks, with `--context` it is fine; `ctx-in-models` still detects), against the real server (`AI_NEEDS_CONTEXT` without `--context`, 32768 with it) and end-to-end pairing with a local `diag-server.py` (`context=4096` arrives). vm `ai-pair-flow` now checks the received context. Pending: `make test` with an image and restarting `osyr-diag-receiver` on the VPS (needs sudo) so that the published page carries the context.
+- Tested on the host: new mock `train-ctx` (without `--context` → `AI_NEEDS_CONTEXT`, interactive asks, with `--context` it is fine; `ctx-in-models` still detects), against the real server (`AI_NEEDS_CONTEXT` without `--context`, 32768 with it) and end-to-end pairing with a local `diag-server.py` (`context=4096` arrives). vm `ai-pair-flow` now checks the received context. `make test` passed with the v0.30.0 image and `osyr-diag-receiver` was restarted (3 Nov), so the published page carries the context.
 
 ## Agent browser, files and searchable help (31 Oct)
 
@@ -353,7 +353,7 @@ Following `~/ccmai-hub/VISIBILITY.md`. `render-web.py` (`social_meta`) adds to e
 
 - **v0.25.0** signed and pushed (the numbering continues from the previous system's, the user's decision). Since `d6fd3fa` nothing in the system changes: machines with that image see it as up to date.
 - `scripts/publish.sh img|vbox|web [preview]`: `img` publishes `osyr.img.xz`; **the user is notified** and then `vbox` publishes `osyr.ova` (VBoxManage converts; its VMDK is booted in QEMU in BIOS and UEFI before publishing, the VPS has no VT-x). Both regenerate the website at the end. Both from `d6fd3fa` published.
-- The website lives in `web/` as templates (`@VERSION@`, `@IMG_SHA@`...) that `scripts/render-web.py` fills in with what was actually published. Front page with the two downloads, what OSYR does and requirements; `releases/` with sha256 and instructions (USB, boot, `osyr-install`); new changelog (v0.25.0). **Pending**: the user reviews the draft before putting it live.
+- The website lives in `web/` as templates (`@VERSION@`, `@IMG_SHA@`...) that `scripts/render-web.py` fills in with what was actually published. Front page with the two downloads, what OSYR does and requirements; `releases/` with sha256 and instructions (USB, boot, `osyr-install`); new changelog (v0.25.0). Live at ccmai.org/osyr since then (v0.30.0 on 4 Nov).
 - From the HP 15-ba (2014) with the `d6fd3fa` image: the installation went fine, but at the end the screen stayed black and it had to be powered off with the button. Suspicion: swayidle locks and turns off the screen during the copy (long on that machine) and radeon does not come back. The diag did not arrive (no upload since 10:58). Requested by the user: **optional encryption** in the installer.
 - **`osyr-diag` privacy** (on `main`, for the next image): it never carried conversations, keys or wifi passwords (also checked in the real journal: llama-server only logs metadata). Now it asks before including the last 3 screenshots (default no; without a terminal, no; `--screenshots` / `--no-screenshots`) and of the reminders it only sends how many there are. New tests in `vm-checks.sh`. The website says what the report contains.
 - **Help** (on `main`): `/usr/share/osyr/help.md` is the single source; `osyr-help` shows it in the terminal (Super+F1, in `less`), the chat's `/help` and the agent refer to it, and `render-web.py` generates `https://ccmai.org/osyr/help.html` (published). Locked or black screen, shortcuts, chat and CLI commands. Added Super+Shift+arrows (the help listed them and they did not exist).
@@ -403,26 +403,22 @@ HP Notebook, board 82F6, AMD A8-7410 (Mullins, Radeon R5, `radeon`), 6.7 GiB, BI
 - **mesa with LLVM** (29 Oct): iris and crocus (Intel), radeonsi (AMD) and llvmpipe require it in mesa 26; iris also needs the precompiled compiler (host-mesa3d + libclc). Buildroot silently drops iris if LLVM is missing. Before (28 Oct) it went without LLVM and on Intel and modern AMD sway drew with pixman.
 - **Each image for real hardware bundles all the verified changes**: the build → download → write USB → test cycle is long. Verify on the VPS everything possible beforehand (Kconfig, build, QEMU, scripts run inside the image).
 
-## Ideas noted (not done)
+## Proposed improvements (reviewed 4 Nov)
 
+Done: firewall (`nftables`), dictation into any window (`wtype`), reminders, clipboard tool, temperature in the bar and self-test, battery profile, update timer, file and help tools, browser (WPE + cog), disk installer with encrypted `/home` and own A/B (no RAUC), prompt cache kept across messages.
 
-- Model speed (postponed): save the fixed prompt cache (system + tools) to disk and try speculative decoding with a small draft model. Measure on the HP.
-- Disk installer with `/home` on its own partition (milestone 4): the USB is only for testing.
+Still open:
 
-## Proposed improvements (pending the user's review)
+1. Camera for vision (`/look camera`).
+2. Image and PDF viewer, file manager.
+3. Hands-free wake word ("Hey OSYR"), optional: CPU cost to be measured.
+4. Model speed: speculative decoding with a small draft model. Measure on the HP.
 
-1. Disk installer (milestone 4): LUKS encryption, `/home` on its own partition, A/B with RAUC. It is the real target; the USB is only for testing.
-2. `nftables` firewall by default blocking incoming connections (reinforcing what was done with SSH and LLMNR).
-3. Dictation into any application: a shortcut that transcribes and types the text into the active window (needs `wtype`).
-4. Reminders and alarms by chat or voice: an agent tool with systemd timers, notification and spoken notice.
-5. Clipboard (`wl-clipboard`) as an agent tool: "summarise/translate what I copied".
-6. Temperature and thermal throttling in the bar and in the self-test (the model heats up the laptop).
-7. Automatic battery profile when unplugging: CPU governor, fewer model threads, brightness.
-8. Periodic update check (timer) with notification.
-9. Camera for vision (`/look camera`).
-10. More agent tools (milestone 1): read files, shell with a security policy, documentation (`osyr doc`, RAG).
-11. Basic applications: browser (extension, milestone 4), image and PDF viewer, file manager.
-12. Hands-free wake word ("Hey OSYR"), optional: CPU cost to be measured.
+## Still pending (4 Nov)
+
+- **Hardware tests with v0.30.0** (`osyr-hwtest` covers most of them): on the HP 15s, beep and microphone, speed between messages, wifi from the agent, screen lock, `/pair`; on the HP 15-ba, sway start and wifi at first boot; on the 2014 one, `/update` from v0.26 (code, then image).
+- **Browser in the image**: `wpe:browserOptions`, cog's `app_id`, cookies in automation mode, llvmpipe in QEMU.
+- **/look with Ollama Cloud**: the user tries it and reports the message.
 
 ## Lessons from this milestone
 
