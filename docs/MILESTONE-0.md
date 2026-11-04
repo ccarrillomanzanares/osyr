@@ -436,6 +436,7 @@ HP Notebook, board 82F6, AMD A8-7410 (Mullins, Radeon R5, `radeon`), 6.7 GiB, BI
 - **wlroots does accept llvmpipe** in virtual machines: with `virtio_gpu` without virgl, mesa falls back to `kms_swrast` on the hardware device, wlroots does not detect it as software and sway draws with 4 llvmpipe threads. That is why mesa is asked for the driver before starting sway, instead of trusting wlroots. Check the real renderer through the threads (`/proc/$(pgrep -x sway)/task/*/comm`).
 - The image userland is partly BusyBox (`tar` without `-z`): a script that works on the VPS can fail on OSYR. Test it inside the image (QEMU serial console on a socket).
 - QEMU on the VPS runs without KVM: the model speed there (~0.4 tok/s) says nothing; measure on real hardware.
+- The disk filled up mid-build (3 Nov: kernel with debug info, 25 GB, plus the old tree). Now `make` runs `scripts/disk-guard.sh` first: it deletes build dirs of packages no longer in the configuration or with an old version (Buildroot never does), images and .ova of versions that are neither published nor current, all but the latest `build/prev-*` and the 3 latest `build/web-prev-*`, and stops if less than 30 GB are free (100 GB without `build/output`; `OSYR_MIN_FREE_GB`). `make prune` only frees. A full `build/output` is ~80 GB.
 
 ## Lessons inherited from newos (do not repeat)
 

@@ -6,6 +6,8 @@
 #                   + the disk installer (test-native, test-vm, test-install)
 #                   (OSYR_TEST_SMP=N: VM CPUs, 12 by default)
 #   make menuconfig / savedefconfig / linux-menuconfig
+#   make prune      frees obsolete build dirs and old images (scripts/disk-guard.sh);
+#                   'make' does it first and stops if the disk is still too full
 #   make clean      deletes build/output (not the Buildroot download)
 
 BR_VERSION  := 2026.08.1
@@ -31,10 +33,14 @@ QEMU        := qemu-system-x86_64 $(KVM) -m $(QEMU_MEM) -smp $(QEMU_SMP) \
 	-nic user,model=virtio-net-pci,hostfwd=tcp::2222-:22 \
 	-serial mon:stdio
 
-.PHONY: all model qemu qemu-uefi menuconfig savedefconfig linux-menuconfig clean test test-native test-vm test-install
+.PHONY: all prune model qemu qemu-uefi menuconfig savedefconfig linux-menuconfig clean test test-native test-vm test-install
 
 all: $(OUT_DIR)/.config
+	scripts/disk-guard.sh
 	$(BR) -j$(JOBS)
+
+prune:
+	scripts/disk-guard.sh prune
 
 $(BR_DIR)/Makefile:
 	git clone --depth 1 -b $(BR_VERSION) https://gitlab.com/buildroot.org/buildroot.git $(BR_DIR)
