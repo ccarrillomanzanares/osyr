@@ -11,15 +11,15 @@
 #                               has just done them, and calls it this way)
 #   osyr-diag --message TEXT    the problem description, without asking for it
 #   osyr-diag --chats|--no-chats  include (or not) the latest conversations with the
-#                               assistant this time; default is SEND_CHATS from
-#                               /etc/osyr/diag.conf or ~/.config/osyr/diag.conf (no)
+#                               assistant, without asking; default is SEND_CHATS from
+#                               /etc/osyr/diag.conf or ~/.config/osyr/diag.conf (ask)
 # With a terminal (and without --quick or --message) it first asks what happened:
 # what the person writes goes into description.txt, the first thing to read.
 # It never collects AI provider keys, wifi passwords or the text of
-# reminders (only how many there are). Conversations only if asked for.
+# reminders (only how many there are). Conversations only if the person says yes.
 CONF=/etc/osyr/diag.conf
 TOKEN_FILE=/etc/osyr/diag.token
-SEND_CHATS=no
+SEND_CHATS=ask
 [ -f "$CONF" ] && . "$CONF"
 USER_CONF="${XDG_CONFIG_HOME:-$HOME/.config}/osyr/diag.conf"
 # (if the user's file lacks the line, the system value applies)
@@ -169,10 +169,30 @@ if [ -n "$shotlist" ] && [ "$shots" = yes ]; then
     echo "OSYR diag: including $(ls "$dir/screenshots" | wc -l) screenshot(s)"
 fi
 
-# --- Conversations with the assistant (only with SEND_CHATS=yes or --chats) ---------
-case "$SEND_CHATS" in yes|YES|y|true|1)
-    chats="${XDG_DATA_HOME:-$HOME/.local/share}/osyr/chats"
-    list=$(find "$chats" -maxdepth 1 -name '*.json' -mtime -7 2>/dev/null | sort -r | head -n 5)
+# --- Conversations with the assistant ----------------------------------------------
+# The last 5 from the last 7 days help to see what went wrong, but they are the
+# person's: ask (default no) unless SEND_CHATS or --chats/--no-chats already say;
+# without a terminal to ask, leave them out.
+chats="${XDG_DATA_HOME:-$HOME/.local/share}/osyr/chats"
+list=$(find "$chats" -maxdepth 1 -name '*.json' -mtime -7 2>/dev/null | sort -r | head -n 5)
+case "$SEND_CHATS" in yes|YES|y|true|1) SEND_CHATS=yes ;; ask|ASK) ;; *) SEND_CHATS=no ;; esac
+if [ -n "$list" ] && [ "$SEND_CHATS" = ask ]; then
+    SEND_CHATS=no
+    if [ -t 0 ]; then
+        echo "OSYR diag: your last conversation(s) with the assistant (last 7 days):"
+        for f in $list; do
+            q=$(python3 -c 'import json,sys
+m=json.load(open(sys.argv[1])); m=m.get("messages", m) if isinstance(m, dict) else m
+u=[x.get("content") for x in m if isinstance(x, dict) and x.get("role") == "user" and isinstance(x.get("content"), str)]
+print((u[0] if u else "").replace("\n", " ")[:60])' "$f" 2>/dev/null)
+            echo "  $(date -r "$f" '+%Y-%m-%d %H:%M')  ${q:-?}"
+        done
+        printf "Include them? They help us see what went wrong, but we will read them. [y/N] "
+        read -r ans
+        case "$ans" in y|Y|yes|s|S|si|sí) SEND_CHATS=yes ;; esac
+    fi
+fi
+if [ "$SEND_CHATS" = yes ]; then
     if [ -n "$list" ]; then
         mkdir -p "$dir/chats"
         total=0
@@ -181,9 +201,9 @@ case "$SEND_CHATS" in yes|YES|y|true|1)
             [ $((total + s)) -le 2097152 ] || continue
             cp "$f" "$dir/chats/" && total=$((total + s))
         done
-        echo "OSYR diag: including your last $(ls "$dir/chats" | wc -l) conversation(s) with the assistant (SEND_CHATS=yes)"
-    fi ;;
-esac
+        echo "OSYR diag: including your last $(ls "$dir/chats" | wc -l) conversation(s) with the assistant"
+    fi
+fi
 
 # --- systemd and journal (osyr is in systemd-journal: it sees the system one) -
 run journal-boot.txt journalctl -b --no-pager -o short-monotonic

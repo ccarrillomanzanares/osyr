@@ -163,11 +163,22 @@ osyr-help --plain 2>&1 | grep -q "Keyboard shortcuts" && grep -q 'mod+F1 exec.*o
 SWAYSOCK=$(ls /run/user/$(id -u)/sway-ipc.*.sock 2>/dev/null | head -1) swaymsg 'output * power on' >/dev/null
 sleep 3  # until sway draws a frame, grim fails ("failed to copy output")
 f=$(osyr-screenshot) && [ -s "$f" ] && pass screenshot || fail screenshot "$f locked=$(pgrep -x swaylock >/dev/null && echo yes || echo no)"
-# Without a terminal to ask, screenshots are not included; with --screenshots, they are
+# Without a terminal to ask, screenshots and conversations are not included;
+# with --screenshots / --chats, they are
+chatf=$HOME/.local/share/osyr/chats/20991231-235959.json
+mkdir -p "${chatf%/*}"; echo '[{"role":"user","content":"vmcheck"}]' > "$chatf"
 osyr-diag --local --quick > /tmp/diag0.out 2>&1
 t0=$(sed -n 's/.*saved \(\/tmp\/[^ ]*\.tar\.gz\).*/\1/p' /tmp/diag0.out)
 [ -n "$t0" ] && ! gzip -dc "$t0" | tar -tf - | grep -q 'screenshots/' && pass diag-no-screenshots-by-default || \
     fail diag-no-screenshots-by-default "$(tail -2 /tmp/diag0.out)"
+[ -n "$t0" ] && ! gzip -dc "$t0" | tar -tf - | grep -q 'chats/' && pass diag-no-chats-by-default || \
+    fail diag-no-chats-by-default "$(tail -2 /tmp/diag0.out)"
+sleep 1
+osyr-diag --local --quick --no-screenshots --chats > /tmp/diagc.out 2>&1
+tc=$(sed -n 's/.*saved \(\/tmp\/[^ ]*\.tar\.gz\).*/\1/p' /tmp/diagc.out)
+[ -n "$tc" ] && gzip -dc "$tc" | tar -tf - | grep -q 'chats/20991231-235959.json' && pass diag-chats || \
+    fail diag-chats "$(tail -2 /tmp/diagc.out)"
+rm -f "$chatf"
 sleep 1  # another bundle name (it includes the time with seconds)
 osyr-diag --local --screenshots > /tmp/diag.out 2>&1
 t=$(sed -n 's/.*saved \(\/tmp\/[^ ]*\.tar\.gz\).*/\1/p' /tmp/diag.out)
@@ -257,9 +268,13 @@ grep -q '^REJECTED.*not signed by an OSYR release key' /tmp/badsig.out && pass i
     [ "$n1" = True ] && [ "$n2" = None ] && pass update-notify-once || fail update-notify-once "first=$n1 second=$n2"
     [ "$(systemctl is-enabled osyr-update-check.timer)" = enabled ] && pass update-timer || fail update-timer "$(systemctl is-enabled osyr-update-check.timer)"
     # The hardened unit (ProtectSystem, no devices...) does the whole check
+    # Like a fresh install: without /var/lib/osyr and /run/osyr-update (the checks
+    # above create them; on the HP 15-ba the unit failed with 226/NAMESPACE)
+    S mv /var/lib/osyr /var/lib/osyr.vmcheck; S rm -rf /run/osyr-update
     S systemctl start osyr-update-check.service >/dev/null 2>&1
     [ "$(systemctl show -p Result --value osyr-update-check.service)" = success ] && pass update-check-service || \
         fail update-check-service "$(S journalctl -u osyr-update-check --no-pager -n 3 | tr '\n' ' ')"
+    S rm -rf /var/lib/osyr; S mv /var/lib/osyr.vmcheck /var/lib/osyr
     tok=$(S osyr update code apply --json | python3 -c 'import json,sys; print(json.loads(sys.stdin.read().strip().splitlines()[-1]).get("confirm"))')
     S rm -f /run/osyr/reboot-needed
     S osyr update code apply --confirm "$tok" > /tmp/upd-apply.out 2>&1 && [ "$(osyr-test-update 2>/dev/null)" = "update OK" ] && pass update-apply || fail update-apply "?"

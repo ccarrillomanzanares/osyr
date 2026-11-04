@@ -27,8 +27,8 @@ The OSYR terminal opens when the session starts. Type a message and press Enter,
 | `/pair` | add an AI provider by entering its key on your phone |
 | `/install` | install OSYR on this computer's disk, from the USB (erases the whole disk) |
 | `/update`, `/update undo` | install OSYR updates, or go back to the previous version |
-| `/report` | send a problem report to the OSYR team: it asks what happened, then sends logs and hardware data |
-| `/report chats` | the same, plus your last conversations with the assistant (this time only): they help us see what went wrong |
+| `/report` | send a problem report to the OSYR team: it asks what happened, then sends logs and hardware data; it asks before including your last conversations or screenshots |
+| `/report chats` | the same, including your last conversations with the assistant without asking: they help us see what went wrong |
 | `/help` | short help |
 | `/exit` | close the chat (a normal terminal stays open) |
 
@@ -123,7 +123,7 @@ Most of these you can simply ask the assistant for, in your own words. To type t
 | `osyr doc <words>` | this help, by topic |
 | `sudo osyr update code check` | look for OSYR updates (see Updates above) |
 | `sudo osyr-install` | install OSYR on the disk (erases the whole disk; same as `/install` in the chat) |
-| `osyr-diag` | send a problem report: logs and hardware (same as `/report` in the chat). Your conversations go only with `--chats`, or always if you put `SEND_CHATS=yes` in `~/.config/osyr/diag.conf` |
+| `osyr-diag` | send a problem report: logs and hardware (same as `/report` in the chat). It asks before including your conversations (`--chats` / `--no-chats` without asking, or `SEND_CHATS=yes`/`no` in `~/.config/osyr/diag.conf`) |
 
 ## Credits
 

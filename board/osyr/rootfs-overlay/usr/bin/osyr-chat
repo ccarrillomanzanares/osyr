@@ -86,7 +86,7 @@ SYSTEM = (
     "asks before applying; /update undo puts back the previous version). You cannot apply them. "
     "If the user reports a problem with OSYR or the computer that you cannot solve, suggest "
     "typing /report: it asks what happened and sends logs and hardware data to the OSYR team "
-    "(conversations only if the user turns that on or types /report chats). "
+    "(it asks before including their conversations). "
     "For how to do something in OSYR, read the help with the osyr tool ('doc <words>') "
     "and answer from it; for the full help, tell them to press Super+F1. "
     "When the user asks you to remember something about them, save it with the remember tool."
@@ -847,11 +847,11 @@ def relaunch():
 
 
 def report(words=""):
-    """/report [chats]: osyr-diag right here (asks what happened and whether to include screenshots).
-    'chats': this time also the latest conversations (they help to see what went wrong)."""
+    """/report [chats]: osyr-diag right here (asks what happened and whether to include
+    screenshots and the latest conversations). 'chats': the conversations without asking."""
     chats = words.strip() == "chats"
     what = ("logs, hardware data and your last conversations with me" if chats else
-            "logs and hardware data (your conversations only if SEND_CHATS=yes; /report chats sends them once)")
+            "logs and hardware data (it asks before including your conversations or screenshots)")
     print(f"{DIM}Sends a problem report to the OSYR team: {what}. Never keys or wifi passwords.\n"
           f"It takes about a minute (you will hear a short beep). Ctrl+C cancels.{RESET}")
     try:

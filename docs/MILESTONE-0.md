@@ -409,6 +409,9 @@ HP Notebook, board 82F6, AMD A8-7410 (Mullins, Radeon R5, `radeon`), 6.7 GiB, BI
 - Slow CPU: local model 1.2 tok/s generating, 3.1 tok/s reading the prompt (first reply 189 s, the next 15 s); dictation 32 s for 1.3 s of speech. A remote provider makes sense here.
 - **Bug** (reported by the user): `/pair` right after opening the chat, then "hello": the answer came only after the local model finished loading. The chat waited for the local warm-up (fixed prompt, minutes on this CPU) even with a remote provider. Fix: `wait_warm` only waits when the active provider is local. Native test `chat-switch-during-warmup` (`tests/slow_llama.py`, 60 s warm-up): fails before, passes after.
 - **Emoji shown as boxes** (reported by the user): the image only had DejaVu (Sans Mono has no emoji). New package `noto-emoji` (Noto Color Emoji, CBDT, 10.7 MB, OFL; FreeType already links libpng) and `/etc/fonts/local.conf`, which puts it right after DejaVu and the generic families, before DejaVu Sans's black-and-white emoji. Checked with the target's fontconfig on the host; vm-check `emoji-font`. Pending: see it with the next image (terminal, bar, notifications, browser).
+- Second diag (`20261104-214546`, voice tests): with Ollama Cloud (`deepseek-v4.1-flash`) the chat switched after `/pair` and answers in 0.5-2.5 s; `/look` works (4-12 s; once `LOOK_MODEL_FAILED`, all thinking, and it worked when asked again); one `RemoteDisconnected` from ollama.com. Self-test voice again 33.4 s for 1.3 s. No timings for Piper or dictation in the logs (not recorded).
+- **Bug: `osyr-update-check.service` failed on the fresh install** (226/NAMESPACE): `ReadWritePaths=/var/lib/osyr /run/osyr-update`, and neither exists until something creates them. In the VM it passed because earlier checks had created them. Fix: `StateDirectory=osyr`, `RuntimeDirectory=osyr-update` (+ `Preserve`). vm-check `update-check-service` now runs it without both directories.
+- **Diag asks before including conversations** (the user's request): `SEND_CHATS=ask` by default; with a terminal it lists the last ones (date and first question) and asks, default no; without a terminal, no. `--chats`/`--no-chats` and `SEND_CHATS=yes|no` do not ask. Help, chat prompt, `/report` and website updated. vm-checks `diag-no-chats-by-default` and `diag-chats`.
 
 ## Proposed improvements (reviewed 4 Nov)
 
@@ -425,7 +428,6 @@ Still open:
 
 - **Hardware tests with v0.30.0** (`osyr-hwtest` covers most of them): on the HP 15s, beep and microphone, speed between messages, wifi from the agent, screen lock, `/pair`; on the HP 15-ba, sway start and wifi at first boot; on the 2014 one, `/update` from v0.26 (code, then image).
 - **Browser in the image**: `wpe:browserOptions`, cog's `app_id`, cookies in automation mode, llvmpipe in QEMU.
-- **/look with Ollama Cloud**: the user tries it and reports the message.
 
 ## Lessons from this milestone
 
