@@ -57,6 +57,15 @@ li.sub:before{content:"– ";color:var(--dim)}
     <div class="changelog">
 
 <div class="ver-block">
+<h2>v0.30.1 — 2026-11-04</h2>
+<p class="dl"><a href="https://github.com/ccarrillomanzanares/osyr/releases/tag/v0.30.1">source</a> · code update: type <code>/update</code> in the chat</p>
+<h3>fixes</h3>
+<ul><li>After connecting a remote AI provider with <code>/pair</code>, the first answer no longer waits for the computer's own model to finish loading (minutes on older laptops).</li><li>The daily update check works on a freshly installed system.</li><li>Emoji show in colour instead of small boxes. This needs the next system image: the new font is not part of a code update.</li></ul>
+<h3>privacy</h3>
+<ul><li>A problem report (<code>/report</code>) now shows your latest conversations with the assistant and asks before including them; by default they are left out.</li></ul>
+</div>
+
+<div class="ver-block">
 <h2>v0.30.0 — 2026-11-04</h2>
 <p class="dl"><a href="/osyr/releases/">download</a> · <a href="https://github.com/ccarrillomanzanares/osyr/releases/tag/v0.30.0">source</a> · new install from the image</p>
 <p>OSYR is the new name of the system previously called AIOS, a name already used by many other projects. The version numbers continue. Releases are now signed with a new key, so a computer with AIOS installed cannot update to OSYR: write the new image to a USB stick and install it again (first ask the assistant to make a backup of your files to a USB disk).</p>
