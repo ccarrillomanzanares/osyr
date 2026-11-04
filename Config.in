@@ -3,6 +3,7 @@
 source "$BR2_EXTERNAL_OSYR_PATH/package/alsa-ucm-conf/Config.in"
 source "$BR2_EXTERNAL_OSYR_PATH/package/grim/Config.in"
 source "$BR2_EXTERNAL_OSYR_PATH/package/mako/Config.in"
+source "$BR2_EXTERNAL_OSYR_PATH/package/noto-emoji/Config.in"
 source "$BR2_EXTERNAL_OSYR_PATH/package/sherpa-onnx/Config.in"
 source "$BR2_EXTERNAL_OSYR_PATH/package/sof-bin/Config.in"
 source "$BR2_EXTERNAL_OSYR_PATH/package/swayidle/Config.in"

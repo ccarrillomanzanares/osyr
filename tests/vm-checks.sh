@@ -55,6 +55,11 @@ echo "$llargs" | grep -q -- '--chat-template-file' && pass llama-stable-template
 echo "$llargs" | grep -q -- '--mmproj' && fail llama-no-mmproj "$(echo "$llargs" | cut -c1-200)" || pass llama-no-mmproj
 [ "$(systemctl is-active osyr-llama-vision-proxy.socket)" = active ] && pass vision-socket || \
     fail vision-socket "$(systemctl is-active osyr-llama-vision-proxy.socket)"
+# Emoji in colour: the terminal's font falls back to Noto Color Emoji (not boxes,
+# not DejaVu Sans's black-and-white ones)
+fb=$(fc-match -s "DejaVu Sans Mono" family | awk '!s[$0]++' | sed -n 2p)
+[ "$fb" = "Noto Color Emoji" ] && fc-list ':charset=1f680' family | grep -q 'Noto Color Emoji' \
+    && pass emoji-font || fail emoji-font "fallback: $fb"
 
 # --- Network ---------------------------------------------------------------------
 check net-status osyr net status

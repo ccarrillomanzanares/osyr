@@ -408,6 +408,7 @@ HP Notebook, board 82F6, AMD A8-7410 (Mullins, Radeon R5, `radeon`), 6.7 GiB, BI
 - Diag `20261104-205124`: AMD A8-7410, 6.7 GiB, UEFI, `/home` on its own partition (not encrypted), battery absent (`BAT1`). Self-test 11/11, no failed units; sway starts and wifi connects (both pending on this machine).
 - Slow CPU: local model 1.2 tok/s generating, 3.1 tok/s reading the prompt (first reply 189 s, the next 15 s); dictation 32 s for 1.3 s of speech. A remote provider makes sense here.
 - **Bug** (reported by the user): `/pair` right after opening the chat, then "hello": the answer came only after the local model finished loading. The chat waited for the local warm-up (fixed prompt, minutes on this CPU) even with a remote provider. Fix: `wait_warm` only waits when the active provider is local. Native test `chat-switch-during-warmup` (`tests/slow_llama.py`, 60 s warm-up): fails before, passes after.
+- **Emoji shown as boxes** (reported by the user): the image only had DejaVu (Sans Mono has no emoji). New package `noto-emoji` (Noto Color Emoji, CBDT, 10.7 MB, OFL; FreeType already links libpng) and `/etc/fonts/local.conf`, which puts it right after DejaVu and the generic families, before DejaVu Sans's black-and-white emoji. Checked with the target's fontconfig on the host; vm-check `emoji-font`. Pending: see it with the next image (terminal, bar, notifications, browser).
 
 ## Proposed improvements (reviewed 4 Nov)
 

@@ -184,6 +184,8 @@ BR2_PACKAGE_SWAY=y
 BR2_PACKAGE_SWAY_SWAYBAR=y
 BR2_PACKAGE_FOOT=y
 BR2_PACKAGE_DEJAVU=y
+# Emoji: without it the model's emoji show as boxes (fontconfig fallback)
+BR2_PACKAGE_NOTO_EMOJI=y
 BR2_PACKAGE_XKEYBOARD_CONFIG=y
 
 # --- Python (agent and osyr CLI) ---------------------------------------------
