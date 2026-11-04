@@ -41,8 +41,7 @@ def main():
 
     # identity on the left
     d.text((205, 108), "OSYR", font=font(110, True), fill=BRIGHT)
-    d.text((84, 265), "Artificial Intelligence", font=font(28), fill=DIM)
-    d.text((84, 300), "Operating System", font=font(28), fill=DIM)
+    d.text((84, 282), "Your AI, your system", font=font(28), fill=DIM)
     for i, line in enumerate(["> local AI assistant, offline", "> voice + an agent that runs it",
                               "> ordinary 8 GB laptops"]):
         d.text((84, 365 + i * 34), line, font=font(23), fill=INK)
