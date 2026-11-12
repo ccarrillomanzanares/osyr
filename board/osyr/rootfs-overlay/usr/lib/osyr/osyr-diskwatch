@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""OSYR — watches the kernel log and warns if the disk or the USB stick gives errors.
+
+On the HP 15-ba the system USB stick vanished for a moment ("Medium not
+present") and nobody noticed. Now there is an on-screen warning, at most once
+every 10 minutes per device, saying what to do. Started by
+osyr-diskwatch.service (root: it reads the kernel log).
+"""
+import re
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, "/usr/lib/osyr")
+from osyr import notify  # noqa: E402
+
+PATTERNS = re.compile(r"(I/O error|Medium not present|critical medium error|EXT4-fs error|"
+                      r"Buffer I/O error|unrecovered read error|failed command: READ)", re.I)
+DEV = re.compile(r"\b(sd[a-z]+|nvme\d+n\d+|mmcblk\d+|vd[a-z]+)")
+QUIET = 600
+last = {}
+
+p = subprocess.Popen(["journalctl", "-k", "-f", "-n", "0", "-o", "cat"], stdout=subprocess.PIPE, text=True)
+for line in p.stdout:
+    if not PATTERNS.search(line):
+        continue
+    m = DEV.search(line)
+    dev = m.group(1) if m else "disk"
+    now = time.time()
+    if now - last.get(dev, 0) < QUIET:
+        continue
+    last[dev] = now
+    notify.send_to_user("Disk problem",
+                        f"{dev} is giving errors. If it is a USB stick, check that it is well plugged in "
+                        "and save your work. If it happens again, run osyr-diag.", "critical")

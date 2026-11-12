@@ -1,0 +1,11 @@
+config BR2_PACKAGE_SWAYLOCK
+	bool "swaylock"
+	depends on BR2_PACKAGE_WAYLAND
+	depends on BR2_PACKAGE_LINUX_PAM
+	select BR2_PACKAGE_CAIRO
+	select BR2_PACKAGE_LIBXKBCOMMON
+	select BR2_PACKAGE_WAYLAND_PROTOCOLS
+	help
+	  Screen lock for sway (with PAM: the user's password).
+
+	  https://github.com/swaywm/swaylock

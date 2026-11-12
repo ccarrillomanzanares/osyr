@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily OSYR update check
+
+[Timer]
+# 15 min after boot (so there is a network and the model is loaded), then daily;
+# if the laptop was off at that time, when it is switched on (Persistent)
+OnBootSec=15min
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

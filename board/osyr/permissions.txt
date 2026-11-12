@@ -1,0 +1,11 @@
+# OSYR — permissions post-build.sh cannot set (it runs without root).
+# makedevs format: <path> <type> <mode> <uid> <gid> - - - - -
+#
+# unix_chkpwd: PAM uses it to check the password when the caller is not root
+# (swaylock runs as osyr). Without setuid it cannot read /etc/shadow and the
+# screen lock rejected every password (HP 15s, 29 Oct).
+/usr/sbin/unix_chkpwd	f	4755	0	0	-	-	-	-	-
+#
+# osyr-diag upload token: only root and the osyr group (gid 1000). With 0644 any
+# process on the system could read it (DynamicUser services included).
+/etc/osyr/diag.token	f	640	0	1000	-	-	-	-	-

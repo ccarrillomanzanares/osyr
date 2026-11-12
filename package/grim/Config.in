@@ -1,0 +1,11 @@
+config BR2_PACKAGE_GRIM
+	bool "grim"
+	depends on BR2_PACKAGE_WAYLAND
+	select BR2_PACKAGE_PIXMAN
+	select BR2_PACKAGE_LIBPNG
+	select BR2_PACKAGE_WAYLAND_PROTOCOLS
+	help
+	  Screenshots on Wayland (sway). Used by the Print Screen key,
+	  /look and osyr-diag.
+
+	  https://sr.ht/~emersion/grim/

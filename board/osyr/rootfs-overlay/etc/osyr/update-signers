@@ -1,0 +1,5 @@
+# OSYR — keys that sign the versions (v* tags) accepted by 'osyr update code'
+# and the image manifests of 'osyr update image' (namespace osyr-image).
+# ssh-keygen allowed_signers format. The private key is on the build VPS
+# (~/.ssh/osyr-release); see scripts/release.sh.
+osyr-release@ccmai.org namespaces="git,osyr-image" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFHv8mu4H3CzjPZ6AEj6BkQtCoI5NWiKBakYJKSdVLoi

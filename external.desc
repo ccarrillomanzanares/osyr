@@ -1,0 +1,2 @@
+name: OSYR
+desc: Common base of OSYR and newos (Buildroot x86_64 + local AI agent)

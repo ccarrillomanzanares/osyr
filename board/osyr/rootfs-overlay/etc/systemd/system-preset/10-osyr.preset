@@ -1,0 +1,34 @@
+# OSYR — services that do not start by themselves. sshd: the osyr user has a
+# well-known password and sudo; with SSH on, anyone on the same network could
+# get in. If you need it: sudo systemctl enable --now sshd (keys only) and
+# open the port in the firewall (see /etc/nftables.conf).
+disable sshd.service
+
+# Firewall: on from the first boot
+enable osyr-firewall.service
+
+# Power profile: at boot and when plugging or unplugging (udev rule)
+enable osyr-power.service
+
+# Daily update check: it notifies, never installs by itself
+enable osyr-update-check.timer
+# Image update (A/B): a new version that boots fine is kept
+enable osyr-boot-ok.service
+
+# Compressed swap in RAM: the model takes almost all the memory of an 8 GB laptop
+enable osyr-zram.service
+enable osyr-diskwatch.service
+
+# Vision (/look): the socket starts the model with the projector only when used
+enable osyr-llama-vision-proxy.socket
+
+# Sound: PipeWire and WirePlumber run as user services of osyr
+# (post-build.sh). The system ones opened the card first and the user one was
+# left without a microphone (HP 15s, 29 Oct).
+disable pipewire.service
+disable pipewire.socket
+disable pipewire-manager.socket
+disable pipewire-pulse.service
+disable pipewire-pulse.socket
+disable wireplumber.service
+disable wireplumber@.service

@@ -1,0 +1,10 @@
+config BR2_PACKAGE_NOTO_EMOJI
+	bool "noto-emoji"
+	depends on BR2_PACKAGE_FONTCONFIG
+	help
+	  Noto Color Emoji: colour emoji font (CBDT bitmaps, needs
+	  FreeType with PNG). Fontconfig uses it as the fallback for
+	  emoji the other fonts lack, so they are not drawn as boxes
+	  in the terminal, the bar, notifications and the browser.
+
+	  https://github.com/googlefonts/noto-emoji

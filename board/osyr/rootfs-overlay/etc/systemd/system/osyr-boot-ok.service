@@ -1,0 +1,17 @@
+[Unit]
+Description=OSYR: keep a new system version that started fine (A/B)
+Documentation=file:/usr/lib/osyr/osyr/image.py
+# After an image update, GRUB boots the new slot ONCE. It is kept as good if,
+# besides reaching multi-user, the desktop (sway) starts and the model does not
+# fail (osyr update image confirm waits up to 5 min). Otherwise the next boot
+# goes back to the previous one.
+After=multi-user.target
+ConditionPathExists=/etc/osyr/install.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/osyr update image confirm
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=multi-user.target

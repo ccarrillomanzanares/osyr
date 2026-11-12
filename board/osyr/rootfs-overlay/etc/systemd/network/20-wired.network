@@ -1,0 +1,9 @@
+# OSYR — wired: DHCP on any Ethernet interface (including QEMU's virtio one)
+[Match]
+Type=ether
+
+[Network]
+DHCP=yes
+
+[DHCPv4]
+RouteMetric=100

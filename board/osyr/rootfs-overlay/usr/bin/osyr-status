@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""OSYR — swaybar status line: model, network, battery, temperature, free RAM and time.
+
+A single long-running process (it does not start an interpreter every 5 s). The
+network comes from osyr.net, the same code as 'osyr net status'. OSYR_SYSFS
+changes the /sys root for the tests.
+"""
+import glob
+import locale
+import os
+import signal
+import subprocess
+import sys
+import time
+import urllib.request
+
+sys.path.insert(0, os.environ.get("OSYR_LIB", "/usr/lib/osyr"))
+from osyr import ai as aiconf, audio, net, notify, thermal, voice  # noqa: E402
+
+SYSFS = os.environ.get("OSYR_SYSFS", "/sys")
+LLAMA = "http://127.0.0.1:{}/health".format(os.environ.get("OSYR_LLAMA_PORT", "8083"))
+
+
+REMOTE = {}  # (name, url) -> (time, answering?)
+REMOTE_OK_EVERY, REMOTE_DOWN_EVERY = 300, 30  # seconds between checks
+
+
+def remote_up(p):
+    """Is the remote provider answering? Without asking on every redraw (every 5 s was
+    ~17,000 requests a day, and without a network each one blocked the bar for 5 s)."""
+    key = (p["name"], p["url"])
+    t, ok = REMOTE.get(key, (None, None))
+    if t is None or time.monotonic() - t > (REMOTE_OK_EVERY if ok else REMOTE_DOWN_EVERY):
+        ok, _ = aiconf.reachable(p)
+        REMOTE.clear()
+        REMOTE[key] = (time.monotonic(), ok)
+    return ok
+
+
+def ai():
+    p = aiconf.provider()
+    if not p["local"]:  # make it visible that conversations leave the computer
+        return f'AI REMOTE {p["name"].upper()}' + ("" if remote_up(p) else " DOWN")
+    try:
+        with urllib.request.urlopen(LLAMA, timeout=1) as r:
+            if r.status == 200:
+                return "AI ONLINE"
+    except OSError:
+        pass
+    rc = subprocess.run(["systemctl", "-q", "is-active", "osyr-llama.service"]).returncode
+    return "AI LOADING" if rc == 0 else "AI OFFLINE"
+
+
+def network():
+    try:
+        ifaces = net.status(check_internet=False).data.get("interfaces", [])
+    except Exception:
+        return "NET ?"
+    for i in ifaces:  # connected wifi first, then wired with an address
+        if i["type"] == "wifi" and i.get("ssid") and i["ipv4"]:
+            return f'WIFI {i["ssid"]}'
+    for i in ifaces:
+        if i["type"] == "ethernet" and i["ipv4"]:
+            return "ETH"
+    return "NET OFF"
+
+
+ALERTED = {}  # battery -> last threshold notified (10, 5, 3)
+SUSPEND_AT = {}  # battery -> time to suspend at if still without the charger
+SUSPEND_GRACE = 60  # seconds between the warning and suspending
+
+
+def battery_alert(name, cap, st):
+    """Low battery warning: notification and spoken, once per threshold. At 3%
+    without the charger it warns and, if not plugged in within a minute, suspends:
+    better than switching off suddenly in the middle of something."""
+    lang = os.environ.get("LANG", "en")[:2]
+    if name in SUSPEND_AT and st != "Discharging":  # plugged in during the countdown
+        del SUSPEND_AT[name]
+        notify.send("Suspend cancelled", "The charger is connected.")
+    if st == "Charging" or cap > 15:
+        ALERTED.pop(name, None)
+        return
+    if name in SUSPEND_AT:
+        if time.monotonic() >= SUSPEND_AT[name]:
+            del SUSPEND_AT[name]
+            # sudo: without polkit, logind does not let osyr suspend (sudoers.d/osyr-power)
+            r = subprocess.run(["sudo", "-n", "/usr/bin/systemctl", "suspend"], capture_output=True, text=True)
+            if r.returncode != 0:
+                notify.send("Could not suspend", "Save your work and plug in the charger: "
+                            "the battery is empty.", "critical")
+        return
+    if cap <= 3 and st == "Discharging" and ALERTED.get(name, 100) > 3:
+        ALERTED[name] = 3
+        SUSPEND_AT[name] = time.monotonic() + SUSPEND_GRACE
+        notify.send(f"Battery empty: {cap}%",
+                    f"Suspending in {SUSPEND_GRACE} seconds. Plug in the charger to cancel.",
+                    "critical")
+        voice.speak(f"Batería agotada. Suspendo el equipo en {SUSPEND_GRACE} segundos si no "
+                    "conectas el cargador." if lang == "es" else
+                    f"Battery empty. Suspending in {SUSPEND_GRACE} seconds unless you plug in "
+                    "the charger.", lang, wait=True)
+        return
+    for level, urgency in ((5, "critical"), (10, "normal")):
+        if cap <= level and ALERTED.get(name, 100) > level:
+            ALERTED[name] = level
+            notify.send(f"Battery low: {cap}%", "Plug in the charger.", urgency)
+            voice.speak(f"Batería baja: {cap} por ciento." if lang == "es" else
+                        f"Battery low: {cap} percent.", lang, wait=True)
+            break
+
+
+def time_left(bat, st):
+    """Time until empty (or full) as 2:10, or "" if the firmware does not say."""
+    def num(name):
+        try:
+            return int(open(os.path.join(bat, name)).read())
+        except (OSError, ValueError):
+            return None
+    now, rate, full = num("energy_now"), num("power_now"), num("energy_full")
+    if now is None or not rate:  # some batteries report charge (µAh) and current (µA)
+        now, rate, full = num("charge_now"), num("current_now"), num("charge_full")
+    if now is None or not rate or rate < 0:
+        return ""
+    if st == "Discharging":
+        hours = now / rate
+    elif st == "Charging" and full:
+        hours = max(0, full - now) / rate
+    else:
+        return ""
+    if hours > 24:
+        return ""
+    return f" {int(hours)}:{int(hours * 60) % 60:02d}"
+
+
+def battery():
+    out = []
+    for bat in sorted(glob.glob(os.path.join(SYSFS, "class", "power_supply", "BAT*"))):
+        try:
+            cap = open(os.path.join(bat, "capacity")).read().strip()
+            st = open(os.path.join(bat, "status")).read().strip()
+        except OSError:
+            continue
+        mark = {"Charging": "+", "Full": ""}.get(st, "")
+        try:
+            battery_alert(bat, int(cap), st)
+        except ValueError:
+            pass
+        out.append(f"BAT {cap}%{mark}{time_left(bat, st)}")
+    return " ".join(out)
+
+
+def sound():
+    try:
+        v = audio.get_volume(audio.SINK)
+    except Exception:
+        return ""
+    if v is None:
+        return ""
+    return "VOL MUTE" if v[1] else f"VOL {v[0]}%"
+
+
+def mic():
+    return "● REC" if voice.recording() else ""
+
+
+class Refresh(Exception):
+    """osyr-voice and the keys ask for an immediate redraw (SIGUSR1), without waiting 5 s."""
+
+
+def on_refresh(signum, frame):
+    raise Refresh
+
+
+HEAT = {"throttles": None, "alerted": False}
+
+
+def cpu_heat():
+    """CPU 71°C; HOT from 90; THROTTLED if it was throttled in the last 5 s."""
+    t, _, _ = thermal.cpu_temp()
+    if t is None:
+        return ""
+    n = thermal.throttle_count()
+    throttled = n is not None and HEAT["throttles"] is not None and n > HEAT["throttles"]
+    HEAT["throttles"] = n
+    if t >= thermal.HOT + 5 and not HEAT["alerted"]:
+        HEAT["alerted"] = True
+        notify.send(f"CPU very hot: {round(t)}°C", "The AI will run slower. Check that the air vents are not blocked.")
+    elif t < thermal.HOT - 5:
+        HEAT["alerted"] = False
+    mark = " THROTTLED" if throttled else (" HOT" if t >= thermal.HOT else "")
+    return f"CPU {round(t)}°C{mark}"
+
+
+def mem_free():
+    for line in open("/proc/meminfo"):
+        if line.startswith("MemAvailable:"):
+            return "RAM {:.1f}G free".format(int(line.split()[1]) / 1048576)
+    return ""
+
+
+def line():
+    parts = [mic(), ai(), network(), sound(), battery(), cpu_heat(), mem_free(), time.strftime("%a %d %b %H:%M")]
+    return " | ".join(p for p in parts if p)
+
+
+def main():
+    try:  # date in the system language (e.g. Thu 29 Oct), as 'date' did
+        locale.setlocale(locale.LC_TIME, "")
+    except locale.Error:
+        pass
+    signal.signal(signal.SIGUSR1, on_refresh)
+    pidfile = voice.paths()["status"]  # osyr-voice and the keys ask for a redraw with SIGUSR1
+    try:
+        with open(pidfile, "w") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+    while True:
+        try:
+            print(line(), flush=True)
+            time.sleep(5)
+        except Refresh:
+            continue
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (BrokenPipeError, KeyboardInterrupt):
+        pass

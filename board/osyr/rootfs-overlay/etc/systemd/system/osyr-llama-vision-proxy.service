@@ -1,0 +1,13 @@
+[Unit]
+Description=OSYR vision model (proxy on 8084, stops after 10 min idle)
+Requires=osyr-llama-vision.service osyr-llama-vision-proxy.socket
+After=osyr-llama-vision.service
+
+[Service]
+# After 10 min without connections the proxy exits; the server (StopWhenUnneeded)
+# stops with it and frees the memory. Next time, the socket starts it.
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=10min 127.0.0.1:8085
+DynamicUser=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes

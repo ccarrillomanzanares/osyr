@@ -1,0 +1,14 @@
+# OSYR — login (also the tty1 autologin).
+# Same as Buildroot's login.pam plus pam_systemd: registers the session with
+# logind, which creates XDG_RUNTIME_DIR, gives the seat to sway (libseat) and
+# starts systemd --user.
+auth		required	pam_unix.so nullok
+account		required	pam_unix.so
+password	required	pam_unix.so nullok
+session		required	pam_limits.so
+session		required	pam_env.so
+# LANG from /etc/locale.conf for the session (systemd only applies it to services)
+session		required	pam_env.so envfile=/etc/locale.conf
+session		required	pam_unix.so
+session		optional	pam_loginuid.so
+session		optional	pam_systemd.so

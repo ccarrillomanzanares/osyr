@@ -1,0 +1,11 @@
+# OSYR — mounts a partition of a USB stick or external disk and unmounts it when removed.
+[Unit]
+Description=OSYR: mount removable disk %I
+BindsTo=dev-%i.device
+After=dev-%i.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/osyr/osyr-automount add %I
+ExecStop=/usr/lib/osyr/osyr-automount remove %I

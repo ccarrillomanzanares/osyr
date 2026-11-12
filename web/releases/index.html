@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSYR — Download · CCMAI</title>
+<meta name="description" content="Download OSYR @VERSION@: USB image (BIOS and UEFI) and VirtualBox appliance, with checksums and install steps.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 116'%3E%3Cpolygon points='50,4 92,30 92,86 50,112 8,86 8,30' fill='%23001100' stroke='%2300ff00' stroke-width='8'/%3E%3Ccircle cx='50' cy='58' r='16' fill='%2300ff00' opacity='0.9'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#000;--ink:#33ff33;--bright:#00ff00;--dim:#008800;--dim2:#006600;--line:#006400;--panel:#001100;--mono:"Consolas","Menlo","DejaVu Sans Mono",monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--mono);background:var(--bg);color:var(--ink);display:flex;flex-direction:column;align-items:center;padding:2rem 1rem;min-height:100vh}
+.screen{width:min(880px,95vw);background:var(--panel);border:1px solid var(--line);border-radius:6px;box-shadow:0 0 30px rgba(0,255,0,.05)}
+.term-bar{padding:9px 14px;border-bottom:1px solid var(--line)}
+.term-title{color:var(--dim);font-size:.72rem;letter-spacing:.05em}
+.term-body{padding:1.2rem 1.8rem}
+h1{color:var(--bright);font-size:1.5rem;letter-spacing:.1em;margin-bottom:.3rem;text-shadow:0 0 10px rgba(0,255,0,.4)}
+h2{color:var(--bright);font-size:.95rem;letter-spacing:.06em;margin:1.6rem 0 .6rem}
+.sub{color:var(--dim);font-size:.85rem}
+.warn{color:#ccff33;font-size:.78rem;margin:1rem 0 0;border:1px solid #556600;border-radius:4px;padding:.5rem .8rem;background:#0b0f00;line-height:1.5}
+table{width:100%;border-collapse:collapse;font-size:.85rem;margin-top:1.2rem}
+th{text-align:left;color:var(--bright);padding:.5rem .6rem;border-bottom:1px solid var(--bright);letter-spacing:.08em;text-transform:uppercase;font-size:.72rem}
+td{padding:.7rem .6rem;border-bottom:1px solid #003300;color:#22cc22;vertical-align:top}
+td a{color:var(--bright);text-decoration:none}
+td a:hover{text-decoration:underline}
+.small{color:var(--dim);font-size:.72rem}
+.sha{color:var(--dim2);font-size:.66rem;word-break:break-all}
+ol{margin-left:1.3rem;font-size:.82rem;line-height:1.6;color:#22cc22}
+ol li{margin:.35rem 0}
+code,pre{color:var(--bright);font-family:inherit}
+pre{background:#000600;border:1px solid #003800;border-radius:4px;padding:.5rem .7rem;font-size:.74rem;margin:.35rem 0;overflow-x:auto;white-space:pre-wrap;word-break:break-all}
+p{font-size:.82rem;line-height:1.6;color:#22cc22}
+a{color:var(--bright)}
+.back{display:inline-block;margin-top:1.8rem;color:var(--bright);text-decoration:none;font-size:.85rem}
+.term-foot{padding:.5rem 1.8rem .7rem;border-top:1px solid var(--line);display:flex;justify-content:space-between;color:var(--dim2);font-size:.68rem}
+.term-foot a{color:var(--dim);text-decoration:none}
+@media(max-width:760px){.term-body{padding:1rem}}
+</style>
+</head>
+<body>
+<div class="screen">
+<div class="term-bar"><span class="term-title">osyr@ccmai — /osyr/releases</span></div>
+<div class="term-body">
+<h1>&gt; Download OSYR @VERSION@</h1>
+<div class="sub">@DATE@ · built from commit <a href="https://github.com/ccarrillomanzanares/osyr/commit/@COMMIT@">@COMMIT@</a> · <a href="/osyr/changelog.html">what's new</a></div>
+
+<table>
+<tr><th>File</th><th>For</th><th>Size</th></tr>
+<tr><td><a href="osyr.img.xz">osyr.img.xz</a><div class="sha">sha256 @IMG_SHA@</div></td>
+<td>USB stick (BIOS and UEFI), and install to disk</td><td class="small">@IMG_SIZE@<br>@IMG_FULL@ on the USB</td></tr>
+<tr><td><a href="osyr.ova">osyr.ova</a><div class="sha">sha256 @OVA_SHA@</div></td>
+<td>VirtualBox: File → Import Appliance (8 GB RAM, 4 CPUs)</td><td class="small">@OVA_SIZE@</td></tr>
+</table>
+
+<p class="warn">OSYR is still in development and can make mistakes, and so can its AI: check before you confirm, and do not use it with sensitive data or for delicate operations (banking, payments).</p>
+<p class="warn">OSYR is provided “as is”, without warranty of any kind: you use it at your own risk, and its authors are not liable for any damage or loss of data (MIT License).</p>
+<p class="warn">Early test build. Installing to disk <b>erases the whole disk</b> you choose, including any other operating system on it.</p>
+
+<h2>1 · Check the download</h2>
+<pre>sha256sum osyr.img.xz      # Linux; on macOS: shasum -a 256 osyr.img.xz
+certutil -hashfile osyr.img.xz SHA256      # Windows</pre>
+<p>It must match the sha256 above (also in <a href="osyr.img.xz.sha256">osyr.img.xz.sha256</a>).</p>
+<p class="small">The image is also described by a signed manifest, <a href="osyr.img.xz.manifest">osyr.img.xz.manifest</a> + <a href="osyr.img.xz.manifest.sig">.sig</a>, signed with the OSYR release key (<a href="https://github.com/ccarrillomanzanares/osyr/blob/main/board/osyr/rootfs-overlay/etc/osyr/update-signers">update-signers</a>). An installed OSYR checks it before updating; you can too: <code>ssh-keygen -Y verify -f update-signers -I osyr-release@ccmai.org -n osyr-image -s osyr.img.xz.manifest.sig &lt; osyr.img.xz.manifest</code>.</p>
+
+<h2>2 · Write it to a USB stick (16 GB or more)</h2>
+<ol>
+<li>Windows, macOS or Linux: <a href="https://etcher.balena.io/" target="_blank" rel="noopener">balenaEtcher</a> or <a href="https://rufus.ie/" target="_blank" rel="noopener">Rufus</a> (Windows; DD mode) can write the <code>.img.xz</code> directly.</li>
+<li>Linux, from a terminal (replace <code>sdX</code> with your USB stick; everything on it is erased):
+<pre>xzcat osyr.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync</pre></li>
+</ol>
+
+<h2>3 · Start from the USB</h2>
+<ol>
+<li>Turn the laptop on and open its boot menu (usually F9 on HP, F12 on Dell and Lenovo, Esc or F8 on others). Choose the USB stick.</li>
+<li>First start: language, keyboard, time zone, your password and wifi. The user is <code>osyr</code>.</li>
+<li>The AI model loads in the background: the first answer can take a minute or two.</li>
+</ol>
+
+<h2>4 · Install on the disk (optional)</h2>
+<ol>
+<li>From OSYR running on the USB, open a terminal (Super+Enter) and run <code>sudo osyr-install</code>.</li>
+<li>Choose the disk, check what will be erased, and type the disk name to confirm.</li>
+<li>Choose a passphrase: your files are encrypted with it and it is asked at every start. If you forget it, they cannot be recovered.</li>
+<li>When it finishes, turn the laptop off, remove the USB and turn it on.</li>
+</ol>
+
+<h2>Or run it in VirtualBox</h2>
+<ol>
+<li>Check the download: <code>sha256sum osyr.ova</code> (or <code>shasum -a 256</code>, <code>certutil -hashfile ... SHA256</code>) must match the sha256 above (also in <a href="osyr.ova.sha256">osyr.ova.sha256</a>).</li>
+<li>In VirtualBox: File → Import Appliance, choose <code>osyr.ova</code> and import. It comes with 8 GB of RAM and 4 CPUs, the minimum for the local AI.</li>
+<li>Leave the firmware as BIOS: do not turn on EFI in the VM settings.</li>
+<li>Start it. The first start is the same as on a USB stick: language, keyboard, time zone, your password and wifi (in the VM the network already works). The user is <code>osyr</code>.</li>
+<li>Installing to disk (step 4) is not needed in the VM.</li>
+</ol>
+<p>If it is very slow: turn on virtualization (VT-x or AMD-V) in your computer's BIOS, and on Windows turn off Hyper-V, which slows VirtualBox down. Without AVX2 in the processor the local AI is very slow: use a server model.</p>
+
+<h2>Updates</h2>
+<p>OSYR checks once a day for a new version signed by the OSYR team and shows a notice; it never installs anything by itself. To install, open a terminal and run <code>sudo osyr update code apply</code>: it shows what will change, asks first, and <code>sudo osyr update code rollback</code> undoes it. Changes that need a new image (new programs, the kernel) are published here. More in the <a href="/osyr/help.html#updates">help page</a>.</p>
+
+<h2>Privacy</h2>
+<p>The AI runs on the laptop. Nothing leaves it unless you connect a remote AI provider (the assistant tells you) or send a diagnostic report with <code>osyr-diag</code>. The report carries logs, hardware details, network names and a hardware test; <b>not your conversations</b> unless you ask for it with <code>/report chats</code>, and never AI keys, wifi passwords or the text of your reminders. It asks before adding your last screenshots.</p>
+
+<h2>Problems?</h2>
+<p>Locked screen, keyboard shortcuts and commands: see the <a href="/osyr/help.html">help page</a> (in OSYR, Super+F1). Run <code>osyr-diag</code> on the laptop: it sends logs and a hardware self-test (your conversations only if you ask for it) so we can see what happened. Or write to <a href="mailto:contact@ccmai.org">contact@ccmai.org</a>.</p>
+
+<a class="back" href="/osyr/">← back to OSYR</a>
+</div>
+<div class="term-foot"><span>© 2026 <a href="https://ccmai.org/">CCMAI</a> · <a href="/kai/">kai</a> · <a href="/miuzika/">miuzika</a> · <a href="/falken/">falken</a></span><span><a href="https://github.com/ccarrillomanzanares/osyr/blob/main/LICENSE">MIT License</a> · no warranty</span><span>@VERSION@</span></div>
+</div>
+</body>
+</html>

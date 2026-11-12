@@ -1,0 +1,10 @@
+config BR2_PACKAGE_WTYPE
+	bool "wtype"
+	depends on BR2_PACKAGE_WAYLAND
+	select BR2_PACKAGE_LIBXKBCOMMON
+	help
+	  Types text into the focused window, like a virtual keyboard
+	  (wlroots virtual-keyboard protocol). Used by OSYR dictation
+	  (osyr-voice dictate).
+
+	  https://github.com/atx/wtype

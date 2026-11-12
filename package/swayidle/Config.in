@@ -1,0 +1,10 @@
+config BR2_PACKAGE_SWAYIDLE
+	bool "swayidle"
+	depends on BR2_PACKAGE_WAYLAND
+	depends on BR2_PACKAGE_SYSTEMD
+	select BR2_PACKAGE_WAYLAND_PROTOCOLS
+	help
+	  Actions on idle (lock, turn the screen off) and before suspend
+	  (lid closed), via logind.
+
+	  https://github.com/swaywm/swayidle

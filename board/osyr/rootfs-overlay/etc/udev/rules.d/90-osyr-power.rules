@@ -1,0 +1,4 @@
+# OSYR — on plugging or unplugging, the power profile (osyr-power.service).
+# The battery's periodic events also arrive here: the service does nothing
+# if the profile does not change.
+SUBSYSTEM=="power_supply", ACTION=="change", RUN+="/usr/bin/systemctl --no-block start osyr-power.service"

@@ -1,0 +1,17 @@
+# OSYR — notifications (mako) with the WarGames theme
+font=DejaVu Sans Mono 10
+background-color=#000000ee
+text-color=#00ff66
+border-color=#00ff66
+border-size=1
+border-radius=0
+padding=8
+margin=10
+width=420
+default-timeout=8000
+anchor=top-right
+
+[urgency=critical]
+border-color=#ff3333
+text-color=#ff3333
+default-timeout=0

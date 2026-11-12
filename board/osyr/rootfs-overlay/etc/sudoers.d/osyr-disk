@@ -1,0 +1,3 @@
+# OSYR: eject a disk mounted by osyr-automount without a password (only that;
+# the program only accepts names under /run/media/osyr).
+osyr ALL=(root) NOPASSWD: /usr/lib/osyr/osyr-automount eject *

@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""OSYR — mounts USB sticks, SD cards and external disks when plugged in.
+
+Started by osyr-automount@<partition>.service (rule 90-osyr-automount.rules),
+as root:
+  osyr-automount add sdb1      mounts on /run/media/osyr/<label> and notifies
+  osyr-automount remove sdb1   on unplugging (or stopping the service): unmounts
+  osyr-automount eject <name>  unmounts so it can be removed without losing data;
+                               the osyr user can ask for it with sudo without a
+                               password (/etc/sudoers.d/osyr-disk), and only
+                               for what is mounted under /run/media/osyr
+It never touches the disk the system runs from (the OSYR USB stick or the
+installed disk). Encrypted ones (LUKS) are not mounted: a notice is shown.
+"""
+import os
+import re
+import subprocess
+import sys
+
+sys.path.insert(0, "/usr/lib/osyr")
+from osyr import notify  # noqa: E402
+
+BASE = "/run/media/osyr"
+USER_UID = USER_GID = 1000
+
+
+def sh(*args):
+    p = subprocess.run(args, capture_output=True, text=True)
+    return p.returncode, p.stdout.strip()
+
+
+def info(dev):
+    _, out = sh("blkid", "-o", "export", dev)
+    return dict(l.split("=", 1) for l in out.splitlines() if "=" in l)
+
+
+def parent(dev):
+    _, out = sh("lsblk", "-no", "PKNAME", dev)
+    return out.splitlines()[0].strip() if out else ""
+
+
+def system_disks():
+    """System disks: the one with / and the one with /home (also through LUKS)."""
+    disks = set()
+    for mnt in ("/", "/home"):
+        _, src = sh("findmnt", "-no", "SOURCE", mnt)
+        if not src.startswith("/dev/"):
+            continue
+        _, chain = sh("lsblk", "-sno", "NAME,TYPE", src)  # from the partition up to the disk
+        for line in chain.splitlines():
+            name, _, kind = line.strip().lstrip("└─├│ ").partition(" ")
+            if kind.strip() == "disk":
+                disks.add(name)
+    return disks
+
+
+def mountpoint(dev):
+    _, out = sh("findmnt", "-no", "TARGET", dev)
+    return out.splitlines()[0] if out else ""
+
+
+def add(kname):
+    dev = f"/dev/{kname}"
+    if parent(dev) in system_disks() or kname in system_disks():
+        return 0
+    meta = info(dev)
+    fs = meta.get("TYPE", "")
+    if fs in ("", "swap"):
+        return 0
+    # Only letters, digits, ".", "-" and "_", not starting with "." or "-" (".." would
+    # escape /run/media/osyr and ".something" would be hidden); if nothing is left, the node name
+    label = re.sub(r"[^\w.-]", "_", meta.get("LABEL") or "").lstrip(".-")[:40] or kname
+    if fs == "crypto_LUKS":
+        notify.send_to_user("Encrypted disk connected", f"{label}: OSYR cannot open encrypted disks yet.")
+        return 0
+    if mountpoint(dev):
+        return 0
+    os.makedirs(BASE, exist_ok=True)
+    target, i = f"{BASE}/{label}", 1
+    while os.path.exists(target) and os.listdir(target):
+        i += 1
+        target = f"{BASE}/{label}-{i}"
+    os.makedirs(target, exist_ok=True)
+    opts = "nosuid,nodev,noexec"
+    if fs in ("vfat", "exfat", "ntfs", "ntfs3"):
+        opts += f",uid={USER_UID},gid={USER_GID},umask=022"
+        if fs == "vfat":
+            opts += ",utf8,flush"
+        if fs == "ntfs":
+            fs = "ntfs3"
+    rc, out = sh("mount", "-t", fs, "-o", opts, dev, target)
+    if rc != 0:
+        os.rmdir(target)
+        notify.send_to_user("Disk connected", f"{label}: could not open it ({fs}).")
+        # The user has been told: the service is not left "failed" (a USB stick without
+        # a partition table sometimes shows a bogus partition that cannot be mounted)
+        print(f"osyr-automount: mount {dev} ({fs}) failed: {out}", file=sys.stderr)
+        return 0
+    if fs not in ("vfat", "exfat", "ntfs3"):  # ext4 and the like: the root dir goes to the user if empty
+        st = os.stat(target)
+        if st.st_uid == 0 and not os.listdir(target):
+            os.chown(target, USER_UID, USER_GID)
+    name = os.path.basename(target)
+    notify.send_to_user("Disk connected", f"{name} is in {target}. Before unplugging it: osyr disk eject {name}")
+    return 0
+
+
+def remove(kname):
+    dev = f"/dev/{kname}"
+    target = mountpoint(dev)
+    if not target:
+        # the device is gone: look in /proc/mounts for what was mounted from it
+        for line in open("/proc/mounts"):
+            src, mnt = line.split()[:2]
+            if src == dev and mnt.startswith(BASE + "/"):
+                target = mnt
+    if target and target.startswith(BASE + "/"):
+        sh("umount", "-l", target)
+        try:
+            os.rmdir(target)
+        except OSError:
+            pass
+    return 0
+
+
+def eject(name):
+    if not re.fullmatch(r"[\w.-]+", name):
+        print("bad name", file=sys.stderr)
+        return 2
+    target = f"{BASE}/{name}"
+    _, src = sh("findmnt", "-no", "SOURCE", target)
+    if not src:
+        print(f"{name} is not connected", file=sys.stderr)
+        return 1
+    sh("sync")
+    rc, out = sh("umount", target)
+    if rc != 0:
+        print(f"{name} is in use: close what is using it and try again", file=sys.stderr)
+        return 1
+    os.rmdir(target)
+    disk = parent(src)
+    if disk:  # so the system does not mount it again until it is unplugged
+        sh("systemctl", "stop", f"osyr-automount@{os.path.basename(src)}.service")
+    print(f"{name} can be unplugged now")
+    return 0
+
+
+def main():
+    if len(sys.argv) != 3 or sys.argv[1] not in ("add", "remove", "eject"):
+        print("usage: osyr-automount add|remove <partition> | eject <name>", file=sys.stderr)
+        return 2
+    return {"add": add, "remove": remove, "eject": eject}[sys.argv[1]](sys.argv[2])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

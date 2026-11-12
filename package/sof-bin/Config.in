@@ -1,0 +1,8 @@
+config BR2_PACKAGE_SOF_BIN
+	bool "sof-bin"
+	help
+	  Sound Open Firmware (SOF) firmware and topologies for the Intel
+	  audio DSP (Ice Lake and later, and the digital microphones of
+	  almost every current Intel laptop). Binaries signed by Intel.
+
+	  https://github.com/thesofproject/sof-bin

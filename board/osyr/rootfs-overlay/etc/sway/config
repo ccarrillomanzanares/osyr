@@ -1,0 +1,116 @@
+# OSYR — sway configuration (i3 syntax).
+# Each user can add their own in ~/.config/sway/config.d/
+set $mod Mod4
+set $term foot
+font pango:DejaVu Sans Mono 9
+floating_modifier $mod normal
+default_border pixel 1
+default_floating_border pixel 1
+focus_follows_mouse no
+
+# --- Keyboard and screen -------------------------------------------------------
+input type:keyboard {
+    xkb_layout es
+    repeat_delay 300
+    repeat_rate 30
+}
+input type:touchpad {
+    tap enabled
+    natural_scroll disabled
+}
+output * bg #000000 solid_color
+
+# --- Theme (window and bar colours) --------------------------------------------
+include /etc/osyr/theme/sway.conf
+
+# --- Shortcuts ------------------------------------------------------------------
+bindsym $mod+Return exec $term
+# Help: shortcuts, locked screen, commands (/usr/share/osyr/help.md)
+bindsym $mod+F1 exec $term --title "OSYR help" osyr-help
+bindsym $mod+c exec $term -e osyr-chat
+bindsym $mod+d exec wmenu-run -f "DejaVu Sans Mono 10" -N 000000 -n 00ff66 -S 00ff66 -s 000000
+# Browser (osyr web): Super+O opens an address or searches. It goes to workspace 2,
+# in tabs, so the chat stays on 1.
+bindsym $mod+o exec osyr-web-prompt
+for_window [app_id="(?i)cog"] move container to workspace number 2, workspace number 2, layout tabbed
+bindsym $mod+Shift+q kill
+bindsym $mod+Shift+c reload
+bindsym $mod+Shift+e exec swaymsg exit
+
+bindsym $mod+h focus left
+bindsym $mod+j focus down
+bindsym $mod+k focus up
+bindsym $mod+l focus right
+bindsym $mod+Left focus left
+bindsym $mod+Down focus down
+bindsym $mod+Up focus up
+bindsym $mod+Right focus right
+bindsym $mod+Shift+h move left
+bindsym $mod+Shift+j move down
+bindsym $mod+Shift+k move up
+bindsym $mod+Shift+l move right
+bindsym $mod+Shift+Left move left
+bindsym $mod+Shift+Down move down
+bindsym $mod+Shift+Up move up
+bindsym $mod+Shift+Right move right
+
+bindsym $mod+v splitv
+bindsym $mod+b splith
+bindsym $mod+f fullscreen
+bindsym $mod+s layout stacking
+bindsym $mod+w layout tabbed
+bindsym $mod+e layout toggle split
+bindsym $mod+Shift+space floating toggle
+
+bindsym $mod+1 workspace number 1
+bindsym $mod+2 workspace number 2
+bindsym $mod+3 workspace number 3
+bindsym $mod+4 workspace number 4
+bindsym $mod+5 workspace number 5
+bindsym $mod+Shift+1 move container to workspace number 1
+bindsym $mod+Shift+2 move container to workspace number 2
+bindsym $mod+Shift+3 move container to workspace number 3
+bindsym $mod+Shift+4 move container to workspace number 4
+bindsym $mod+Shift+5 move container to workspace number 5
+
+# Laptop brightness keys (--locked: also on the lock screen)
+bindsym --locked XF86MonBrightnessUp exec osyr ui brightness up
+bindsym --locked XF86MonBrightnessDown exec osyr ui brightness down
+
+# Sound keys
+bindsym --locked XF86AudioRaiseVolume exec osyr audio volume up
+bindsym --locked XF86AudioLowerVolume exec osyr audio volume down
+bindsym --locked XF86AudioMute exec osyr audio mute
+bindsym --locked XF86AudioMicMute exec osyr audio mute --mic
+
+# Screenshot (Print Screen) in ~/Pictures/Screenshots
+bindsym Print exec osyr-screenshot
+
+# Talk to OSYR: hold Super+Space, speak and release
+bindsym --no-repeat $mod+space exec osyr-voice start
+bindsym --release $mod+space exec osyr-voice stop
+
+# Dictate into any application: hold Super+Ctrl+Space, speak and release
+bindsym --no-repeat $mod+Ctrl+space exec osyr-voice start
+bindsym --release $mod+Ctrl+space exec osyr-voice dictate
+
+# Lock the screen by hand
+bindsym $mod+Ctrl+l exec swaylock -f
+
+# --- Idle and locking -----------------------------------------------------------
+# Locks after 20 min (osyr ui lock <minutes|off>), turns the screen off 5 min
+# later and always locks before suspending (lid closed). See osyr-idle.
+# Theme in /etc/swaylock/config.
+exec osyr-idle
+
+# --- Notifications (mako, theme in /etc/xdg/mako/config) --------------------------
+exec mako
+# Reminders: recreate the timers after a restart and report the missed ones
+exec sleep 3 && osyr remind restore
+
+# --- Start-up: the agent console on workspace 1 --------------------------------
+# On leaving the chat, a shell stays in the same window.
+exec $term --title "OSYR" sh -c 'osyr-firstboot; osyr-chat; exec bash'
+
+include /etc/sway/config.d/*
+include ~/.config/sway/config.d/*
