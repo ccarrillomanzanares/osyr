@@ -72,14 +72,16 @@ When the question is shown, the system adds one plain line for the commands it k
 | What | Examples | Why |
 | --- | --- | --- |
 | Destroying disks and partitions | `mkfs*`, `wipefs`, `dd of=/dev/…`, `fdisk`, `parted`, `sgdisk`, `blkdiscard` on an internal disk | Not recoverable. Formatting a USB stick has its own `osyr disk` command, which names the disk and asks |
-| Deleting or overwriting outside the home folder | `sudo rm -r /usr`, `rm -rf /`, `> /etc/fstab`, `mv /etc …`, recursive `chmod`/`chown` on system folders | Breaks the base |
+| Changing the system itself | Anything that writes in `/usr`, `/bin`, `/lib`, `/opt`, `/`: `sudo rm -r /usr`, `rm -rf /`, `sudo cp x /usr/bin/ls` | The base is replaced as a whole by updates, never by hand |
+| Whole trees of configuration | `sudo rm -rf /etc`, `sudo rm -rf /var/log`, `mv /etc …`, recursive `chmod`/`chown` on `/etc` or `/var`. A single file in `/etc` or `/var` is an administrator's job and **asks** | Breaks the system |
+| Files nobody edits by hand | `/etc/fstab`, `/etc/passwd`, `/etc/group`, `/etc/pam.d`, `/var/lib/osyr` | A mistake locks the user out or stops the boot |
 | Deleting the whole home folder | `rm -rf ~`, `rm -rf ~/*`, `rm -rf .` in the home folder | The A/B system does not protect it |
 | Boot and update machinery | Writing in `/boot`, GRUB, the A/B slots, `/etc/osyr/update-signers`, `efibootmgr` | Could leave the machine unable to start or accept forged updates |
 | Privileges | Editing `/etc/sudoers*`, `/etc/shadow`, `/etc/passwd` by hand, `sudo su`, `sudo bash`, `sudo -s`, `sudo -i`, `chmod u+s` | A root shell would dodge every check. Users and passwords have `osyr` commands |
 | Running code from the network | `curl … \| sh`, `wget -O- … \| bash` | Software is installed with `osyr ext` and `osyr box` |
 | Reading secrets | `/etc/shadow`, `~/.ssh/id_*`, wifi passwords (`/var/lib/iwd`), the browser profile, `~/.config/osyr/` provider keys, `~/.gnupg` | They would end up in the conversation, and with a remote provider on someone else's server |
 | The agent's own guard rails | Killing or editing `osyr-chat`, the classifier, the audit log | It must not be able to switch itself off |
-| Harmful to the session | Fork bombs, `kill -9 -1`, `sudo systemctl isolate`, `shutdown`/`reboot` (these have `osyr` commands that ask) | |
+| Harmful to the session | Fork bombs, `kill -9 -1`, `kill 1`, `sudo systemctl isolate`, `systemctl mask` | Shutting down and restarting are not blocked: they ask |
 
 A blocked command returns `BLOCKED` to the model with the reason and, when there is one, the `osyr` command that does it properly. The user sees a dim line: `[blocked: it would format a disk]`.
 
@@ -106,6 +108,16 @@ A blocked command returns `BLOCKED` to the model with the reason and, when there
 | `for f in *.jpg; do mv "$f" "trip-$f"; done` | confirm | Cannot be analysed: asks |
 | `sudo bash` | block | Root shell |
 | `vim ~/.bashrc` | — | Fails at once: needs a keyboard |
+
+## Draft of the classifier
+
+A first version exists on the local branch `shell-draft` (not on `main`, not connected to the agent): `osyr/shellguard.py` and `tests/shellguard_cases.py`, a table of 195 commands with the class each must get. Writing it, and attacking it with some 300 more commands, changed three things in this document:
+
+- **Three zones instead of "inside or outside the home folder".** The user's files and removable disks ask; single files of system configuration (`/etc`, `/var`) ask; the system itself is blocked.
+- **Listing is not reading.** `ls ~/.ssh` passes; what is blocked is anything that would show or copy the content of a secret (`cat`, `grep -r`, `cp`, `tar`, a wildcard that matches a key).
+- **Quoting, wildcards, braces, symlinks and `cd`** are resolved before deciding: `r''m -rf ~`, `cat ~/.ssh/id_rs?`, `cd ~/.ssh; cat *` and a link to a key are all seen for what they are.
+
+What it still cannot follow, and therefore only asks about: the value of a variable (`a=rm; $a -rf ~`), a script file's content (`sh y.sh`), and what a program does with a file it is given (`python3 script.py`). In those cases the user's answer is the only protection, plus the Unix permissions.
 
 ## What is logged
 
