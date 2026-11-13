@@ -222,7 +222,7 @@ To be confirmed in the Lambda account: the exact expiry day and what the credits
 ## Carlos's pending decisions
 
 - [ ] Choose the small model once the candidates are measured.
-- [ ] Approve the shell design: what is blocked, what asks for confirmation and what goes through.
+- [x] Approve the shell design: what is blocked, what asks for confirmation and what goes through. Approved on 13 Nov 2026 as built ([SHELL-DESIGN.md](SHELL-DESIGN.md)); it can still be adjusted until the interface is frozen.
 - [ ] Approve the task format and the list of categories before the 30–50 tasks are written.
 - [ ] Go-ahead for every Lambda instance start (instance, hours and share of the budget).
 - [ ] After the pilot: whether the small model keeps the shell and whether to go on with it.
