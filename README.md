@@ -22,7 +22,7 @@ Website and downloads: [ccmai.org/osyr](https://ccmai.org/osyr/) · Help and key
 
 ## Status
 
-Early test build, **v0.32.0** (13 Nov 2026). It boots in QEMU (BIOS and UEFI) and earlier versions have been tested on HP laptops, installed to disk on two of them. Roadmap and decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); work log: [docs/MILESTONE-0.md](docs/MILESTONE-0.md); what comes next for the assistant and its training: [docs/TRAINING-PLAN.md](docs/TRAINING-PLAN.md). Full list of changes: [changelog](https://ccmai.org/osyr/changelog.html).
+Early test build, **v0.32.0** (13 Nov 2026). It boots in QEMU (BIOS and UEFI) and earlier versions have been tested on two HP laptops (2019 and 2014), installed to disk on the older one. Roadmap and decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); work log: [docs/MILESTONE-0.md](docs/MILESTONE-0.md); what comes next for the assistant and its training: [docs/TRAINING-PLAN.md](docs/TRAINING-PLAN.md). Full list of changes: [changelog](https://ccmai.org/osyr/changelog.html).
 
 ### New in v0.32.0
 
