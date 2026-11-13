@@ -92,10 +92,6 @@ Publishing (maintainers): `scripts/publish.sh img` then `scripts/publish.sh vbox
 | `web/` | website templates for ccmai.org/osyr |
 | `scripts/` | publishing, signed releases, model download, diagnostics receiver |
 
-## Related projects
-
-- [newos](https://github.com/ccarrillomanzanares/newos)
-
 ## License
 
 MIT

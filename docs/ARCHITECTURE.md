@@ -257,4 +257,3 @@ The biggest risk is that Buildroot is meant for embedded systems, not for laptop
 - [Qwen3.5-4B](https://modal.com/library/qwen/qwen3-5-4b)
 - [Qwen3.6-35B-A3B](https://docs.sglang.io/cookbook/autoregressive/Qwen/Qwen3.6)
 - [Lambda pricing](https://www.lambda.ai/pricing)
-- Reference repository: [newos](https://github.com/ccarrillomanzanares/newos)
