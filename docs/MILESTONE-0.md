@@ -452,7 +452,7 @@ Decisions in the table of [TRAINING-PLAN.md](TRAINING-PLAN.md): software is inst
 - **`osyr app`** (`osyr/app.py`): `list`, `run <name> [file]`, `stop <name> [--force]`, for the system's applications (never the terminal) and the box's. An application opens on the first free workspace from the third on (the second is the browser's) and the screen goes there. Windows and processes of the box are told apart from the system's by process, so closing the box's terminal does not close the assistant's.
 - In the chat: reading commands (`box status/list/search`, `app list`) do not ask; the rest do. Box commands may take up to an hour and show their progress. The fixed prompt gained two lines and lost about as much from the voice and installer lines (not measured on the server yet).
 - Tests: `tests/box_cases.py` with a stand-in for podman (32 cases); with the real engine inside the image, in `tests/vm-checks.sh` (they need the Internet). Not run in the image yet.
-- Known limits: programs that only speak X11 have no screen (no Xwayland in the image); an application started by a script under another process name is found by its window's name only; USB disks mounted after the box started are not seen in it.
+- Known limits: programs that only speak X11 have no screen (no Xwayland in the image): `osyr app run` recognises their error and answers `APP_NEEDS_X11`, with a hint for the assistant to say so and offer another program; an application started by a script under another process name is found by its window's name only; USB disks mounted after the box started are not seen in it.
 - Pending: the full `make test` with shadow in place (first-boot password, screen lock) and a build from scratch.
 
 ## Still pending (4 Nov)

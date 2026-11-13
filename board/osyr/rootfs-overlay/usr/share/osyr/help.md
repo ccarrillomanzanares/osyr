@@ -88,6 +88,7 @@ Ask the assistant: "install VLC", "is there a program to edit photos?", "open VL
 - Applications with a window are opened and closed with `osyr app run <name> [file]` and `osyr app stop <name>`; `osyr app list` shows them. Each opens on a workspace of its own: Super+3, Super+4... show them (Super+2 is the web browser), and Super+1 comes back to the assistant.
 - Programs without a window (`ffmpeg`, `git`, `python3`...) run with `osyr box run <command>`.
 - The programs in the box see your folder (Documents, Downloads...), the screen and the sound. They do not see your keys and passwords (`.ssh`, `.gnupg`), the assistant's settings and conversations, or the system itself.
+- Some older programs only work with the X11 display system, which OSYR does not have (it uses Wayland): they install, but their window cannot be shown. The assistant tells you when that happens and can look for another program that does the same.
 - From the USB stick there is little room for programs: install OSYR on the disk first (`/install`).
 - `osyr box reset` deletes the box and everything installed in it; your own files are not touched.
 

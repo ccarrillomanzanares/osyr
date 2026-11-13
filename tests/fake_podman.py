@@ -8,7 +8,7 @@ import sys
 
 STATE = os.environ["FAKE_PODMAN_STATE"]
 ARGS = sys.argv[1:]
-KNOWN = {"hello": [], "vlc": ["vlc"], "ffmpeg": []}  # package: its .desktop files
+KNOWN = {"hello": [], "vlc": ["vlc"], "ffmpeg": [], "xeyes": ["xeyes"]}  # package: its .desktop files
 
 
 def get(name, default=None):
@@ -105,6 +105,9 @@ if ARGS[0] == "exec":
         import time
         time.sleep(30)
         sys.exit(0)
+    if cmd[0] == "/usr/bin/xeyes":
+        print("Error: Can't open display: ", file=sys.stderr)
+        sys.exit(1)
     print(f"sh: {cmd[0]}: not found", file=sys.stderr)
     sys.exit(127)
 sys.exit(0)

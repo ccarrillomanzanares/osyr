@@ -127,6 +127,12 @@ def main():
     r = osyr("app", "run", "foot")
     check("terminal-not-an-app", r.get("code") == "APP_NOT_FOUND", r)
 
+    # A program that only knows X11 cannot show its window: the result says so, for the assistant to tell
+    osyr("box", "install", "xeyes")
+    r = osyr("app", "run", "xeyes", "--wait", "2")
+    check("app-needs-x11", r.get("code") == "APP_NEEDS_X11" and "X11" in r.get("hint", "") and "box search" in r["hint"], r)
+    osyr("box", "remove", "xeyes")
+
     # Removing, and deleting the box (asks first)
     r = osyr("box", "remove", "ffmpeg")
     check("remove-not-installed", r.get("code") == "BOX_NOT_INSTALLED", r)

@@ -22,6 +22,9 @@ from .result import Result, fail
 SYSTEM_DIR = os.environ.get("OSYR_APPLICATIONS", "/usr/share/applications")
 SKIP = re.compile(r"^foot")  # the terminal: closing "foot" would close the assistant
 HOME_WORKSPACE = 1
+# What a program says when it only knows the old X11 display system, which OSYR does not have
+NEEDS_X11 = re.compile(r"open display|cannot connect to X server|no display name|DISPLAY (is not set|environment variable)"
+                       r"|could not connect to display|xcb.*could not|Gtk-WARNING.*cannot open display", re.I)
 FIRST_WORKSPACE = 3  # 2 is the browser's (see /etc/sway/config)
 
 
@@ -220,7 +223,13 @@ def run(args):
         if p.returncode != 0:
             if workspace:
                 sway("workspace", "number", str(HOME_WORKSPACE))
-            return fail("APP_FAILED", "It closed right after starting.", {"id": app["id"], "exit": p.returncode, "error": err})
+            if NEEDS_X11.search(err):
+                return fail("APP_NEEDS_X11", "This program only works with the old X11 display system, which OSYR "
+                            "does not have (OSYR uses Wayland), so its window cannot be shown here. Tell the user "
+                            "so, and offer to look for another program that does the same: osyr box search <words>",
+                            {"id": app["id"], "error": err})
+            return fail("APP_FAILED", "It closed right after starting. Tell the user what the error says.",
+                        {"id": app["id"], "exit": p.returncode, "error": err})
     except subprocess.TimeoutExpired:
         pass
     data = {"id": app["id"], "name": app["name"], "where": app["where"]}
