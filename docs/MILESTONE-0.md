@@ -427,7 +427,7 @@ Still open:
 3. Hands-free wake word ("Hey OSYR"), optional: CPU cost to be measured.
 4. Model speed: speculative decoding with a small draft model. Measure on the HP.
 
-## Shell tool and permissions (13 Nov, not in an image yet)
+## Shell tool and permissions (13 Nov, in v0.32.0)
 
 First piece of stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md); design and decisions in [SHELL-DESIGN.md](SHELL-DESIGN.md).
 
@@ -441,7 +441,7 @@ First piece of stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md); design and decis
 - Tested inside the image (13 Nov, image `309c1d2`, vm 153/154 and native 31/31): the chat's shell function in a real terminal with `sudo` — right password, wrong password three times, a "no", a program that reads the keyboard, the heavy-command line, a blocked command and the audit file. The one failure was the check itself (it took the notice "your password may be asked" for sudo's prompt), fixed afterwards and not run again yet.
 - **The fixed prompt is about 2,000 tokens** with the shell, 2,380 with the write tools too (it was about 1,640 at v0.31.1, already over the 1,500 of the architecture). Decided 13 Nov: the limit is 2,000 until the model is fine-tuned, and 1,500 after.
 
-## Containers for installing software (13 Nov, not in an image yet)
+## Containers for installing software (13 Nov, in v0.32.0)
 
 Decisions in the table of [TRAINING-PLAN.md](TRAINING-PLAN.md): software is installed in a container (`osyr box`), one default box per user with Debian stable, empty at first, which sees that user's home folder. The official extensions (`osyr ext`) are set aside.
 
@@ -451,7 +451,9 @@ Decisions in the table of [TRAINING-PLAN.md](TRAINING-PLAN.md): software is inst
 - **`osyr box`** (`osyr/box.py`): `install` (creates the box the first time: downloads `debian:stable`, sets up the user's language), `remove`, `search`, `list`, `status`, `run <command>` (programs without a window), `update`, `reset` (asks with a token). The box is a container named `osyr-box` run with `--userns=keep-id`: inside, the user is the same user and sees their home folder, the session folder (screen, sound) and `/dev/dri`. Empty folders cover `.ssh`, `.gnupg`, `.config/osyr`, `.local/share/osyr`, `.local/state/osyr`, the keyrings and the box's own storage. What the user asked to install is kept in `~/.local/share/osyr/box/`.
 - **`osyr app`** (`osyr/app.py`): `list`, `run <name> [file]`, `stop <name> [--force]`, for the system's applications (never the terminal) and the box's. An application opens on the first free workspace from the third on (the second is the browser's) and the screen goes there. Windows and processes of the box are told apart from the system's by process, so closing the box's terminal does not close the assistant's.
 - In the chat: reading commands (`box status/list/search`, `app list`) do not ask; the rest do. Box commands may take up to an hour and show their progress. The fixed prompt gained two lines and lost about as much from the voice and installer lines (not measured on the server yet).
-- Tests: `tests/box_cases.py` with a stand-in for podman (32 cases); with the real engine inside the image, in `tests/vm-checks.sh` (they need the Internet). Not run in the image yet.
+- Tests: `tests/box_cases.py` with a stand-in for podman (34 cases); with the real engine inside the image, in `tests/vm-checks.sh` (they need the Internet).
+- **First run in the image (13 Nov, image `d25097b`, vm 153/167):** 13 of the 14 failures were the box's, with one cause: `crun: write: No space left on device` when starting the container. crun copies into a tmpfs what was under it (`tmpcopyup`, the default), so the 64k folders that cover `.ssh`, podman's storage and the rest received the very content they hide. Fixed with `notmpcopyup` (`67d1148`). The other failure, `update-no-reboot`, came from testing an image older than the repository (a later commit touched the library, so the test update restarted `osyr-diskwatch`): not a fault in the code.
+- **v0.32.0 published (13 Nov)** on `9ebee2b`: img, signed manifest, update image and ova; boots in QEMU in BIOS and UEFI. Decided by the user: published without repeating the checks in the VM; they test it themselves. **So the box has not yet worked with the real engine in any test**: `box-*` and `app-*` in `vm-checks.sh` are pending, and so is the user's result.
 - Known limits: programs that only speak X11 have no screen (no Xwayland in the image): `osyr app run` recognises their error and answers `APP_NEEDS_X11`, with a hint for the assistant to say so and offer another program; an application started by a script under another process name is found by its window's name only; USB disks mounted after the box started are not seen in it.
 - Pending: the full `make test` with shadow in place (first-boot password, screen lock) and a build from scratch.
 
