@@ -11,7 +11,7 @@ OSYR is **not ready** to train on: the agent handles settings, files (read only)
 | Piece | State |
 | --- | --- |
 | Tools | Four: `osyr(command)`, `clipboard(action, text)`, `remember(text)`, `look(question)` |
-| Fixed prompt | **About 1,640 tokens** at v0.31.1, measured on the server (an earlier estimate of 960 was wrong). With the shell it is about 2,000, and with `write` and `edit` too, about 2,380. The limit in the architecture is 1,500: it is already passed, and it has to be either raised or met by shortening the descriptions |
+| Fixed prompt | **About 1,640 tokens** at v0.31.1, measured on the server (an earlier estimate of 960 was wrong). With the shell it is about 2,000, and with `write` and `edit` too, about 2,380. The limit was 1,500 and was already passed; since 13 November it is 2,000 until the model is fine-tuned and 1,500 after |
 | Commands inside `osyr` | The list is written in the tool description; anything else is refused before running (`USAGE`) and goes back to the model with a hint |
 | Confirmation | Every command that is not in the read-only list asks `Run 'osyr …'? [y/N]`. Sensitive ones ask a second time with what the command explains (`CONFIRM_REQUIRED`) |
 | Tool output | JSON, trimmed to 4,000 characters |

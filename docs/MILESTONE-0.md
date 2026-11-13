@@ -437,7 +437,7 @@ First piece of stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md); design and decis
 - `osyr files find` understands phrases and `osyr files read` takes a bare file name.
 - Tests: `tests/shellguard_cases.py` (table of commands and permission rules), `tests/edits_cases.py` and four agent tests in the native phase.
 - Pending: the "this deletes N files" line, a test inside the image (`sudo` with a real password and terminal), and `MAX_STEPS` (6 calls per turn is short for a diagnosis).
-- **The fixed prompt is about 2,000 tokens** with the shell, 2,380 with the write tools too (it was about 1,640 at v0.31.1, already over the 1,500 of the architecture). To decide: raise the limit or shorten the descriptions.
+- **The fixed prompt is about 2,000 tokens** with the shell, 2,380 with the write tools too (it was about 1,640 at v0.31.1, already over the 1,500 of the architecture). Decided 13 Nov: the limit is 2,000 until the model is fine-tuned, and 1,500 after.
 
 ## Still pending (4 Nov)
 

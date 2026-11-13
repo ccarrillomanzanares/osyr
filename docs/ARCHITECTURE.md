@@ -14,7 +14,7 @@ The difference from the previous system is not the base but the design order: th
 | Base | LFS 13 + sven (Arch packages) | Buildroot, immutable image with A/B update |
 | Extra software | sven over the root, which gets modified | Own `systemd-sysext` extensions + containers |
 | Agent interface | 29 tools, free-text output | 3 fixed tools (`osyr`, `clipboard`, `look`): almost everything goes through the `osyr` CLI with JSON |
-| Fixed prompt | ~7,000 tokens with 8K of context | ≤ 1,500 tokens |
+| Fixed prompt | ~7,000 tokens with 8K of context | ≤ 2,000 tokens until the model is fine-tuned; ≤ 1,500 after |
 | Local model | Qwen3.5-9B Q4 (6.2 GB) | Qwen3.5-4B fine-tuned for OSYR |
 | Server model | Qwen3.6-35B-A3B untrained | Qwen3.6-35B-A3B fine-tuned (and teacher of the 4B) |
 | Kept | — | Local + server, voice and vision, WarGames look |
@@ -25,7 +25,7 @@ Every technical decision is checked against six principles; if a feature breaks 
 
 1. **The small model rules.** Everything is designed so that a 4B on CPU does it well. Whatever only works with the large model is an extra, not the base.
 2. **The OS speaks structured data.** The agent works with the `osyr` CLI, which returns short JSON and errors with a code. The free shell exists, but it is the last resort.
-3. **Knowledge goes in the weights and in the documentation, not in the prompt.** Fixed prompt of 1,500 tokens at most; the rest is looked up with a tool.
+3. **Knowledge goes in the weights and in the documentation, not in the prompt.** Fixed prompt of 1,500 tokens at most with the fine-tuned model (2,000 until then: an untrained model needs the long descriptions; decided 13 Nov 2026); the rest is looked up with a tool.
 4. **Security lives in the OS.** Read-only root, A/B, confirmations and blocks enforced by the system, not politely requested from the model.
 5. **Everything is verifiable.** Every feature is born with its test cases and a verifier of the final state. That is at once the benchmark and the training data factory.
 6. **One image, everywhere.** The same image boots on the laptop, in QEMU and in the training containers on Lambda. The model is trained on the exact system the user receives.
@@ -131,7 +131,7 @@ The agent is a function-calling loop over `llama-server` (OpenAI-compatible API)
 | `load_tools(pack)` | Loads a pack: `desktop`, `browser`, `media`, `dev` |
 | `ask_server(task)` | Escalates the task to the server model, if configured |
 
-**Context budget on an 8 GB machine:** fixed prompt + tools ≤ 1,500 tokens, total context 16K. Tool outputs are trimmed to ~1,000 tokens and the history is summarised at 75 %. The prefix (system + tools) never changes, so that the `llama-server` cache avoids reprocessing it every turn.
+**Context budget on an 8 GB machine:** fixed prompt + tools ≤ 2,000 tokens until the fine-tuned model (≤ 1,500 after), total context 16K. Tool outputs are trimmed to ~1,000 tokens and the history is summarised at 75 %. The prefix (system + tools) never changes, so that the `llama-server` cache avoids reprocessing it every turn.
 
 **Memory:** stable notes about the user and the machine in `~/.osyr/memory.md`, served by `docs("memory")` instead of being injected into the prompt.
 
