@@ -39,7 +39,7 @@ Memory is what the server held at the end of the run; it is approximate (the 9B 
 
 | What happened | Seen in | Whose problem |
 | --- | --- | --- |
-| "It is written in my file nota.txt": the model calls `look` (the screen) first, up to five times, and runs out of its six calls | 10 of 12 runs | Tool descriptions: nothing tells `look` apart from reading a file |
+| "It is written in my file nota.txt": the model calls `look` (the screen) first, up to five times, and runs out of its six calls | 11 of 12 runs | Tool descriptions: nothing tells `look` apart from reading a file |
 | `files read nota.txt` fails because the file is in `Documents`; it takes a `find` and a second `read` | Most runs | CLI: a bare name could be searched for |
 | `files find factura de la luz` finds nothing for `factura-luz-marzo.txt`: every word must match, "de" and "la" included, and a quoted phrase is one word | 10 of 12 runs | CLI: matching too strict |
 | After that, the 4B follows the hint (`--content`) and finds it; the 9B stops and asks the user | 9B: 5 of 6 runs fail | Model, and the reason for the 9B's lower score |
