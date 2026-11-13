@@ -474,6 +474,14 @@ A chat session with the local model on the HP 15s (i5-1035G1, 16 GB), sent with 
 - Speed on this laptop, cold (`bench.txt`): 25.9 tok/s reading, 5.35 tok/s generating, with `-t 4 -tb 7`. The next diag will say, from `chat.log`, whether the drop is thermal or the firmware's power limit.
 - Tests: `tests/turn_cases.py` (one look per turn, the count per core, the heat in the log); `ai-status-local-model` in `tests/vm-checks.sh`. Not yet built into an image or tried in QEMU.
 
+## Diag of 13 Nov in VirtualBox (v0.32.0, the VPS's 35B as provider) — for the next image
+
+- **The voice got stuck repeating "hola" every second.** In the diag, two minutes after the last answer, `pw-play` was still playing the second sentence (`1.wav`) and the card was `running`. Read as: the emulated card (HDA, STAC9221) stopped taking samples and kept repeating its buffer (32 periods of 1024 at 48 kHz, 0.7 s), with `pw-play` waiting for ever. **Why the card stopped is not known** (not reproduced: there is no VirtualBox on the VPS); WirePlumber's settings for virtual machines were applied (`cpu.vm.name = oracle`, headroom 8192).
+- **Change:** `osyr-say-piper` gives each sentence its length plus 10 s (`timeout`); past that it cuts it and reads no more, so the card goes idle and is suspended. Tried with stand-ins for the voice and the player: a normal reading is unchanged, a stuck one ends in 11 s and leaves no files. Not tried in VirtualBox. The espeak path (languages without a Piper voice) has no limit yet.
+- The same self-test said "the microphone recorded nothing": sound in VirtualBox is to be looked at as a whole when the user can test.
+- **The 35B as a provider worked** (`/pair`, "Other", `X-API-Key`, context 32768 typed by hand): 73 s for the first answer (the fixed prompt, read once), then 5 to 20 s; about 15 tok/s generating. It also listed the commands without `osyr`, and the user typed them back into the chat: the prompt line of the previous section covers it.
+- Seen, not touched: `/pair` answers "Check the API key" when the address does not resolve (a typo in the host name); the self-test waits 25 s for BlueZ where there is no adapter.
+
 ## Still pending (4 Nov)
 
 - **Hardware tests with v0.30.0** (`osyr-hwtest` covers most of them): on the HP 15s, beep and microphone, speed between messages, wifi from the agent, screen lock, `/pair`; on the HP 15-ba, sway start and wifi at first boot; on the 2014 one, `/update` from v0.26 (code, then image).

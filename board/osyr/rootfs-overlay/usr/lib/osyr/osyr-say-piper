@@ -16,6 +16,22 @@ tmp=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/osyr-say.XXXXXX") || exit 1
 trap 'rm -rf "$tmp" "$list"' EXIT
 trap 'exit 143' TERM INT
 
+# A sound card that stops taking samples (seen in VirtualBox, 13 Nov) leaves pw-play
+# waiting for ever while the card repeats the last second it was given. Each sentence
+# gets its own length plus 10 s (the length is an upper bound: 16-bit mono at 16 kHz,
+# the slowest voice); past that it is cut and the rest is not read: with nothing
+# playing, PipeWire suspends the card and the noise stops.
+play() {
+    timeout -k 2 $(($(stat -c %s "$1") / 32000 + 10)) pw-play "$1"
+}
+
+# Waits for the sentence being played; a cut one (timeout: 124, or 137 if it had to kill) ends it all
+played() {
+    [ -n "$player" ] || return 0
+    wait "$player"
+    case $? in 124|137) exit 1 ;; esac
+}
+
 player=
 i=0
 while IFS= read -r line; do
@@ -23,9 +39,9 @@ while IFS= read -r line; do
     f="$tmp/$i.wav"
     "$TTS" --vits-model="$dir/model.onnx" --vits-tokens="$dir/tokens.txt" --vits-data-dir="$DATA" \
         --num-threads=2 --sid="$sid" --output-filename="$f" "$line" >/dev/null 2>&1 || continue
-    [ -n "$player" ] && wait "$player"
-    pw-play "$f" &
+    played
+    play "$f" &
     player=$!
     i=$((i + 1))
 done < "$list"
-[ -n "$player" ] && wait "$player"
+played
