@@ -249,6 +249,10 @@ PY
 # no locale program in the image: tested with glibc directly
 python3 -c 'import locale; locale.setlocale(locale.LC_ALL, "fr_FR.UTF-8")' 2>/dev/null && pass locales || fail locales "fr_FR missing"
 
+# The local provider says which model is loaded, not the name used in requests ("local")
+m=$(osyr ai status --json | wj 'd["data"]["model"] if d["ok"] else "not-answering"')
+[ -n "$m" ] && [ "$m" != local ] && pass ai-status-local-model || fail ai-status-local-model "$m"
+
 # --- External provider ------------------------------------------------------------------
 [ -n "$MOCKPORT" ] && {
     check ai-add osyr ai add mock --url "http://$HOST:$MOCKPORT/v1" --api-key secret123 --key-header X-API-Key

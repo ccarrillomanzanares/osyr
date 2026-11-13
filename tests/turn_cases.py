@@ -4,7 +4,8 @@
 Usage: tests/turn_cases.py     prints the cases that fail; exit code 1 if any.
 The model is replaced by a list of replies; the shell tool is the real one, in a
 temporary home folder. Checks how a turn ends: a normal answer, a model that
-repeats the same call, and one that never stops asking for tools.
+repeats the same call, one that never stops asking for tools and one that looks
+at the screen twice; and the throttling count that goes into the chat log.
 """
 import contextlib
 import importlib.machinery
@@ -51,9 +52,10 @@ def run(model):
 
 
 def main():
-    failed = []
+    failed, names = [], []
 
     def check(name, ok, detail=""):
+        names.append(name)
         if not ok:
             failed.append(name)
             print(f"FAIL {name}: {detail}")
@@ -88,8 +90,37 @@ def main():
     check("steps-limit", used == chat.MAX_STEPS and f"stopped after {chat.MAX_STEPS} steps" in out,
           f"{used} replies; {out[-200:]}")
 
-    total = 6
-    print(f"{total - len(failed)}/{total} cases pass")
+    # The screen is looked at once per turn: the answer differs every time, so the repeat
+    # check alone would let the model look again and again (minutes each on a laptop)
+    looks = [0]
+
+    def fake_look(question, sess):
+        looks[0] += 1
+        return {"ok": True, "data": {"answer": f"a terminal, seen {looks[0]}"}}
+
+    chat._run_look = fake_look
+    look = {"id": "", "name": "look", "arguments": json.dumps({"question": "what is there?"})}
+    messages, out, used = run([("", [look]), ("", [look]), ("A terminal.", [])])
+    tools = [json.loads(m["content"]) for m in messages if m["role"] == "tool"]
+    check("look-once-per-turn", looks[0] == 1 and len(tools) == 2 and tools[1].get("code") == "REPEATED"
+          and messages[-1]["content"] == "A terminal.", f"{looks[0]} looks; {str(tools)[:300]}")
+    messages, out, used = run([("", [look]), ("A terminal.", [])])  # a new turn looks again
+    check("look-next-turn", looks[0] == 2, f"{looks[0]} looks")
+
+    # Throttling: a core's counter is the same on its two threads and counts once
+    sysfs = os.path.join(HOME, "sys")
+    for cpu, core, n in ((0, 0, 5), (1, 1, 7), (2, 0, 5), (3, 1, 7)):
+        d = os.path.join(sysfs, "devices", "system", "cpu", f"cpu{cpu}")
+        os.makedirs(os.path.join(d, "thermal_throttle"))
+        os.makedirs(os.path.join(d, "topology"))
+        for name, value in (("thermal_throttle/core_throttle_count", n), ("thermal_throttle/package_throttle_count", 9),
+                            ("topology/core_id", core), ("topology/physical_package_id", 0)):
+            open(os.path.join(d, name), "w").write(f"{value}\n")
+    chat.thermal.SYSFS = sysfs
+    check("throttle-count-per-core", chat.thermal.throttle_count() == 5 + 7 + 9, str(chat.thermal.throttle_count()))
+    check("heat-in-log", chat.heat().get("throttles") == 21, str(chat.heat()))
+
+    print(f"{len(names) - len(failed)}/{len(names)} cases pass")
     return 1 if failed else 0
 
 

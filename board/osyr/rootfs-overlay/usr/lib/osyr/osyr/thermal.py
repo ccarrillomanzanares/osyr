@@ -72,20 +72,21 @@ def cpu_temp():
 
 def throttle_count():
     """Times the CPU has been throttled since boot (Intel), or None."""
-    total, found = 0, False
-    packages = {}
+    cores, packages = {}, {}
     for cpu in glob.glob(os.path.join(SYSFS, "devices", "system", "cpu", "cpu[0-9]*")):
         tt = os.path.join(cpu, "thermal_throttle")
+        pid = _read(os.path.join(cpu, "topology", "physical_package_id")) or "0"
         core = _read(os.path.join(tt, "core_throttle_count"))
         if core is not None and core.isdigit():
-            total += int(core)
-            found = True
+            # the same on the two threads of a core; with no core_id, each CPU is its own
+            cid = _read(os.path.join(cpu, "topology", "core_id")) or os.path.basename(cpu)
+            cores[pid, cid] = max(cores.get((pid, cid), 0), int(core))
         pkg = _read(os.path.join(tt, "package_throttle_count"))
-        pid = _read(os.path.join(cpu, "topology", "physical_package_id")) or "0"
         if pkg is not None and pkg.isdigit():
             packages[pid] = max(packages.get(pid, 0), int(pkg))  # the same on all its CPUs
-            found = True
-    return total + sum(packages.values()) if found else None
+    if not cores and not packages:
+        return None
+    return sum(cores.values()) + sum(packages.values())
 
 
 def freq_percent():

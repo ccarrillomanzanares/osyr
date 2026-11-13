@@ -457,6 +457,23 @@ Decisions in the table of [TRAINING-PLAN.md](TRAINING-PLAN.md): software is inst
 - Known limits: programs that only speak X11 have no screen (no Xwayland in the image): `osyr app run` recognises their error and answers `APP_NEEDS_X11`, with a hint for the assistant to say so and offer another program; an application started by a script under another process name is found by its window's name only; USB disks mounted after the box started are not seen in it.
 - Pending: the full `make test` with shadow in place (first-boot password, screen lock) and a build from scratch.
 
+## Diag of 13 Nov on the HP 15s (v0.32.0) — for the next image
+
+A chat session with the local model on the HP 15s (i5-1035G1, 16 GB), sent with `/report` to look at the session and the CPU.
+
+| Seen | Cause | Change |
+|---|---|---|
+| Asked which model it is, the agent could only say "local" | `osyr ai status` and `ai list` gave the name used in requests (`local`), not the model loaded | For the local provider both give the model the server has loaded (`Qwen3.5-4B-Q4_K_M`, from `/v1/models`); `local` only if it does not answer |
+| The agent told the user to type `ai list`; in a terminal that does not exist | It quoted the commands as it writes them in its own tool, without `osyr` | A line in the fixed prompt: commands told to the user carry `osyr` in front |
+| One turn took 6.5 min: `look` twice with the same question (144 s and 110 s), and a wrong answer | The repeat check compares results, and the vision answer differs every time | One `look` per turn; the second comes back `REPEATED` and counts towards ending the turn |
+| "Throttled 9135 times" in 20 min | `thermal.throttle_count()` added each core's counter once per thread | A core counts once (by `core_id`) |
+| Generation fell from 5.2 to 3.7 tok/s during the session, and the diag could not say whether from heat | Temperature was only measured at the end (72–79 °C, already cooling) | Each `reply` and `look` line of `chat.log` carries `temp_c`, `freq_percent` and `throttles` |
+
+- Not changed: the agent called `look` with no question about the screen, answered "run it now" by repeating `ai list`, and translated "pair" badly. These go to the benchmark tasks, not to the code.
+- Also seen, not touched: the clock starts one hour ahead until NTP corrects it (the RTC is probably in local time); the kernel reports old microcode (`0xbc`); an HP key without a keycode (`e02b`) fills the log; the sound self-test did not hear the speaker.
+- Speed on this laptop, cold (`bench.txt`): 25.9 tok/s reading, 5.35 tok/s generating, with `-t 4 -tb 7`. The next diag will say, from `chat.log`, whether the drop is thermal or the firmware's power limit.
+- Tests: `tests/turn_cases.py` (one look per turn, the count per core, the heat in the log); `ai-status-local-model` in `tests/vm-checks.sh`. Not yet built into an image or tried in QEMU.
+
 ## Still pending (4 Nov)
 
 - **Hardware tests with v0.30.0** (`osyr-hwtest` covers most of them): on the HP 15s, beep and microphone, speed between messages, wifi from the agent, screen lock, `/pair`; on the HP 15-ba, sway start and wifi at first boot; on the 2014 one, `/update` from v0.26 (code, then image).

@@ -33,6 +33,7 @@ from osyr import edits  # noqa: E402  (the write and edit tools, with undo)
 from osyr import ai as aiconf  # noqa: E402  (active provider: local or external)
 from osyr import cli as osyr_cli  # noqa: E402  (validate commands before running them)
 from osyr import look as looker  # noqa: E402
+from osyr import thermal  # noqa: E402  (how hot the CPU is, for the log)
 from osyr import memory  # noqa: E402  (what the person asked to remember)
 from osyr import net as osyrnet  # noqa: E402  (exact name of the wifi network)
 from osyr import shell as oshell  # noqa: E402  (runs the agent's shell commands; saved permissions)
@@ -74,6 +75,17 @@ def dbg(event, **kw):
         pass
 
 
+def heat():
+    """CPU temperature, speed and throttling at this moment, for the log: a slow answer
+    with the CPU hot or held back by the firmware is not the model's fault."""
+    try:
+        s = thermal.status()
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in (("temp_c", s["temp_c"]), ("freq_percent", s["freq_percent"]),
+                              ("throttles", s["throttle_count"])) if v is not None}
+
+
 def pinfo(p):
     """The provider without its key: name, model and server."""
     return {"provider": p.get("name"), "model": p.get("model") or "local", "local": p.get("local"),
@@ -100,6 +112,8 @@ SYSTEM = (
     "(it asks before including their conversations). "
     "For how to do something in OSYR, read the help with the osyr tool ('doc <words>') "
     "and answer from it; for the full help, tell them to press Super+F1. "
+    "The osyr tool's commands are written without their program name; when you tell the user a "
+    "command to type in a terminal, put osyr in front: 'osyr ai list', not 'ai list'. "
     "When the user asks you to remember something about them, save it with the remember tool."
 )
 
@@ -856,7 +870,7 @@ def run_look(question, sess):
     t0 = time.monotonic()
     res = _run_look(question, sess)
     dbg("look", **pinfo(sess.provider), ok=res.get("ok"), code=res.get("code"),
-        seconds=round(time.monotonic() - t0, 1),
+        seconds=round(time.monotonic() - t0, 1), **heat(),
         **({"error": res["data"]["error"][:300]} if not res.get("ok") else
            {"chars": len(res["data"]["answer"])}))
     return res
@@ -925,6 +939,17 @@ def run_tool(call, sess):
         return json.dumps({"ok": False, "code": "USER_DECLINED", "data": {},
                            "hint": "The user already said no to this. Do not ask again: tell them it was "
                                    "not done, and stop."})
+    # Looking at the screen takes minutes on a laptop CPU and the answer changes every time, so
+    # the repeat check below never catches it: one look per turn.
+    if call["name"] == "look" and getattr(sess, "seen", None) is not None:
+        if sess.looked:
+            sess.repeats += 1
+            print(f"{DIM}[look: already looked in this turn]{RESET}")
+            dbg("tool", tool="look", code="REPEATED")
+            return json.dumps({"ok": False, "code": "REPEATED", "data": {},
+                               "hint": "You already looked at the screen in this turn (the answer is "
+                                       "above). Do not look again: answer the user with what you have."})
+        sess.looked = True
     out = _run_tool(call, args, sess)
     if refused is not None and '"code": "USER_DECLINED"' in out[:80]:
         refused.add(key)
@@ -988,6 +1013,7 @@ def turn(messages, sess, text, spoken_lang=None):
     sess.spoken_lang = spoken_lang
     sess.refused = set()  # what the person said no to in this turn
     sess.seen, sess.repeats = {}, 0  # result of each call of this turn, and how many came back the same
+    sess.looked = False  # the screen is looked at once per turn
     start = len(messages) - 1
     if sess.ctx.trim(messages):
         print(f"{DIM}[older messages forgotten to make room]{RESET}")
@@ -1018,7 +1044,7 @@ def turn(messages, sess, text, spoken_lang=None):
             print(f"\nERROR: {e}")
             del messages[start:]
             return
-        dbg("reply", **pinfo(sess.provider), **getattr(sess, "last", {}),
+        dbg("reply", **pinfo(sess.provider), **getattr(sess, "last", {}), **heat(),
             tools=[c["name"] for c in calls], empty=not content and not calls)
         msg = {"role": "assistant", "content": content}
         if calls:

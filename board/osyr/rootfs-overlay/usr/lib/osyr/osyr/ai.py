@@ -169,10 +169,25 @@ def model_ids(p):
     return sorted({m.get("id") for m in data if isinstance(m, dict) and m.get("id")})
 
 
+def local_model_name(p, timeout=3):
+    """The model the local server has loaded ("Qwen3.5-4B-Q4_K_M"), or None if it does not answer.
+    Requests name it "local" whatever it is; this is the name to show."""
+    try:
+        data = get_json(p["url"].rstrip("/") + "/models", p, timeout=timeout).get("data", [])
+        name = os.path.basename(str(data[0].get("id") or ""))
+    except (urllib.error.URLError, OSError, ValueError, AttributeError, IndexError):
+        return None
+    return (name[:-5] if name.lower().endswith(".gguf") else name) or None
+
+
 # --- commands ------------------------------------------------------------------------
 
 def public(p):
-    return {k: v for k, v in p.items() if k != "api_key"} | {"api_key": bool(p.get("api_key"))}
+    """What is shown of a provider: never its key; for the local one, the model really loaded."""
+    d = {k: v for k, v in p.items() if k != "api_key"} | {"api_key": bool(p.get("api_key"))}
+    if p.get("local"):
+        d["model"] = local_model_name(p) or p.get("model")
+    return d
 
 
 def status(args):
@@ -180,7 +195,7 @@ def status(args):
     ok, err = reachable(p)
     data = public(p) | {"reachable": ok, "context": context_of(p) if ok else p.get("context")}
     where = "on this computer" if p["local"] else f'remote: {p["url"]}'
-    text = f'AI: {p["name"]} ({where}), model {p.get("model")}, context {data["context"]} tokens'
+    text = f'AI: {p["name"]} ({where}), model {data.get("model")}, context {data["context"]} tokens'
     if not ok and p["local"] and err == "HTTP 503":
         return Result(False, "AI_LOADING", data, "Wait a few seconds; the model is loading.",
                       text=text + "\nThe model is still loading.")
