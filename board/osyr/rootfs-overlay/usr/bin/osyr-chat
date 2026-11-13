@@ -561,7 +561,8 @@ def ask(question, always=None):
 
 
 def declined(what, said):
-    res = {"ok": False, "code": "USER_DECLINED", "data": {}, "hint": f"The user did not allow {what}."}
+    res = {"ok": False, "code": "USER_DECLINED", "data": {},
+           "hint": f"The user did not allow {what}. Do not try it again; tell them it was not done."}
     if said:
         res["data"]["user_said"] = said[:500]
         res["hint"] += " They wrote what to do instead: follow it."
@@ -901,10 +902,26 @@ def _run_clipboard(args, sess):
 
 
 def run_tool(call, sess):
+    """One tool call. A "no" is final for the rest of the turn: the same call is not
+    asked again (an untrained model tends to insist), it goes back refused at once."""
     try:
         args = json.loads(call["arguments"] or "{}")
     except ValueError:
         args = {}
+    key = (call["name"], json.dumps(args, sort_keys=True) if isinstance(args, dict) else "")
+    refused = getattr(sess, "refused", None)
+    if refused is not None and key in refused:
+        print(f"{DIM}[{call['name']}: you already said no]{RESET}")
+        return json.dumps({"ok": False, "code": "USER_DECLINED", "data": {},
+                           "hint": "The user already said no to this. Do not ask again: tell them it was "
+                                   "not done, and stop."})
+    out = _run_tool(call, args, sess)
+    if refused is not None and '"code": "USER_DECLINED"' in out[:80]:
+        refused.add(key)
+    return out
+
+
+def _run_tool(call, args, sess):
     if call["name"] == "osyr":
         res = run_osyr(str(args.get("command", "")), sess)
     elif call["name"] == "shell" and SHELL:
@@ -944,6 +961,7 @@ def turn(messages, sess, text, spoken_lang=None):
     """User question -> answer, with whatever tools are needed."""
     messages.append({"role": "user", "content": text})
     sess.spoken_lang = spoken_lang
+    sess.refused = set()  # what the person said no to in this turn
     start = len(messages) - 1
     if sess.ctx.trim(messages):
         print(f"{DIM}[older messages forgotten to make room]{RESET}")
