@@ -1,6 +1,6 @@
 # Shell with protections — design proposal
 
-13 November 2026 · **Approved by Carlos the same day; the shell is implemented, the write tool is not yet.** Stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md). The decisions are in the last section. Where the text below says "proposal", read it as the design that was built, with the differences listed under "As built".
+13 November 2026 · **Approved by Carlos the same day and implemented, write tool included; not in an image yet.** Stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md). The decisions are in the last section. Where the text below says "proposal", read it as the design that was built, with the differences listed under "As built".
 
 ## What it is for
 
@@ -153,9 +153,11 @@ For the benchmark the shell runs inside the disposable container, where `sudo` n
 - **`sudo`:** after the "yes", the chat runs `sudo -v` in the terminal, so the password goes from the keyboard to `sudo` and to nobody else. The command then runs in the same terminal session, in its own process group and without a keyboard, so `sudo` finds the password just typed and a program that tries to read the keyboard gets an error at once.
 - **The "plain line" for heavy commands** ("this deletes 214 files") is not built yet.
 - **Switch:** `OSYR_SHELL=0` in the environment starts the chat without the shell tool and with the old prompt, for the "with and without" measurement.
-- **Not built yet:** the write tool below, the remote-provider question for programs whose reads the classifier cannot see, and the test in the image.
+- **The write tool** below is built too (`osyr/edits.py`, the `write` and `edit` tools, `osyr files undo`), but **switched off by default** (`OSYR_WRITE=1` turns it on): the untrained 4B model misuses it. See [TRAINING-LOG.md](TRAINING-LOG.md), 13 November. It comes back with the fine-tuned model, or for the server model.
+- **Fixed prompt:** the estimates in this document were low. Measured: about 1,640 tokens before, about 2,000 with the shell, about 2,380 with `write` and `edit`.
+- **Not built yet:** the remote-provider question for programs whose reads the classifier cannot see, and the test in the image (`sudo` with a real password).
 
-## The write tool (design, to build next)
+## The write tool
 
 ```
 write(path, content)             Create a file, or replace all of it.

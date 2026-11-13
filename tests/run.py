@@ -213,6 +213,8 @@ def native():
         # (no question), a change (asks; "a" saves the permission) and the saved rule
         p = subprocess.run(["python3", "-B", f"{ROOT}/tests/shellguard_cases.py"], capture_output=True, text=True)
         report("shellguard-cases", p.returncode == 0, p.stdout.strip()[-300:])
+        p = subprocess.run(["python3", "-B", f"{ROOT}/tests/edits_cases.py"], capture_output=True, text=True)
+        report("edits-cases", p.returncode == 0, p.stdout.strip()[-300:])
         os.makedirs(f"{tmp}/work")
         ok, out = pty_run(chat, chat_env, [
             (rb"> $", "How much free space is left on the disk? Use the shell tool."),
@@ -224,6 +226,18 @@ def native():
         first = out.split("mkdir")[0]  # (the long second line is echoed shortened by readline)
         report("shell-reads-without-asking", "[shell: df" in first and "[y/" not in first, out[-300:])
         report("shell-asks-before-change", ok and os.path.isdir(f"{tmp}/work/alpha"), out[-300:])
+        # The write tool is off by default (the untrained model misuses it): tested switched on
+        ok, wout = pty_run(chat, dict(chat_env, OSYR_WRITE="1"), [
+            (rb"> $", "Crea el archivo ~/work/lista.txt con dos lineas: pan y leche. Usa la herramienta write."),
+            (rb"\[y/(a/)?N\] $", "y"),
+            (rb"tok/s\]\s*\r?\n\s*> $", "/exit")], timeout=600)
+        open(f"{RESULTS}/native-write.txt", "w").write(wout)
+        out += wout
+        try:
+            lista = open(f"{tmp}/work/lista.txt").read().lower()
+        except OSError:
+            lista = ""
+        report("write-creates-file", "[write:" in out and "pan" in lista and "leche" in lista, out[-300:])
         report("shell-permission-saved", "1. 'mkdir' in ~/work" in out, out[-300:])
 
         # /install: the installer in the same window (fake sudo: only checks that it is launched)

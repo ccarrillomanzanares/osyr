@@ -183,6 +183,8 @@ def describe(rule):
         return f"'osyr {rule['osyr']}'"
     if rule.get("send"):
         return f"sending files in {short(rule['send'])} to {rule.get('provider')}"
+    if rule.get("write"):
+        return f"writing files in {short(rule['write'])}"
     if rule.get("program"):
         return f"'{(rule['program'] + ' ' + rule.get('sub', '')).strip()}' in {short(rule.get('dir', '?'))}"
     return json.dumps(rule)

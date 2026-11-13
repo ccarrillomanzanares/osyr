@@ -1,4 +1,5 @@
-"""osyr files — find, list and read the user's files (read only).
+"""osyr files — find, list and read the user's files (read only), and undo the
+assistant's last change to a file (osyr/edits.py makes the changes).
 
 Works in the home folder, on mounted disks and USB sticks, and in /tmp. It
 never reads where secrets are (AI provider keys, SSH, GnuPG, wifi passwords):
@@ -15,6 +16,7 @@ import subprocess
 import time
 import unicodedata
 
+from . import edits
 from .result import Result, fail
 
 HOME = os.path.expanduser("~")
@@ -202,6 +204,13 @@ def read(args):
                   f"More: osyr files read '{short(p)}' --from {nxt}" if nxt else None, text=part)
 
 
+def undo(args):
+    r = edits.undo()
+    d = r["data"]
+    text = (f"{d['path']}: " + ("put back as it was" if d.get("restored") else "deleted (it was new)")) if r["ok"] else None
+    return Result(r["ok"], r["code"], d, r.get("hint"), text=text)
+
+
 def register(sub):
     p = sub.add_parser("files", help="find, list and read your files (read only)")
     s = p.add_subparsers(dest="action", required=True)
@@ -217,3 +226,5 @@ def register(sub):
     r.add_argument("path")
     r.add_argument("--from", dest="start", type=int, default=0)
     r.set_defaults(func=read)
+    u = s.add_parser("undo", help="put back the previous version of the last file the assistant changed")
+    u.set_defaults(func=undo)

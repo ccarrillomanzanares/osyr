@@ -433,9 +433,11 @@ First piece of stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md); design and decis
 
 - `shell(command)` tool in `osyr-chat`: every command is classified first by `osyr/shellguard.py` (pass, confirm, block) and run by `osyr/shell.py` (bash as the user, no keyboard, 60 s, English output, trimmed to the model and saved whole).
 - Questions now have three answers, for `osyr` commands too: yes, always (saved in `~/.config/osyr/permissions.json`, listed and removed with `/permissions`) and no (or typing what to do instead).
+- `write(path, content)` and `edit(path, old, new)` tools (`osyr/edits.py`): the question shows the lines that change, the previous version is kept and `osyr files undo` puts it back. **Off by default** (`OSYR_WRITE=1`): with them the untrained 4B invents files instead of reading them.
 - `osyr files find` understands phrases and `osyr files read` takes a bare file name.
-- Tests: `tests/shellguard_cases.py` (table of commands and permission rules) and three agent tests in the native phase.
-- Pending: the write tool, the "this deletes N files" line, a test inside the image (`sudo` with a real password and terminal), measuring the fixed prompt in tokens, and `MAX_STEPS` (6 calls per turn is short for a diagnosis).
+- Tests: `tests/shellguard_cases.py` (table of commands and permission rules), `tests/edits_cases.py` and four agent tests in the native phase.
+- Pending: the "this deletes N files" line, a test inside the image (`sudo` with a real password and terminal), and `MAX_STEPS` (6 calls per turn is short for a diagnosis).
+- **The fixed prompt is about 2,000 tokens** with the shell, 2,380 with the write tools too (it was about 1,640 at v0.31.1, already over the 1,500 of the architecture). To decide: raise the limit or shorten the descriptions.
 
 ## Still pending (4 Nov)
 

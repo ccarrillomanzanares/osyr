@@ -41,7 +41,7 @@ The assistant asks before changing anything. Ask it things like "connect to my w
 
 **Commands.** For what its own commands do not cover, the assistant can run ordinary Linux commands: "how much disk space is left?", "which program is using the most memory?", "move these photos to a new folder", "restart bluetooth". Commands that only look run at once. Some never run from the assistant, whatever it or anyone says: erasing or formatting disks, changing the boot or the system itself, reading your keys and passwords, and turning off its own protections. If you need one of those, type it yourself in a terminal. Every command it asks for is written to `~/.local/state/osyr/shell.log`, which stays on your computer.
 
-It can also find and read your files (it never changes them): "where is the electricity bill PDF?", "summarise the notes in Documents", "translate this file into English". It never reads the folders with your keys and passwords.
+It can also find and read your files: "where is the electricity bill PDF?", "summarise the notes in Documents", "translate this file into English". It never reads the folders with your keys and passwords.
 
 It remembers what you ask it to: "remember that my sister is called Ana", "remember that I prefer short answers". It never saves passwords, PINs or card numbers. It only uses what it remembers with the local model, never with a remote provider. To see or erase it: `osyr memory list`, `osyr memory forget <n>` or `osyr memory forget all`.
 

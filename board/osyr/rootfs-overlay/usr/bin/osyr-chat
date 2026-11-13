@@ -3,7 +3,8 @@
 
 Talks to the active provider (the local model or an external one) and can use
 these tools: 'osyr' (the system CLI, with its JSON contract), 'shell' (any other
-command, classified first by osyr/shellguard.py), 'clipboard', 'remember' and
+command, classified first by osyr/shellguard.py), 'write' and 'edit' (text files,
+with undo: osyr/edits.py), 'clipboard', 'remember' and
 'look' (look at the screen). Whatever changes the system asks for confirmation
 (yes, always or no); queries do not. Voice: Super+Space (osyr-voice) or /voice; answers to
 voice are read aloud. Conversations are saved and /resume picks them
@@ -28,6 +29,7 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.environ.get("OSYR_LIB", "/usr/lib/osyr"))
+from osyr import edits  # noqa: E402  (the write and edit tools, with undo)
 from osyr import ai as aiconf  # noqa: E402  (active provider: local or external)
 from osyr import cli as osyr_cli  # noqa: E402  (validate commands before running them)
 from osyr import look as looker  # noqa: E402
@@ -45,6 +47,9 @@ MAX_REPLY = 2048     # maximum reply tokens
 HISTORY_SHARE = 0.75  # the conversation fits in 75% of the context
 MAX_STEPS = 6        # tool calls in a row within one turn
 SHELL = os.environ.get("OSYR_SHELL", "1") != "0"  # the shell tool (the benchmark measures with and without)
+# The write and edit tools are off unless asked for: the untrained 4B model misuses them (it
+# "answers" a question about a file by writing a new one). See docs/TRAINING-LOG.md, 13 Nov 2026.
+WRITE = os.environ.get("OSYR_WRITE", "0") == "1"
 TOOL_OUTPUT = 4000   # characters of tool output the model sees (~1,000 tokens)
 CHATS = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
                      "osyr", "chats")
@@ -99,13 +104,16 @@ SYSTEM = (
 )
 
 
-SHELL_TEXT = ("For what the osyr commands do not cover (processes, logs, disk space, services, "
-              "moving and deleting files, programs) use the shell tool. ")
+SHELL_TEXT = ("Only for what the osyr commands do not cover (processes, logs, disk space, services, "
+              "moving and deleting files, programs) use the shell tool; finding and reading the user's "
+              "files stays with the osyr files commands. ")
+WRITE_TEXT = ("To create or change a text file when the user asks for it, use the write and edit tools, "
+              "not the shell. ")
 NO_SHELL_LIMIT = ("If something is not among your tools' commands, OSYR cannot do it yet: say so "
                   "plainly and do not invent steps.")
 SHELL_LIMIT = ("If neither the osyr commands nor the shell can do something, say so plainly and "
                "do not invent steps.")
-SYSTEM = SYSTEM.format(shell=SHELL_TEXT if SHELL else "", limit=SHELL_LIMIT if SHELL else NO_SHELL_LIMIT)
+SYSTEM = SYSTEM.format(shell=(SHELL_TEXT if SHELL else "") + (WRITE_TEXT if WRITE else ""), limit=SHELL_LIMIT if SHELL else NO_SHELL_LIMIT)
 SHELL_TOOL = {"type": "function", "function": {
     "name": "shell",
     "description": (
@@ -113,7 +121,7 @@ SHELL_TOOL = {"type": "function", "function": {
         "for what the osyr tool's commands do not cover. Commands that only read run at once; commands "
         "that change something ask the user first. For administrator tasks write sudo in front: the user "
         "is asked, and types the password themselves. No keyboard: never editors or programs that ask "
-        "questions (use options like -y or --no-pager). A cd is remembered. Long output is trimmed; the "
+        "questions (use options like -y or --no-pager). It starts in the user's folder (~); a cd is remembered. Long output is trimmed; the "
         "result says where the whole output is. Never allowed from here: erasing or formatting disks, "
         "changing the boot or the system itself, reading keys and passwords, turning off OSYR's own "
         "protections. If a result says BLOCKED, tell the user they can run it themselves in a terminal; "
@@ -122,6 +130,29 @@ SHELL_TOOL = {"type": "function", "function": {
         "command": {"type": "string", "description": "e.g. 'df -h' or 'sudo systemctl restart bluetooth'"},
         "timeout": {"type": "integer", "description": "seconds, default 60, at most 600"}},
         "required": ["command"]}}}
+
+
+WRITE_TOOLS = [
+    {"type": "function", "function": {
+        "name": "write",
+        "description": ("Create a text file, or replace all of an existing one, ONLY when the user asks to "
+                        "create or change a file; never to read a file or to answer a question (prefer edit "
+                        "to change part of a file). The user sees the change and is asked first. The previous "
+                        "version is kept: 'files undo' in the osyr tool puts it back."),
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "starting at ~, e.g. '~/Documents/list.txt'"},
+            "content": {"type": "string", "description": "the whole text of the file"}},
+            "required": ["path", "content"]}}},
+    {"type": "function", "function": {
+        "name": "edit",
+        "description": ("Change part of a text file: replace old with new. old must be copied exactly from "
+                        "the file (read it first) and appear only once. The user is asked first."),
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "starting at ~, e.g. '~/Documents/list.txt'"},
+            "old": {"type": "string", "description": "the exact text there now"},
+            "new": {"type": "string", "description": "the text that replaces it"}},
+            "required": ["path", "old", "new"]}}},
+]
 
 
 def system_prompt(local=True):
@@ -163,7 +194,9 @@ TOOLS = [
             "- backup run <disk>: copy the user's folder to that disk, in the background | "
             "backup status | backup restore <disk>\n"
             "- files find <words> [--in <folder>] [--content]: find the user's files by name (or inside "
-            "text files) | files list [folder] | files read <path or name> [--from <n>]: text or PDF, in parts\n"
+            "text files) | files list [folder] | files read <path or name> [--from <n>]: text or PDF, in parts"
+            + (" | files undo: put back the previous version of the last file you changed with write or edit"
+               if WRITE else "") + "\n"
             "- doc <english words>: the OSYR help on a subject (shortcuts, screen lock, updates, "
             "browser, install...); use it before explaining how to do something in OSYR\n"
             "- memory list: what you remember about the user | memory forget <n|all> "
@@ -199,8 +232,7 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {
             "question": {"type": "string"}}, "required": ["question"]}}},
 ]
-if SHELL:
-    TOOLS.insert(1, SHELL_TOOL)
+TOOLS[1:1] = ([SHELL_TOOL] if SHELL else []) + (WRITE_TOOLS if WRITE else [])
 # Queries the agent can run without asking (they change nothing)
 READ_ONLY = [("net", "status"), ("net", "wifi", "scan"), ("audio", "status"), ("audio", "voice", "status"),
              ("ai", "status"), ("ai", "list"), ("ai", "models"),
@@ -581,11 +613,7 @@ def run_shell(command, sess, timeout=None):
     if g["root"]:
         # The password is typed here, in the terminal, to sudo itself: neither the model
         # nor this program sees it. sudo remembers it for a few minutes, in this window.
-        try:
-            ok = subprocess.run(["sudo", "-v"]).returncode == 0
-        except (OSError, KeyboardInterrupt):
-            ok = False
-        if not ok:
+        if not sudo_ready():
             oshell.audit(**log, answer=answer, code="SUDO_FAILED")
             return {"ok": False, "code": "SUDO_FAILED", "data": {},
                     "hint": "The user did not give the administrator password. Do not ask for it in the chat."}
@@ -606,8 +634,51 @@ def run_shell(command, sess, timeout=None):
     return res
 
 
+def run_write(kind, args, sess):
+    """The write and edit tools: show the change, ask, keep the old version, write."""
+    path = str(args.get("path") or "")
+    plan = (edits.plan_write(path, args.get("content"), sess.cwd) if kind == "write" else
+            edits.plan_edit(path, args.get("old"), args.get("new"), sess.cwd))
+    print(f"{DIM}[{kind}: {path}]{RESET}")
+    if not plan["ok"]:
+        why = plan["data"].get("reason") or plan.get("hint") or plan["code"]
+        print(f"{DIM}[{'blocked' if plan['code'] == 'BLOCKED' else 'not written'}: {why}]{RESET}")
+        oshell.audit(tool=kind, path=path, code=plan["code"])
+        return plan
+    for line in plan["show"]:
+        print(f"{DIM}  {line[:160]}{RESET}")
+    where = edits.short(plan["path"])
+    answer = "rule"
+    if not edits.allowed_by(oshell.load(), plan):
+        if plan["root"]:
+            print(f"{DIM}  as administrator: your password may be asked{RESET}")
+        verb = "Change" if plan["exists"] else "Create"
+        answer, said = ask(f"{verb} {where}?", edits.rule(plan))
+        if answer == "no":
+            oshell.audit(tool=kind, path=plan["path"], answer="no")
+            return declined("this change", said)
+    if plan["root"] and not sudo_ready():
+        oshell.audit(tool=kind, path=plan["path"], answer=answer, code="SUDO_FAILED")
+        return {"ok": False, "code": "SUDO_FAILED", "data": {},
+                "hint": "The user did not give the administrator password. Do not ask for it in the chat."}
+    res = edits.apply(plan)
+    oshell.audit(tool=kind, path=plan["path"], answer=answer, code=res.get("code"))
+    return res
+
+
+def sudo_ready():
+    """The password is typed here, in the terminal, to sudo itself: neither the model
+    nor this program sees it. sudo remembers it for a few minutes, in this window."""
+    try:
+        return subprocess.run(["sudo", "-v"]).returncode == 0
+    except (OSError, KeyboardInterrupt):
+        return False
+
+
 def is_read_only(args):
     words = [a for a in args if not a.startswith("-")]
+    if words[:2] == ["files", "undo"]:
+        return False
     if any(tuple(words[:len(r)]) == r for r in READ_ONLY):
         return True
     # Without a value, volume and brightness only query; plain 'sys power' too
@@ -650,10 +721,19 @@ def run_osyr(command, sess=None):
     if not is_read_only(args):
         # "Always" covers the command without its values ('ui brightness'), never its options
         key = " ".join(w for w in args if not w.startswith("-") and re.match(r"^[a-z]+$", w))
+        undoing = edits.last() if key == "files undo" else None
+        if key == "files undo":
+            key = ""  # each undo is asked: what it takes back is different every time
+            if undoing:
+                print(f"{DIM}  puts back {edits.short(undoing['path'])} as it was before the change "
+                      f"of {undoing['time']}{RESET}")
         if not any(r.get("osyr") == key for r in oshell.load()):
             answer, said = ask(f"Run 'osyr {shown}'?", {"osyr": key} if key else None)
             if answer == "no":
                 return declined("this command", said)
+        if undoing and undoing.get("root") and not sudo_ready():
+            return {"ok": False, "code": "SUDO_FAILED", "data": {},
+                    "hint": "The user did not give the administrator password. Do not ask for it in the chat."}
     args = voice_args(args, sess)
     # 'audio voice listen fast' downloads 60 MB: on a slow link, well over the usual limit
     timeout = 1800 if [a for a in args if not a.startswith("-")][:3] == ["audio", "voice", "listen"] else 180
@@ -831,6 +911,10 @@ def run_tool(call, sess):
         res = run_shell(str(args.get("command", "")), sess, args.get("timeout"))
         dbg("tool", tool="shell", ok=res.get("ok"), code=res.get("code"),
             command=" ".join(str(args.get("command", "")).split()[:1]))  # the program only; the rest stays in shell.log
+        return json.dumps(res, ensure_ascii=False)[:TOOL_OUTPUT]
+    elif call["name"] in ("write", "edit") and WRITE:
+        res = run_write(call["name"], args, sess)
+        dbg("tool", tool=call["name"], ok=res.get("ok"), code=res.get("code"))
         return json.dumps(res, ensure_ascii=False)[:TOOL_OUTPUT]
     elif call["name"] == "clipboard":
         res = run_clipboard(args, sess)
