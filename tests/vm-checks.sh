@@ -515,6 +515,83 @@ print(g, a > 0, n(), voice.speaking())
 PYEOF
 [ "$(tail -1 /tmp/voices.out)" = "1 True 0 False" ] && pass voice-one-at-a-time || fail voice-one-at-a-time "$(tail -3 /tmp/voices.out | tr '\n' ' ')"
 
+# --- The agent's shell tool, with a real terminal and a real password --------------------
+# The chat's own function (osyr-chat, run_shell) in a new terminal, where sudo has no
+# password remembered: the "yes" and the password are typed as a person would.
+cat > /tmp/shell-drive.py <<'PYEOF'
+import json, os, pty, re, select, sys, time
+CHILD = r"""
+import importlib.machinery, importlib.util, json, os, sys, types
+sys.path.insert(0, "/usr/lib/osyr")
+l = importlib.machinery.SourceFileLoader("osyr_chat", "/usr/bin/osyr-chat")
+m = importlib.util.module_from_spec(importlib.util.spec_from_loader("osyr_chat", l)); l.exec_module(m)
+sess = types.SimpleNamespace(cwd=os.path.expanduser("~"), provider={"local": True, "name": "local"})
+print("RESULT " + json.dumps(m.run_shell(sys.argv[1], sess)))
+"""
+def drive(command, answers, timeout=240):
+    """Runs the command through the chat; answers: (what the terminal shows, what to type)."""
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execvp("python3", ["python3", "-B", "-c", CHILD, command])
+    buf, seen, answers, end = b"", 0, list(answers), time.time() + timeout
+    while time.time() < end and not re.search(rb"RESULT \{.*\}\r?\n", buf):
+        if not select.select([fd], [], [], 1)[0]:
+            continue
+        try:
+            d = os.read(fd, 4096)
+        except OSError:
+            break
+        if not d:
+            break
+        buf += d
+        if answers and re.search(answers[0][0], buf[seen:]):
+            time.sleep(0.5)
+            os.write(fd, answers.pop(0)[1].encode() + b"\n")
+            seen = len(buf)
+    time.sleep(0.5)
+    try:
+        os.kill(pid, 9)
+    except OSError:
+        pass
+    os.waitpid(pid, 0)
+    text = buf.decode(errors="replace")
+    m = re.search(r"RESULT (\{.*\})", text)
+    return (json.loads(m.group(1)) if m else {"code": "NO_RESULT"}), text
+pw = sys.argv[1]
+ask, password = rb"\[y/N\] $", rb"[Pp]assword[^\n]*: ?$"
+def show(name, ok, res, text):
+    print(("PASS " + name) if ok else f"FAIL {name}: {json.dumps(res)[:200]} | {' '.join(text.split())[-200:]}")
+# 1. sudo with the right password: runs as root, and the password is nowhere in the result
+res, text = drive("sudo id -u", [(ask, "y"), (password, pw)])
+show("shell-sudo-password", res.get("ok") and res["data"]["stdout"].strip() == "0"
+     and "administrator" in text and pw not in json.dumps(res), res, text)
+# 2. A wrong password, three times: nothing runs, and the model is told not to ask for it
+res, text = drive("sudo touch /run/osyr-shell-test", [(ask, "y")] + [(password, "wrong-" + pw)] * 3)
+show("shell-sudo-wrong-password", res.get("code") == "SUDO_FAILED" and not os.path.exists("/run/osyr-shell-test"), res, text)
+# 3. "No": nothing runs and no password is asked
+res, text = drive("sudo touch /run/osyr-shell-test", [(ask, "n")])
+show("shell-sudo-declined", res.get("code") == "USER_DECLINED" and "assword" not in text
+     and not os.path.exists("/run/osyr-shell-test"), res, text)
+# 4. A program that reads the keyboard gets an error at once instead of waiting
+res, text = drive("cat /dev/tty", [])
+show("shell-no-keyboard", res.get("code") == "EXIT_NONZERO" and res["data"]["seconds"] < 20, res, text)
+# 5. A heavy command: the line computed by the system is above the question
+os.makedirs("/tmp/shell-heavy/sub", exist_ok=True)
+for n in ("a", "b", "sub/c"):
+    open("/tmp/shell-heavy/" + n, "w").write("x" * 1000)
+res, text = drive("rm -r /tmp/shell-heavy", [(rb"\[y/(a/)?N\] $", "y")])
+show("shell-heavy-line", "This deletes 3 files (3.0 kB) in /tmp/shell-heavy." in text and res.get("ok")
+     and not os.path.exists("/tmp/shell-heavy"), res, text)
+# 6. Blocked: no question, nothing runs
+res, text = drive("sudo rm -rf /usr/lib/osyr", [])
+show("shell-blocked", res.get("code") == "BLOCKED" and "[y/" not in text and os.path.isdir("/usr/lib/osyr"), res, text)
+PYEOF
+python3 -B /tmp/shell-drive.py "$PW" 2>&1 | grep -E '^(PASS|FAIL) ' > /tmp/shell-drive.out
+[ "$(wc -l < /tmp/shell-drive.out)" = 6 ] && cat /tmp/shell-drive.out || fail shell-in-terminal "$(python3 -B /tmp/shell-drive.py "$PW" 2>&1 | tail -3 | tr '\n' ' ')"
+# Every request is in the audit file, and never in the chat log
+grep -q '"command": "sudo id -u"' ~/.local/state/osyr/shell.log && ! grep -q 'id -u' ~/.local/state/osyr/chat.log 2>/dev/null \
+    && pass shell-audit || fail shell-audit "$(tail -1 ~/.local/state/osyr/shell.log 2>&1 | cut -c1-200)"
+
 # --- Neural voice (Piper): synthesizes a real sentence with each language's voice --------
 for l in es en; do
     d=/usr/share/osyr/models/piper/$l
