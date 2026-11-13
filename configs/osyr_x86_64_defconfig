@@ -251,3 +251,9 @@ BR2_PACKAGE_POPPLER_UTILS=y
 BR2_PACKAGE_RSYNC=y
 # MIME types: without them WebKit opens local .html files as plain text
 BR2_PACKAGE_SHARED_MIME_INFO=y
+# Containers for installing software (osyr box): podman without root, one box per
+# user. It brings shadow (newuidmap, useradd with subordinate ids) with it; the range
+# of the osyr user is in /etc/subuid and /etc/subgid of the overlay
+BR2_PACKAGE_PODMAN=y
+BR2_PACKAGE_CRUN=y
+BR2_PACKAGE_PODMAN_NET_PASST=y

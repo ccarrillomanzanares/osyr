@@ -441,6 +441,15 @@ First piece of stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md); design and decis
 - Tested inside the image (13 Nov, image `309c1d2`, vm 153/154 and native 31/31): the chat's shell function in a real terminal with `sudo` — right password, wrong password three times, a "no", a program that reads the keyboard, the heavy-command line, a blocked command and the audit file. The one failure was the check itself (it took the notice "your password may be asked" for sudo's prompt), fixed afterwards and not run again yet.
 - **The fixed prompt is about 2,000 tokens** with the shell, 2,380 with the write tools too (it was about 1,640 at v0.31.1, already over the 1,500 of the architecture). Decided 13 Nov: the limit is 2,000 until the model is fine-tuned, and 1,500 after.
 
+## Containers for installing software (13 Nov, not in an image yet)
+
+Decisions in the table of [TRAINING-PLAN.md](TRAINING-PLAN.md): software is installed in a container (`osyr box`), one default box per user with Debian stable, empty at first, which sees that user's home folder. The official extensions (`osyr ext`) are set aside.
+
+- **Engine in the image:** `podman` without root, with `crun` and `pasta` for the network (Buildroot packages; the kernel needed nothing new). It brings the `shadow` package: `login`, `passwd`, `chpasswd` and `useradd` are now shadow's (`su` is still BusyBox's); `newuidmap` and `newgidmap` are setuid. The range of the `osyr` user is in `/etc/subuid` and `/etc/subgid`.
+- **Tried by hand in QEMU** (incremental build, 13 Nov): login on the serial console and `sudo` work with shadow; `podman info` says rootless, overlay, cgroups v2 with systemd; `podman run debian:stable-slim` pulls the image (81 MB), runs Debian 13.7 and `apt-get update` downloads its lists through `pasta`. Two minutes without KVM.
+- **Seen there:** booted from the USB image, `/home` is the root partition, with under 1 GB free: little room for programs until the system is installed to a disk.
+- Pending: `osyr box` and `osyr app`, the full `make test` with shadow in place (first-boot password, screen lock) and a build from scratch.
+
 ## Still pending (4 Nov)
 
 - **Hardware tests with v0.30.0** (`osyr-hwtest` covers most of them): on the HP 15s, beep and microphone, speed between messages, wifi from the agent, screen lock, `/pair`; on the HP 15-ba, sway start and wifi at first boot; on the 2014 one, `/update` from v0.26 (code, then image).
