@@ -9,8 +9,10 @@ Website and downloads: [ccmai.org/osyr](https://ccmai.org/osyr/) · Help and key
 ## What it does
 
 - **Local AI**: Qwen3.5-4B (with vision) on the CPU through llama.cpp, which picks the fastest code for each processor. The context size adapts to the RAM.
-- **The assistant** runs the system through the `osyr` command line (JSON output): wifi, sound, screens, Bluetooth, brightness, temperature, power, reminders and updates. It asks before changing anything.
-- **Voice**: hold Super+Space and speak (whisper.cpp); natural spoken answers with Piper voices (sherpa-onnx) in seven languages; dictation into any window.
+- **The assistant** runs the system through the `osyr` command line (JSON output): wifi, sound, screens, Bluetooth, brightness, temperature, power, reminders, disks, backups, files, the browser and updates. It asks before changing anything.
+- **Shell with protections**: for what the `osyr` commands do not cover, the assistant runs shell commands. The system, not the model, decides: what only reads runs without asking; what changes something shows the command and asks (yes, always or no); what is destructive is blocked. Design: [docs/SHELL-DESIGN.md](docs/SHELL-DESIGN.md).
+- **Installing programs**: `osyr box install <program>` puts them in a Debian container, the box, without touching the system; `osyr app` opens and closes them. See [Installing software](#installing-software-the-box).
+- **Voice**: hold Super+Space and speak (whisper.cpp); natural spoken answers with Piper voices (sherpa-onnx) in seven languages, with a choice of speaker; dictation into any window.
 - **Screen and clipboard**: `/look` shows the screen to the model; it can summarise or translate what you copied.
 - **Optional remote providers** (your own server, OpenAI, Anthropic, Gemini, Ollama Cloud, OpenRouter, any OpenAI-compatible API). Keys are entered on your phone through an encrypted pairing page, never typed on screen.
 - **Desktop**: sway + foot with a WarGames look, PipeWire sound, Bluetooth, several screens, screen lock, notifications.
@@ -20,7 +22,44 @@ Website and downloads: [ccmai.org/osyr](https://ccmai.org/osyr/) · Help and key
 
 ## Status
 
-Early test build, **v0.29.2** (2 Nov 2026). It boots and passes `make test` in QEMU (BIOS and UEFI) and has been tested on two HP laptops (2019 and 2014), installed to disk on the older one. Roadmap and decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); work log: [docs/MILESTONE-0.md](docs/MILESTONE-0.md).
+Early test build, **v0.32.0** (13 Nov 2026). It boots in QEMU (BIOS and UEFI) and earlier versions have been tested on HP laptops, installed to disk on two of them. Roadmap and decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); work log: [docs/MILESTONE-0.md](docs/MILESTONE-0.md); what comes next for the assistant and its training: [docs/TRAINING-PLAN.md](docs/TRAINING-PLAN.md). Full list of changes: [changelog](https://ccmai.org/osyr/changelog.html).
+
+### New in v0.32.0
+
+- **Shell tool** for the assistant, with the protections described above. A heavy command comes with a plain line saying what it does ("This deletes 214 files (1.2 GB) in ~/Downloads"), and `sudo` asks for your password as usual.
+- **`osyr box`**: install, search, list, remove, update and reset programs in a Debian container.
+- **`osyr app`**: `list`, `run <name> [file]` and `stop <name>`, for the system's applications and the box's.
+- Files are found by saying what they are called and read by their bare name.
+- The assistant takes up to 12 steps per request, stops when a call repeats with the same result, and takes a "no" as final for that request.
+
+The box is a first version: its checks pass against a stand-in for the container engine, and the run with the real engine inside the image is still pending. Programs that only speak X11 have no window yet (there is no Xwayland in the image).
+
+## Installing software: the box
+
+The base system is a read-only image that only changes as a whole (A/B update), so programs are not installed into it. They go into one container per user, created the first time something is installed.
+
+```mermaid
+flowchart TB
+    user["<b>You or the assistant</b><br/>&quot;install VLC&quot; · osyr box install vlc · osyr app run vlc"]
+    cli["<b>osyr box · osyr app</b><br/>Asks before installing or removing<br/>Opens the program on a free workspace"]
+    subgraph box["The box: container osyr-box (podman without root, crun, pasta)"]
+        deb["<b>Debian stable</b><br/>apt and the installed programs<br/>Same user inside as outside"]
+    end
+    home["<b>Your home folder</b><br/>documents, downloads, settings"]
+    session["<b>Session</b><br/>Wayland screen, PipeWire sound, /dev/dri"]
+    hidden["<b>Hidden from the box</b><br/>.ssh · .gnupg · keyrings · password store<br/>the assistant's settings, conversations and logs"]
+    base["<b>Base system (Buildroot image)</b><br/>not touched by anything installed in the box"]
+    user --> cli
+    cli -- "podman" --> box
+    box -- "sees" --> home
+    box -- "window and sound" --> session
+    box -. "covered by empty folders" .-> hidden
+    box -- "runs on top of, cannot change" --> base
+```
+
+- Everything the box holds lives in your home folder (`~/.local/share/containers`), so it survives system updates; `osyr box reset` empties it.
+- It needs the Internet and free disk space (it refuses below 500 MB): if OSYR runs from the USB stick, install it to disk first.
+- Programs without a window run with `osyr box run <command>`.
 
 ## Requirements
 
