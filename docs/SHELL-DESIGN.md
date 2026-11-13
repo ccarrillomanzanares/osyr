@@ -145,10 +145,28 @@ For the benchmark the shell runs inside the disposable container, where `sudo` n
 4. Help (`osyr doc`) and the changelog.
 5. One image with everything, tested in QEMU.
 
+## Permissions: yes, always, no
+
+Decided 13 November 2026. It applies to every confirmation of the agent (the shell, `osyr` commands, the clipboard and file contents with a remote provider), and it works as the permissions of today's coding assistants do.
+
+Each question has three answers:
+
+| Answer | Effect |
+| --- | --- |
+| Yes | This time only |
+| Always | Do not ask again for this kind of command. Saved for later conversations |
+| No | It does not run; the user can say what to do instead, and the model gets that text |
+
+- **What "this kind" means.** The classifier gives each command a rule, shown in the question before the user answers: the program and its subcommand, and the folder when it writes (`git commit` in `~/projects/web`; reading files under `~/Documents` with the provider `x`). Never the whole literal command, and never a rule as wide as "any command".
+- **No "always" for administrator commands.** Whatever runs with `sudo` asks its "yes" every time, on top of the password.
+- **Blocked stays blocked.** No rule opens it.
+- **In sight.** `/permissions` lists the saved rules and removes them. They live in the user's configuration folder, which the agent can neither read nor write.
+- **For the benchmark.** Tasks start with no saved rules unless the task says otherwise; the answer to each question (yes, always, no) is part of the task file.
+
 ## Decisions for Carlos
 
 1. **Root password. Decided (13 Nov 2026):** as `sudo` does it. The password is typed in the terminal for administrator commands and remembered for a few minutes (5, `sudo`'s default), only in that chat window. While it is remembered, each administrator command still asks its "yes".
 2. **Reading without asking. Decided (13 Nov 2026):** read-only commands run without a question, as read-only `osyr` commands do today. Files with secrets stay blocked.
-3. **Remote providers.** Proposed: with a remote AI provider, reading file contents from the user's folder asks first; the rest of the output is sent without asking, as today.
+3. **Remote providers. Decided (13 Nov 2026):** with a remote AI provider, reading the contents of the user's files asks first, through the permissions below (once or always).
 4. **Blocked for good, or "are you really sure?"** Proposed: blocked commands never run from the agent; who really wants one opens a terminal. The alternative is a second, stronger confirmation.
 5. **Writing files.** Creating a file with shell redirections (`cat > file <<EOF`) is where small models make most mistakes. A separate `write(path, content)` tool with a backup of the previous version would also give "undo" for free. Proposed: design it next, as its own piece, before the shell is implemented, because it changes what the shell needs to allow.
