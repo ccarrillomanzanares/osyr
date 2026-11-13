@@ -427,6 +427,16 @@ Still open:
 3. Hands-free wake word ("Hey OSYR"), optional: CPU cost to be measured.
 4. Model speed: speculative decoding with a small draft model. Measure on the HP.
 
+## Shell tool and permissions (13 Nov, not in an image yet)
+
+First piece of stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md); design and decisions in [SHELL-DESIGN.md](SHELL-DESIGN.md).
+
+- `shell(command)` tool in `osyr-chat`: every command is classified first by `osyr/shellguard.py` (pass, confirm, block) and run by `osyr/shell.py` (bash as the user, no keyboard, 60 s, English output, trimmed to the model and saved whole).
+- Questions now have three answers, for `osyr` commands too: yes, always (saved in `~/.config/osyr/permissions.json`, listed and removed with `/permissions`) and no (or typing what to do instead).
+- `osyr files find` understands phrases and `osyr files read` takes a bare file name.
+- Tests: `tests/shellguard_cases.py` (table of commands and permission rules) and three agent tests in the native phase.
+- Pending: the write tool, the "this deletes N files" line, a test inside the image (`sudo` with a real password and terminal), measuring the fixed prompt in tokens, and `MAX_STEPS` (6 calls per turn is short for a diagnosis).
+
 ## Still pending (4 Nov)
 
 - **Hardware tests with v0.30.0** (`osyr-hwtest` covers most of them): on the HP 15s, beep and microphone, speed between messages, wifi from the agent, screen lock, `/pair`; on the HP 15-ba, sway start and wifi at first boot; on the 2014 one, `/update` from v0.26 (code, then image).

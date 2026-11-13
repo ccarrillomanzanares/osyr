@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """OSYR — agent console (milestone 0, with the v0 agent from milestone 1).
 
-Talks to the active provider (the local model or an external one) and can use two
-tools: 'osyr' (the system CLI, with its JSON contract) and 'look'
-(look at the screen). Whatever changes the system asks for confirmation;
-queries do not. Voice: Super+Space (osyr-voice) or /voice; answers to
+Talks to the active provider (the local model or an external one) and can use
+these tools: 'osyr' (the system CLI, with its JSON contract), 'shell' (any other
+command, classified first by osyr/shellguard.py), 'clipboard', 'remember' and
+'look' (look at the screen). Whatever changes the system asks for confirmation
+(yes, always or no); queries do not. Voice: Super+Space (osyr-voice) or /voice; answers to
 voice are read aloud. Conversations are saved and /resume picks them
 up again. Standard library only: the image does not ship requests.
 """
@@ -13,6 +14,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import readline  # noqa: F401  (history and line editing in input())
 import shlex
 import signal
@@ -31,6 +33,8 @@ from osyr import cli as osyr_cli  # noqa: E402  (validate commands before runnin
 from osyr import look as looker  # noqa: E402
 from osyr import memory  # noqa: E402  (what the person asked to remember)
 from osyr import net as osyrnet  # noqa: E402  (exact name of the wifi network)
+from osyr import shell as oshell  # noqa: E402  (runs the agent's shell commands; saved permissions)
+from osyr import shellguard  # noqa: E402  (pass, confirm or block, before anything runs)
 from osyr import live  # noqa: E402  (update without restarting)
 from osyr import voice  # noqa: E402
 
@@ -40,6 +44,7 @@ BASE = f"http://127.0.0.1:{PORT}"
 MAX_REPLY = 2048     # maximum reply tokens
 HISTORY_SHARE = 0.75  # the conversation fits in 75% of the context
 MAX_STEPS = 6        # tool calls in a row within one turn
+SHELL = os.environ.get("OSYR_SHELL", "1") != "0"  # the shell tool (the benchmark measures with and without)
 TOOL_OUTPUT = 4000   # characters of tool output the model sees (~1,000 tokens)
 CHATS = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
                      "osyr", "chats")
@@ -75,11 +80,11 @@ SYSTEM = (
     "For anything about this computer (network and wifi, sound, screen brightness, "
     "AI settings, updates) use the osyr tool and base your answer on its JSON result; "
     "never invent results. If a result has a hint, follow it or tell the user. "
+    "{shell}"
     "Use the look tool only when the user asks about what is on the screen, and the clipboard "
     "tool when they mention what they copied or want something copied. For the user's files "
     "(find one, read one) use the osyr tool's files commands, never look. "
-    "If something is not among your tools' commands, OSYR cannot do it yet: say so "
-    "plainly and do not invent steps. To install OSYR on the computer's disk, tell the user to "
+    "{limit} To install OSYR on the computer's disk, tell the user to "
     "type /install in this chat while OSYR runs from the USB: it asks for their password, the "
     "disk (the whole disk is erased) and whether to encrypt their files (then a passphrase is "
     "asked at every start-up), and copies the system and their files. You cannot run it for them. "
@@ -92,6 +97,31 @@ SYSTEM = (
     "and answer from it; for the full help, tell them to press Super+F1. "
     "When the user asks you to remember something about them, save it with the remember tool."
 )
+
+
+SHELL_TEXT = ("For what the osyr commands do not cover (processes, logs, disk space, services, "
+              "moving and deleting files, programs) use the shell tool. ")
+NO_SHELL_LIMIT = ("If something is not among your tools' commands, OSYR cannot do it yet: say so "
+                  "plainly and do not invent steps.")
+SHELL_LIMIT = ("If neither the osyr commands nor the shell can do something, say so plainly and "
+               "do not invent steps.")
+SYSTEM = SYSTEM.format(shell=SHELL_TEXT if SHELL else "", limit=SHELL_LIMIT if SHELL else NO_SHELL_LIMIT)
+SHELL_TOOL = {"type": "function", "function": {
+    "name": "shell",
+    "description": (
+        "Run a command in bash as the user and get its output (JSON: exit, stdout, stderr). Use it only "
+        "for what the osyr tool's commands do not cover. Commands that only read run at once; commands "
+        "that change something ask the user first. For administrator tasks write sudo in front: the user "
+        "is asked, and types the password themselves. No keyboard: never editors or programs that ask "
+        "questions (use options like -y or --no-pager). A cd is remembered. Long output is trimmed; the "
+        "result says where the whole output is. Never allowed from here: erasing or formatting disks, "
+        "changing the boot or the system itself, reading keys and passwords, turning off OSYR's own "
+        "protections. If a result says BLOCKED, tell the user they can run it themselves in a terminal; "
+        "do not look for another way to do the same thing."),
+    "parameters": {"type": "object", "properties": {
+        "command": {"type": "string", "description": "e.g. 'df -h' or 'sudo systemctl restart bluetooth'"},
+        "timeout": {"type": "integer", "description": "seconds, default 60, at most 600"}},
+        "required": ["command"]}}}
 
 
 def system_prompt(local=True):
@@ -169,6 +199,8 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {
             "question": {"type": "string"}}, "required": ["question"]}}},
 ]
+if SHELL:
+    TOOLS.insert(1, SHELL_TOOL)
 # Queries the agent can run without asking (they change nothing)
 READ_ONLY = [("net", "status"), ("net", "wifi", "scan"), ("audio", "status"), ("audio", "voice", "status"),
              ("ai", "status"), ("ai", "list"), ("ai", "models"),
@@ -357,6 +389,7 @@ class Session:
         self.tools = True       # turned off if the provider does not support tools
         self.speak_always = False
         self.spoken_lang = None  # language of the question when it came by voice (this turn)
+        self.cwd = os.path.expanduser("~")  # current folder of the shell tool
         self.warm = None        # thread that prepares the fixed prompt in the local model
         if provider["local"]:
             self.warm = threading.Thread(target=warm_prefix, daemon=True)
@@ -475,6 +508,104 @@ def ask_yes(question):
         return False
 
 
+def ask(question, always=None):
+    """Yes, always or no. Returns (answer, text): answer is "yes", "always" or "no";
+    text is what the person typed instead of an answer (what to do instead), for the
+    model. 'always' is the saved-permission rule this question offers, or None."""
+    if always:
+        print(f"{DIM}  a = always: do not ask again for {oshell.describe(always)}{RESET}")
+    try:
+        reply = input(f"{question} [{'y/a/N' if always else 'y/N'}] ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return "no", ""
+    low = reply.lower()
+    if low in ("y", "yes", "s", "si", "sí"):
+        return "yes", ""
+    if always and low in ("a", "always", "siempre"):
+        oshell.add(always)
+        return "always", ""
+    return "no", "" if low in ("", "n", "no") else reply
+
+
+def declined(what, said):
+    res = {"ok": False, "code": "USER_DECLINED", "data": {}, "hint": f"The user did not allow {what}."}
+    if said:
+        res["data"]["user_said"] = said[:500]
+        res["hint"] += " They wrote what to do instead: follow it."
+    return res
+
+
+def run_shell(command, sess, timeout=None):
+    command = command.strip()
+    home = os.path.expanduser("~")
+    cwd = getattr(sess, "cwd", None) or home
+    print(f"{DIM}[shell: {command}]{RESET}")
+    g = shellguard.classify(command, cwd, home)
+    log = {"command": command, "cwd": cwd, "class": g["class"]}
+    if g["class"] == shellguard.BLOCK:
+        code = g["code"] or "BLOCKED"
+        print(f"{DIM}[{'blocked' if code == 'BLOCKED' else 'not run'}: {g['reason']}]{RESET}")
+        oshell.audit(**log, code=code, reason=g["reason"])
+        hint = {"BLOCKED": "Never allowed from the assistant. Tell the user they can run it themselves in a "
+                           "terminal. Do not try another way to do the same thing.",
+                "INTERACTIVE": "It needs a keyboard, and there is none here. Use a non-interactive form "
+                               "(options, a pipe), or tell the user to run it in a terminal.",
+                "USE_OSYR_TOOL": "Call the osyr tool with this command instead of the shell."}.get(code)
+        return {"ok": False, "code": code, "data": {"reason": g["reason"]}, "hint": hint}
+    rules = oshell.load()
+    # A file's content going to a remote provider: ask first, as with osyr files read
+    if not sess.provider["local"]:
+        for path in g["reads"]:
+            folder = os.path.dirname(path)
+            if any(r.get("provider") == sess.provider["name"] and r.get("send")
+                   and shellguard.under(folder, r["send"]) for r in rules):
+                continue
+            offer = ({"send": folder, "provider": sess.provider["name"]}
+                     if folder != home and shellguard.under(folder, home) else None)
+            answer, said = ask(f'Send the content of {path} to {sess.provider["name"]}?', offer)
+            if answer == "no":
+                oshell.audit(**log, answer="no-send")
+                return declined("sending this file", said)
+    answer = "pass"
+    if g["class"] == shellguard.CONFIRM:
+        if shellguard.allowed_by(rules, command, cwd, home):
+            answer = "rule"
+        else:
+            if g["root"]:
+                print(f"{DIM}  as administrator: your password may be asked{RESET}")
+            answer, said = ask(f"Run '{command}'?", shellguard.rule(command, cwd, home))
+            if answer == "no":
+                oshell.audit(**log, answer="no")
+                return declined("this command", said)
+    if g["root"]:
+        # The password is typed here, in the terminal, to sudo itself: neither the model
+        # nor this program sees it. sudo remembers it for a few minutes, in this window.
+        try:
+            ok = subprocess.run(["sudo", "-v"]).returncode == 0
+        except (OSError, KeyboardInterrupt):
+            ok = False
+        if not ok:
+            oshell.audit(**log, answer=answer, code="SUDO_FAILED")
+            return {"ok": False, "code": "SUDO_FAILED", "data": {},
+                    "hint": "The user did not give the administrator password. Do not ask for it in the chat."}
+    try:
+        saved = termios.tcgetattr(sys.stdin.fileno())
+    except (termios.error, OSError, ValueError):
+        saved = None
+    try:
+        res, sess.cwd = oshell.run(command, cwd, timeout)
+    finally:
+        if saved is not None:
+            try:
+                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, saved)
+            except (termios.error, OSError):
+                pass
+    oshell.audit(**log, answer=answer, code=res.get("code"), exit=res.get("data", {}).get("exit"),
+                 seconds=res.get("data", {}).get("seconds"))
+    return res
+
+
 def is_read_only(args):
     words = [a for a in args if not a.startswith("-")]
     if any(tuple(words[:len(r)]) == r for r in READ_ONLY):
@@ -516,9 +647,13 @@ def run_osyr(command, sess=None):
         return {"ok": False, "code": "USAGE", "data": {"error": err}, "hint": VALID_HINT}
     if [a for a in args if not a.startswith("-")][:3] == ["net", "wifi", "connect"]:
         return wifi_connect(args)
-    if not is_read_only(args) and not ask_yes(f"Run 'osyr {shown}'?"):
-        return {"ok": False, "code": "USER_DECLINED", "data": {},
-                "hint": "The user did not allow this command."}
+    if not is_read_only(args):
+        # "Always" covers the command without its values ('ui brightness'), never its options
+        key = " ".join(w for w in args if not w.startswith("-") and re.match(r"^[a-z]+$", w))
+        if not any(r.get("osyr") == key for r in oshell.load()):
+            answer, said = ask(f"Run 'osyr {shown}'?", {"osyr": key} if key else None)
+            if answer == "no":
+                return declined("this command", said)
     args = voice_args(args, sess)
     # 'audio voice listen fast' downloads 60 MB: on a slow link, well over the usual limit
     timeout = 1800 if [a for a in args if not a.startswith("-")][:3] == ["audio", "voice", "listen"] else 180
@@ -692,6 +827,11 @@ def run_tool(call, sess):
         args = {}
     if call["name"] == "osyr":
         res = run_osyr(str(args.get("command", "")), sess)
+    elif call["name"] == "shell" and SHELL:
+        res = run_shell(str(args.get("command", "")), sess, args.get("timeout"))
+        dbg("tool", tool="shell", ok=res.get("ok"), code=res.get("code"),
+            command=" ".join(str(args.get("command", "")).split()[:1]))  # the program only; the rest stays in shell.log
+        return json.dumps(res, ensure_ascii=False)[:TOOL_OUTPUT]
     elif call["name"] == "clipboard":
         res = run_clipboard(args, sess)
         dbg("tool", tool="clipboard", ok=res.get("ok"), code=res.get("code"))
@@ -980,11 +1120,33 @@ def record_until_enter():
 
 # --- Main ------------------------------------------------------------------------------
 
+def permissions(words):
+    """/permissions: what was answered "always", and how to take it back."""
+    rules = oshell.load()
+    if words[:1] == ["remove"] and words[1:]:
+        if words[1] == "all":
+            rules = []
+        elif words[1].isdigit() and 1 <= int(words[1]) <= len(rules):
+            del rules[int(words[1]) - 1]
+        else:
+            print("Usage: /permissions remove <number|all>")
+            return
+        oshell.save(rules)
+    if not rules:
+        print("Nothing is allowed without asking. Answer 'a' (always) to a question to add a permission.")
+        return
+    print("Allowed without asking:")
+    for i, r in enumerate(rules, 1):
+        print(f"  {i}. {oshell.describe(r)}")
+    print(f"{DIM}/permissions remove <number|all> takes one back{RESET}")
+
+
 HELP = ("Type a message. /voice to speak (or hold Super+Space), /look [question] to show "
         "the screen,\n/speak on|off, /history, /resume [n], /clear starts over, /exit quits.\n"
         "AI: /ai lists them, /ai <name> [model] switches, /pair adds one with its API key.\n"
         "/install puts OSYR on this computer's disk (from the USB; it erases the disk).\n"
         "/update installs OSYR updates (/update undo goes back); /report sends a problem report.\n"
+        "/permissions shows what you allowed without asking (answer 'a' to a question) and takes it back.\n"
         "Full help, keyboard shortcuts and a locked screen: Super+F1 (or osyr-help).")
 # Usage notice: the same text at first boot, in the help and on the website
 DISCLAIMER = ("OSYR is still in development and can make mistakes (so can its AI): check what it says and what it will do before you confirm.\n"
@@ -1107,6 +1269,9 @@ def main():
             else:
                 subprocess.run(["osyr", "ai", "use", words[0], *(["--model", words[1]] if len(words) > 1 else [])])
                 sess.follow_active()
+            continue
+        if text == "/permissions" or text.startswith("/permissions "):
+            permissions(text.split()[1:])
             continue
         if text.startswith("/resume"):
             messages = resume(text[7:].strip(), messages)

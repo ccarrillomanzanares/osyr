@@ -180,7 +180,7 @@ def native():
         ok, out = pty_run(chat, chat_env, [
             (rb"> $", "¿Qué brillo tiene la pantalla ahora mismo? Usa la herramienta."),
             (rb"tok/s\]\s*\r?\n\s*> $", "Pon el brillo al 80 por ciento."),
-            (rb"\[y/N\] $", "y"),
+            (rb"\[y/(a/)?N\] $", "y"),
             (rb"tok/s\]\s*\r?\n\s*> $", "/exit")], timeout=600)
         open(f"{RESULTS}/native-agent.txt", "w").write(out)
         report("agent-reads-with-tool", "[osyr ui brightness]" in out and "50" in out, "no tool call or no 50%")
@@ -208,6 +208,23 @@ def native():
         got = osyr_json("files", "read", "nota.txt")
         report("files-read-by-name", "4471" in got.get("data", {}).get("text", ""), str(got)[:200])
         report("files-read-several", osyr_json("files", "read", "twice.txt").get("code") == "FILES_SEVERAL")
+
+        # Shell tool: the classifier's table, then the agent with the real model: a read
+        # (no question), a change (asks; "a" saves the permission) and the saved rule
+        p = subprocess.run(["python3", "-B", f"{ROOT}/tests/shellguard_cases.py"], capture_output=True, text=True)
+        report("shellguard-cases", p.returncode == 0, p.stdout.strip()[-300:])
+        os.makedirs(f"{tmp}/work")
+        ok, out = pty_run(chat, chat_env, [
+            (rb"> $", "How much free space is left on the disk? Use the shell tool."),
+            (rb"tok/s\]\s*\r?\n\s*> $", "Usa la shell: ve a la carpeta work (cd work) y crea dentro una carpeta llamada alpha."),
+            (rb"\[y/a/N\] $", "a"),
+            (rb"tok/s\]\s*\r?\n\s*> $", "/permissions"),
+            (rb"> $", "/exit")], timeout=900)
+        open(f"{RESULTS}/native-shell.txt", "w").write(out)
+        first = out.split("mkdir")[0]  # (the long second line is echoed shortened by readline)
+        report("shell-reads-without-asking", "[shell: df" in first and "[y/" not in first, out[-300:])
+        report("shell-asks-before-change", ok and os.path.isdir(f"{tmp}/work/alpha"), out[-300:])
+        report("shell-permission-saved", "1. 'mkdir' in ~/work" in out, out[-300:])
 
         # /install: the installer in the same window (fake sudo: only checks that it is launched)
         fakebin = f"{tmp}/fakesudo"

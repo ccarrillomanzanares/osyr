@@ -27,6 +27,7 @@ The OSYR terminal opens when the session starts. Type a message and press Enter,
 | `/pair` | add an AI provider by entering its key on your phone |
 | `/install` | install OSYR on this computer's disk, from the USB (erases the whole disk) |
 | `/update`, `/update undo` | install OSYR updates, or go back to the previous version |
+| `/permissions`, `/permissions remove <n>` | what you allowed without asking, and take it back |
 | `/report` | send a problem report to the OSYR team: it asks what happened, then sends logs and hardware data; it asks before including your last conversations or screenshots |
 | `/report chats` | the same, including your last conversations with the assistant without asking: they help us see what went wrong |
 | `/help` | short help |
@@ -35,6 +36,10 @@ The OSYR terminal opens when the session starts. Type a message and press Enter,
 **OSYR is still in development and can make mistakes, and so can its AI.** Check what it says, and what it is going to do, before you confirm. Do not give it sensitive data (bank or health details, other people's personal data) and do not use it for delicate operations (banking, payments, important files). With a remote AI provider, what you write is sent to that provider. OSYR is provided “as is”, without warranty of any kind: you use it at your own risk, and its authors are not liable for any damage or loss of data (MIT License). Keep a backup of your important files (`osyr backup run`).
 
 The assistant asks before changing anything. Ask it things like "connect to my wifi", "turn the volume down", "remind me at 6 to call Ana" or "how hot is the processor?".
+
+**Questions and permissions.** When the assistant wants to change something it shows the exact command and waits: `y` runs it this time, `a` runs it and does not ask again for that kind of command in that folder (for example `git commit` in one project), and anything else is a no. Instead of answering you can type what it should do instead. `/permissions` lists what you answered "always" to, and `/permissions remove <number>` takes it back. Administrator commands always ask, and ask for your password the way `sudo` does: you type it in the terminal, the assistant never sees it, and it is remembered for a few minutes.
+
+**Commands.** For what its own commands do not cover, the assistant can run ordinary Linux commands: "how much disk space is left?", "which program is using the most memory?", "move these photos to a new folder", "restart bluetooth". Commands that only look run at once. Some never run from the assistant, whatever it or anyone says: erasing or formatting disks, changing the boot or the system itself, reading your keys and passwords, and turning off its own protections. If you need one of those, type it yourself in a terminal. Every command it asks for is written to `~/.local/state/osyr/shell.log`, which stays on your computer.
 
 It can also find and read your files (it never changes them): "where is the electricity bill PDF?", "summarise the notes in Documents", "translate this file into English". It never reads the folders with your keys and passwords.
 

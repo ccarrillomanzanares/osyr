@@ -1,6 +1,6 @@
 """osyr shellguard — classifies a shell command the agent asks for.
 
-Draft of the design in docs/SHELL-DESIGN.md; not used by osyr-chat yet.
+Design in docs/SHELL-DESIGN.md. Used by the shell tool of osyr-chat.
 
 classify(command, cwd, home) returns a dict:
   class   "pass"     only reads: run without asking
@@ -11,6 +11,10 @@ classify(command, cwd, home) returns a dict:
   reason  one line in English, for the model and for the dim line the user sees
   reads   files of the user's folder whose content would reach the model (the
           chat asks before sending them to a remote provider)
+  root    True when some part of it runs with sudo
+
+rule(command, cwd, home) gives the permission a "yes, always" would save for a
+command, or None when it must ask every time.
 
 It guards against the model's mistakes; it is not a security boundary. A list of
 patterns can be dodged: the shell runs as the user, root needs sudo and the
@@ -40,7 +44,7 @@ PROTECTED = re.compile(
 SECRET = re.compile(
     r"/etc/g?shadow-?\b|\.ssh/(id_[A-Za-z0-9_]+|[^/\s]*_key)(?!\.pub)\b|\.ssh/identity\b"
     r"|/var/lib/iwd\b|/etc/NetworkManager/system-connections|wpa_supplicant[^/\s]*\.conf"
-    r"|\.gnupg/(private-keys|secring|openpgp-revocs)|\.config/osyr/ai\.json|\.git-credentials|\.netrc\b"
+    r"|\.gnupg/(private-keys|secring|openpgp-revocs)|\.config/osyr/(ai|permissions)\.json|\.git-credentials|\.netrc\b"
     r"|\.mozilla/[^\s]*(logins\.json|key4\.db|cookies\.sqlite)|\.password-store|\.aws/credentials"
     r"|/etc/ssh/ssh_host_[a-z0-9_]+_key(?!\.pub)\b|\.local/share/keyrings|\.kdbx\b"
     r"|/proc/[^/\s]+/environ\b|/proc/kcore\b|/dev/(mem|kmem|port)\b"
@@ -53,7 +57,7 @@ PUBLIC_IN_SECRET_DIRS = re.compile(r"(\.pub|/known_hosts|/config|/authorized_key
 SAFE_ENV = re.compile(r"^(LC_[A-Z]+|LANG|LANGUAGE|TZ|COLUMNS|LINES|NO_COLOR|TERM)=")
 SAFE_SED = re.compile(r"^(\d+|\$)?(,(\d+|\$))?[pdq]$|^/[^/]*/[pd]$|^s([/|#,@])[^\n]*\4[^\n]*\4[gIi0-9p]*$")
 # The agent's own guard rails and audit trail
-OWN = re.compile(r"\.local/state/osyr/chat\.log|/usr/(bin/osyr[^/\s]*|lib/osyr)\b|osyr/shellguard")
+OWN = re.compile(r"\.local/state/osyr/(chat|shell)\.log|/usr/(bin/osyr[^/\s]*|lib/osyr)\b|osyr/shellguard")
 DISK_DEV = re.compile(r"^/dev/(sd|hd|vd|xvd|nvme|mmcblk|dm-|md|loop|sr|mapper/|disk/|zram)")
 HARMLESS_DEV = ("/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty", "/dev/zero", "/dev/urandom", "/dev/random")
 
@@ -119,7 +123,7 @@ CTL_READ = {"status", "show", "list", "list-sessions", "list-users", "list-seats
 
 def result(cls, reason="", code=None, reads=()):
     return {"class": cls, "code": code or ("BLOCKED" if cls == BLOCK else None), "reason": reason,
-            "reads": list(reads)}
+            "reads": list(reads), "root": False}
 
 
 def block(reason, code="BLOCKED"):
@@ -671,14 +675,17 @@ def classify(command, cwd=None, home=None, _root=False):
             return block("it opens a root shell; ask for the exact command with sudo instead")
         if re.search(r"\brm\s+(-[A-Za-z]*\s+)*(/|/\*|~|~/\*|\$HOME|\$HOME/\*)(\s|$|;|&|\))", command):
             return block("it would delete the whole system or your whole home folder")
-        return result(CONFIRM, f"it cannot be analysed ({opaque})")
-    worst, reads = result(PASS), []
+        r = result(CONFIRM, f"it cannot be analysed ({opaque})")
+        r["root"] = bool(re.search(r"\bsudo\b", command))
+        return r
+    worst, reads, root = result(PASS), [], False
     for c in cmds:
         c.root = c.root or _root
         r = classify_simple(c, cwd, home)
         if r["class"] == BLOCK:
             return r
         reads += r["reads"]
+        root = root or c.root
         if ORDER[r["class"]] > ORDER[worst["class"]]:
             worst = r
         # cd changes where the next command of the line runs
@@ -688,4 +695,74 @@ def classify(command, cwd=None, home=None, _root=False):
     if background and worst["class"] == PASS:
         worst = result(CONFIRM, "it leaves a process running in the background")
     worst["reads"] = sorted(set(reads))
+    worst["root"] = root
     return worst
+
+
+# --- Permissions: what a "yes, always" covers --------------------------------------------
+
+# Programs whose first word after the name says what they do ('git commit', 'npm install')
+SUBCOMMANDS = {"git", "npm", "pnpm", "yarn", "pip", "pip3", "cargo", "go", "make", "docker", "podman",
+               "flatpak", "systemctl", "tar", "zip", "unzip"}
+
+
+def rule(command, cwd=None, home=None):
+    """The permission a "yes, always" would save for this command: program, its
+    subcommand and the folder it works in. None when it must ask every time:
+    administrator commands, what cannot be analysed, lines that change things
+    with more than one program, and anything outside a folder of the user's
+    (the home folder itself is too wide to be one)."""
+    home = os.path.normpath(home or os.path.expanduser("~"))
+    cwd = os.path.normpath(cwd or home)
+    cmds, opaque, background = lex(command.strip())
+    if opaque or background or not cmds:
+        return None
+    if any(c.words and os.path.basename(c.words[0]) in CONTROL for c in cmds):
+        return None
+    changing = []
+    for c in cmds:
+        r = classify_simple(c, cwd, home)
+        if r["class"] == BLOCK or c.root or c.opaque or not c.words:
+            return None
+        if r["class"] == CONFIRM:
+            changing.append((c, cwd))
+        if os.path.basename(c.words[0]) == "cd":
+            cwd = resolve(c.words[1] if len(c.words) > 1 and c.words[1] != "-" else home, cwd, home)
+    if len(changing) != 1:
+        return None
+    c, where = changing[0]
+    prog = os.path.basename(c.words[0])
+    if prog in SHELLS or prog in UNANALYSABLE_PROGS or prog == "cd":
+        return None
+    opts, ops = args_of(c)
+    sub = ""
+    if prog in SUBCOMMANDS:
+        if not ops or not re.match(r"^[a-z][a-z0-9-]*$", ops[0]):
+            return None
+        sub, ops = ops[0], ops[1:]
+    # The folder of the rule holds every file the command names; programs that
+    # work on "where they are" (git, make, an interpreter) count that folder too
+    paths = [resolve(a, where, home) for a in ops + c.writes if "://" not in a]
+    folders = [os.path.dirname(q) or "/" for q in paths]
+    if not folders or prog in SUBCOMMANDS or prog in INTERPRETERS:
+        folders.append(where)
+    folder = os.path.commonpath(folders)
+    if zone(folder, home) != "user" or under(home, folder) or folder in USER_ROOTS:
+        return None
+    if SECRET_DIRS.search(folder + "/") or under(folder, os.path.join(home, ".config", "osyr")):
+        return None
+    return {"program": prog, "sub": sub, "dir": folder}
+
+
+def rule_text(r, home=None):
+    home = os.path.normpath(home or os.path.expanduser("~"))
+    d = "~" + r["dir"][len(home):] if under(r["dir"], home) else r["dir"]
+    return f"'{(r['program'] + ' ' + r['sub']).strip()}' in {d}"
+
+
+def allowed_by(rules, command, cwd=None, home=None):
+    """True when a saved rule covers this command (same program and subcommand,
+    inside the rule's folder)."""
+    r = rule(command, cwd, home)
+    return bool(r) and any(x.get("program") == r["program"] and x.get("sub", "") == r["sub"]
+                           and x.get("dir") and under(r["dir"], x["dir"]) for x in rules)

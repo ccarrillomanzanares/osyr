@@ -1,6 +1,6 @@
 # Shell with protections — design proposal
 
-13 November 2026 · **Proposal, not approved.** Stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md). Nothing here is implemented. The decisions Carlos has to take are in the last section.
+13 November 2026 · **Approved by Carlos the same day; the shell is implemented, the write tool is not yet.** Stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md). The decisions are in the last section. Where the text below says "proposal", read it as the design that was built, with the differences listed under "As built".
 
 ## What it is for
 
@@ -144,6 +144,32 @@ For the benchmark the shell runs inside the disposable container, where `sudo` n
 3. Native tests in `tests/run.py`: the classifier table, and the agent solving one read task and one confirmed task with the real model.
 4. Help (`osyr doc`) and the changelog.
 5. One image with everything, tested in QEMU.
+
+## As built (13 November 2026)
+
+`osyr/shellguard.py` (classifier and permission rules), `osyr/shell.py` (runner, saved outputs, audit log, permissions file) and the `shell` tool in `osyr-chat`. Differences from the text above:
+
+- **The audit goes to its own file**, `~/.local/state/osyr/shell.log`, not to `chat.log`: `chat.log` is sent with problem reports and must not hold command arguments. `chat.log` only records that the shell was used and the program's name.
+- **`sudo`:** after the "yes", the chat runs `sudo -v` in the terminal, so the password goes from the keyboard to `sudo` and to nobody else. The command then runs in the same terminal session, in its own process group and without a keyboard, so `sudo` finds the password just typed and a program that tries to read the keyboard gets an error at once.
+- **The "plain line" for heavy commands** ("this deletes 214 files") is not built yet.
+- **Switch:** `OSYR_SHELL=0` in the environment starts the chat without the shell tool and with the old prompt, for the "with and without" measurement.
+- **Not built yet:** the write tool below, the remote-provider question for programs whose reads the classifier cannot see, and the test in the image.
+
+## The write tool (design, to build next)
+
+```
+write(path, content)             Create a file, or replace all of it.
+edit(path, old, new)             Replace one piece of text in a file; `old` must appear exactly once.
+osyr files undo                  Put back the previous version of the last file the assistant changed.
+```
+
+- **Why two.** Small models are reliable at "replace this text with that one" and unreliable at rewriting a long file whole. `write` is for new and short files.
+- **Where.** The same zones as the shell: the user's files ask; a single configuration file in `/etc` asks and goes through `sudo`; the system itself, secrets and the protected files are blocked. The check is the classifier's (`check_write`), not a second list.
+- **The question shows the change:** for `edit`, the lines that go and the lines that come, as a short diff; for `write`, the path, the size, the first lines, and "replaces a file of N lines" when it exists.
+- **Copy before changing.** The previous version goes to `~/.local/state/osyr/undo/` with the path and the time. The last 20 changes are kept. `osyr files undo` puts the last one back (and asks); a file that did not exist before is deleted by the undo.
+- **Limits.** Text only, at most 100,000 characters; `edit` fails with a clear code when `old` is missing or appears more than once, and the model reads the file again.
+- **Permissions.** "Always" is offered per folder ("writing files in ~/projects/web"), never for the home folder itself nor outside the user's files.
+- **Cost in the fixed prompt:** about 100 tokens for the two tools.
 
 ## Permissions: yes, always, no
 
