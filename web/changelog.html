@@ -57,6 +57,15 @@ li.sub:before{content:"– ";color:var(--dim)}
     <div class="changelog">
 
 <div class="ver-block">
+<h2>v0.32.0 — 2026-11-13</h2>
+<p class="dl"><a href="/osyr/releases/">download</a> · system update: <code>osyr update image</code>, or a new install from the image</p>
+<h3>new</h3>
+<ul><li>The assistant can run commands in a shell for what the <code>osyr</code> commands do not cover. What only reads runs without asking; what changes something shows the command and asks (yes, always or no); what is destructive is blocked. A heavy command comes with a plain line saying what it does, and <code>sudo</code> asks for your password as usual.</li><li>Install programs: <code>osyr box install &lt;program&gt;</code>, or ask the assistant. They go into a Debian container (the box) that sees your home folder but not your keys or the assistant's settings; the system itself is not touched. <code>osyr box search</code>, <code>list</code>, <code>remove</code>, <code>update</code> and <code>reset</code>. First version: it needs the Internet and free disk space, and programs that only speak X11 have no window yet.</li><li>Open and close applications: <code>osyr app list</code>, <code>osyr app run &lt;name&gt; [file]</code> and <code>osyr app stop &lt;name&gt;</code>, for the system's applications and the box's.</li><li>Find a file by saying what it is called, and read it by its bare name.</li></ul>
+<h3>changes</h3>
+<ul><li>The assistant takes up to 12 steps per request, stops when a call repeats with the same result, and takes a "no" as final for that request.</li></ul>
+</div>
+
+<div class="ver-block">
 <h2>v0.31.1 — 2026-11-12</h2>
 <p class="dl">code update: type <code>/update</code> in the chat</p>
 <h3>changes</h3>
