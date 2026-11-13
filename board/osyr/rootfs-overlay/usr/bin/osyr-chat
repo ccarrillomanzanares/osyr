@@ -45,7 +45,8 @@ SLOT = 0  # local model slot for the chat; /look and diag use slot 1 (see osyr-l
 BASE = f"http://127.0.0.1:{PORT}"
 MAX_REPLY = 2048     # maximum reply tokens
 HISTORY_SHARE = 0.75  # the conversation fits in 75% of the context
-MAX_STEPS = 6        # tool calls in a row within one turn
+MAX_STEPS = 12       # answers of the model within one turn (each may ask for tools): a diagnosis needs them
+MAX_REPEATS = 2      # the same call with the same result this many times ends the turn
 SHELL = os.environ.get("OSYR_SHELL", "1") != "0"  # the shell tool (the benchmark measures with and without)
 # The write and edit tools are off unless asked for: the untrained 4B model misuses them (it
 # "answers" a question about a file by writing a new one). See docs/TRAINING-LOG.md, 13 Nov 2026.
@@ -921,6 +922,21 @@ def run_tool(call, sess):
     out = _run_tool(call, args, sess)
     if refused is not None and '"code": "USER_DECLINED"' in out[:80]:
         refused.add(key)
+    # The same call with the same result teaches nothing new: the model is going round in
+    # circles. It is told so instead of getting the result again (a change that is asked for
+    # twice, like raising the brightness two steps, gives a different result and goes through).
+    seen = getattr(sess, "seen", None)
+    if seen is not None:
+        same = re.sub(r'"seconds": [0-9.]+', "", out)
+        if seen.get(key) == same:
+            sess.repeats += 1
+            print(f"{DIM}[{call['name']}: same result as before]{RESET}")
+            dbg("tool", tool=call["name"], code="REPEATED")
+            return json.dumps({"ok": False, "code": "REPEATED", "data": {},
+                               "hint": "You already made this call in this turn and the result is the same "
+                                       "(it is above). Do not make it again: answer the user with what you "
+                                       "have, or try something different."})
+        seen[key] = same
     return out
 
 
@@ -965,6 +981,7 @@ def turn(messages, sess, text, spoken_lang=None):
     messages.append({"role": "user", "content": text})
     sess.spoken_lang = spoken_lang
     sess.refused = set()  # what the person said no to in this turn
+    sess.seen, sess.repeats = {}, 0  # result of each call of this turn, and how many came back the same
     start = len(messages) - 1
     if sess.ctx.trim(messages):
         print(f"{DIM}[older messages forgotten to make room]{RESET}")
@@ -1008,6 +1025,13 @@ def turn(messages, sess, text, spoken_lang=None):
             break
         for c, tc in zip(calls, msg["tool_calls"]):
             messages.append({"role": "tool", "tool_call_id": tc["id"], "content": run_tool(c, sess)})
+        if sess.repeats >= MAX_REPEATS:
+            print(f"{DIM}[stopped: the assistant kept repeating the same step]{RESET}")
+            dbg("stopped", why="repeats")
+            break
+    else:
+        print(f"{DIM}[stopped after {MAX_STEPS} steps; say \"go on\" to continue]{RESET}")
+        dbg("stopped", why="steps")
     if answer and (spoken_lang or sess.speak_always):
         voice.speak(answer, spoken_lang)
     save(messages)

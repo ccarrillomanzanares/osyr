@@ -437,7 +437,8 @@ First piece of stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md); design and decis
 - `osyr files find` understands phrases and `osyr files read` takes a bare file name.
 - Tests: `tests/shellguard_cases.py` (table of commands and permission rules), `tests/edits_cases.py` and four agent tests in the native phase.
 - The question for a heavy command carries a line computed by the system (`shellguard.effect()`): "This deletes 214 files (1.2 GB) in ~/Downloads", "This stops the wifi: the wireless connection drops".
-- Pending: a test inside the image (`sudo` with a real password and terminal), and `MAX_STEPS` (6 calls per turn is short for a diagnosis).
+- A turn has up to 12 answers of the model (`MAX_STEPS`, it was 6: short for a diagnosis). A call that comes back with the same result as before in the same turn is not answered again: the model is told to stop repeating, and the second time the turn ends with a notice. Tested with a scripted model (`tests/turn_cases.py`); not measured with the real model yet.
+- Pending: a test inside the image (`sudo` with a real password and terminal).
 - **The fixed prompt is about 2,000 tokens** with the shell, 2,380 with the write tools too (it was about 1,640 at v0.31.1, already over the 1,500 of the architecture). Decided 13 Nov: the limit is 2,000 until the model is fine-tuned, and 1,500 after.
 
 ## Still pending (4 Nov)

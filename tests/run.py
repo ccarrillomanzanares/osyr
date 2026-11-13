@@ -215,6 +215,8 @@ def native():
         report("shellguard-cases", p.returncode == 0, p.stdout.strip()[-300:])
         p = subprocess.run(["python3", "-B", f"{ROOT}/tests/edits_cases.py"], capture_output=True, text=True)
         report("edits-cases", p.returncode == 0, p.stdout.strip()[-300:])
+        p = subprocess.run(["python3", "-B", f"{ROOT}/tests/turn_cases.py"], capture_output=True, text=True)
+        report("turn-cases", p.returncode == 0, p.stdout.strip()[-300:])
         os.makedirs(f"{tmp}/work")
         ok, out = pty_run(chat, chat_env, [
             (rb"> $", "How much free space is left on the disk? Use the shell tool."),
