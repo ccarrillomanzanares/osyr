@@ -28,7 +28,10 @@ This document is meant to be read by the agent working on the `osyr` repository 
 | Machines with 32 GB or more | Only the 35B is loaded; revisited if it turns out slow for simple requests |
 | The second model (13 Nov) | The 35B and an external provider are the same thing: the second model the agent consults when the local one is not enough is a provider added with `osyr ai add` or `/pair`. Carlos's 35B is one such provider, served with `llama-server` (the llama-hardened project). Users can be offered the same: their own VPS or similar with llama-hardened, with the fine-tuned 35B downloaded from ccmai.org |
 | Handing a task to the second model (13 Nov) | The data leaves the machine, so it asks with the three usual answers: yes, always for that provider, no |
-| Installing software (13 Nov) | With containers (`osyr box`). The official extensions (`osyr ext`) are set aside for now. One default box with Debian stable, created by itself the first time; the user never has to know what a container is. More boxes or other distributions are an advanced option. The programs in the box see the home folder of the user who runs them (any user of the machine, each with their own box, not only `osyr`), except what holds keys and passwords |
+| Installing software (13 Nov) | With containers (`osyr box`). The official extensions (`osyr ext`) are set aside for now. One default box with Debian stable, created by itself the first time; the user never has to know what a container is. More boxes or other distributions are an advanced option. The programs in the box see the home folder of the user who runs them (any user of the machine, each with their own box, not only `osyr`), except what holds keys and passwords. The box starts empty: what is asked for gets installed |
+| The "then" features (13 Nov) | Programming, music and video and office documents are covered by installing programs in the box. Built apart: only what touches the system (VPN and firewall, camera and microphone, screenshots on request) |
+| Graphical applications (13 Nov) | They open in another workspace, as in `ARCHITECTURE.md`; the agent's console stays the main screen and the agent says how to come back |
+| Publishing (13 Nov) | No intermediate images: the next one is published when all the pending changes are done. Commits are pushed as they are made |
 | Shell | With protections, for both models. The pilot decides whether the small one keeps it |
 | The 35B on the VPS (llama-hardened) | May be queried for tests, without touching its configuration |
 | Training | Two rounds with real use in between |
@@ -224,7 +227,7 @@ To be confirmed in the Lambda account: the exact expiry day and what the credits
 
 - [ ] Choose the small model once the candidates are measured.
 - [x] Approve the shell design: what is blocked, what asks for confirmation and what goes through. Approved on 13 Nov 2026 as built ([SHELL-DESIGN.md](SHELL-DESIGN.md)); it can still be adjusted until the interface is frozen.
-- [ ] Approve the task format and the list of categories before the 30–50 tasks are written.
+- [ ] Approve the task format and the list of categories before the 30–50 tasks are written. Waits until the features are built (13 Nov): the tasks depend on the interface that is left.
 - [ ] Go-ahead for every Lambda instance start (instance, hours and share of the budget).
 - [ ] After the pilot: whether the small model keeps the shell and whether to go on with it.
 - [ ] Where the sandbox instances run: VPS, Scaleway or AWS.
