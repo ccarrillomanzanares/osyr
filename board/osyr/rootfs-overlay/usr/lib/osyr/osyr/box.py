@@ -34,6 +34,7 @@ IMAGE = os.environ.get("OSYR_BOX_IMAGE", "docker.io/library/debian:stable")
 NAME = os.environ.get("OSYR_BOX_NAME", "osyr-box")
 LISTS_MAX_AGE = 24 * 3600   # the package lists are downloaded again after a day
 MIN_FREE_MB = 500           # below this, nothing is installed
+COVER = "tmpfs-size=64k,tmpfs-mode=0700,notmpcopyup"   # an empty folder over one the box must not see
 OUT_MAX = 2800              # characters of output the model sees from 'box run'
 PACKAGE = re.compile(r"^[a-z0-9][a-z0-9+.-]{1,80}$")
 # Folders of the user that the programs in the box do not see: keys, passwords,
@@ -148,11 +149,13 @@ def create():
     args = ["create", "--name", NAME, "--hostname", "box", "--init", "--userns=keep-id",
             "--security-opt", "label=disable", "--workdir", h,
             "-v", f"{h}:{h}", "-v", f"{run}:{run}", "-v", "/etc/localtime:/etc/localtime:ro"]
+    # notmpcopyup: by default the engine copies into the empty folder what was under it,
+    # which here is the very thing being hidden (and podman's storage does not fit)
     for d in HIDDEN:
         if os.path.isdir(os.path.join(h, d)):
-            args += ["--mount", f"type=tmpfs,destination={os.path.join(h, d)},tmpfs-size=64k,tmpfs-mode=0700"]
+            args += ["--mount", f"type=tmpfs,destination={os.path.join(h, d)},{COVER}"]
     for d in HIDDEN_RUNTIME:
-        args += ["--mount", f"type=tmpfs,destination={os.path.join(run, d)},tmpfs-size=64k,tmpfs-mode=0700"]
+        args += ["--mount", f"type=tmpfs,destination={os.path.join(run, d)},{COVER}"]
     if os.path.isdir("/dev/dri"):
         args += ["-v", "/dev/dri:/dev/dri"]
     pm(*args, IMAGE, "sleep", "infinity", timeout=600, check=True)

@@ -81,6 +81,8 @@ def main():
     check("box-sees-home", f"{HOME}:{HOME}" in made and "--userns=keep-id" in made, text)
     check("box-hides-secrets", all(f"destination={HOME}/{d}," in text for d in (".ssh", ".gnupg", ".config/osyr"))
           and f"destination={HOME}/run/osyr," in text, text)
+    covers = [c for c in made if c.startswith("type=tmpfs,")]
+    check("box-hidden-not-copied", covers and all(c.endswith(",notmpcopyup") for c in covers), text)
     check("ssh-folder-private", oct(os.stat(os.path.join(HOME, ".ssh")).st_mode & 0o777) == "0o700")
     check("language-set-up", any(c[0] == "exec" and "locale-gen" in c[-1] and "es_ES.UTF-8" in c[-1] for c in calls()))
 
