@@ -147,7 +147,7 @@ For the benchmark the shell runs inside the disposable container, where `sudo` n
 
 ## Decisions for Carlos
 
-1. **Root password.** Proposed: `sudo` asks for the password in the terminal for administrator commands, and remembers it for a few minutes. The alternative is no password (a `sudoers` rule for the agent's commands): more comfortable, but then a "yes" pressed by mistake is all that stands between the model and root.
+1. **Root password. Decided (13 Nov 2026):** as `sudo` does it. The password is typed in the terminal for administrator commands and remembered for a few minutes (5, `sudo`'s default), only in that chat window. While it is remembered, each administrator command still asks its "yes".
 2. **Reading without asking.** Proposed: read-only commands run without a question, as read-only `osyr` commands do today. The alternative is asking for every shell command until there is benchmark data.
 3. **Remote providers.** Proposed: with a remote AI provider, reading file contents from the user's folder asks first; the rest of the output is sent without asking, as today.
 4. **Blocked for good, or "are you really sure?"** Proposed: blocked commands never run from the agent; who really wants one opens a terminal. The alternative is a second, stronger confirmation.
