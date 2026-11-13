@@ -28,7 +28,7 @@ This document is meant to be read by the agent working on the `osyr` repository 
 | Machines with 32 GB or more | Only the 35B is loaded; revisited if it turns out slow for simple requests |
 | The second model (13 Nov) | The 35B and an external provider are the same thing: the second model the agent consults when the local one is not enough is a provider added with `osyr ai add` or `/pair`. Carlos's 35B is one such provider, served with `llama-server` (the llama-hardened project). Users can be offered the same: their own VPS or similar with llama-hardened, with the fine-tuned 35B downloaded from ccmai.org |
 | Handing a task to the second model (13 Nov) | The data leaves the machine, so it asks with the three usual answers: yes, always for that provider, no |
-| Installing software (13 Nov) | With containers (`osyr box`). The official extensions (`osyr ext`) are set aside for now |
+| Installing software (13 Nov) | With containers (`osyr box`). The official extensions (`osyr ext`) are set aside for now. One default box with Debian stable, created by itself the first time; the user never has to know what a container is. More boxes or other distributions are an advanced option |
 | Shell | With protections, for both models. The pilot decides whether the small one keeps it |
 | The 35B on the VPS (llama-hardened) | May be queried for tests, without touching its configuration |
 | Training | Two rounds with real use in between |
