@@ -148,7 +148,7 @@ For the benchmark the shell runs inside the disposable container, where `sudo` n
 ## Decisions for Carlos
 
 1. **Root password. Decided (13 Nov 2026):** as `sudo` does it. The password is typed in the terminal for administrator commands and remembered for a few minutes (5, `sudo`'s default), only in that chat window. While it is remembered, each administrator command still asks its "yes".
-2. **Reading without asking.** Proposed: read-only commands run without a question, as read-only `osyr` commands do today. The alternative is asking for every shell command until there is benchmark data.
+2. **Reading without asking. Decided (13 Nov 2026):** read-only commands run without a question, as read-only `osyr` commands do today. Files with secrets stay blocked.
 3. **Remote providers.** Proposed: with a remote AI provider, reading file contents from the user's folder asks first; the rest of the output is sent without asking, as today.
 4. **Blocked for good, or "are you really sure?"** Proposed: blocked commands never run from the agent; who really wants one opens a terminal. The alternative is a second, stronger confirmation.
 5. **Writing files.** Creating a file with shell redirections (`cat > file <<EOF`) is where small models make most mistakes. A separate `write(path, content)` tool with a backup of the previous version would also give "undo" for free. Proposed: design it next, as its own piece, before the shell is implemented, because it changes what the shell needs to allow.
