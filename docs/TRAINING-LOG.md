@@ -48,8 +48,20 @@ Memory is what the server held at the end of the run; it is approximate (the 9B 
 
 The first three are worth fixing in the product before any training: they cost nothing and no fine-tuning should spend its capacity learning around them.
 
+### Fixed the same day
+
+The three interface problems were fixed and the two file tasks measured again (4B and 9B in Q4_K_M, three runs each):
+
+| Task | Before | After |
+| --- | --- | --- |
+| Find the electricity bill | 4B 3 of 3 (with a second search), 9B 0 of 3 | 3 of 3 both, one call |
+| Read `nota.txt` | 4B 0 of 3, 9B 1 of 3 | 3 of 3 both, one call |
+
+- `files find` drops words of one or two letters, splits quoted phrases, ignores accents, and offers the closest names when none has every word.
+- `files read` looks a bare file name up in the user's folders.
+- Saying in the description of `look` that it is not for files was not enough: the models still looked at the screen first. A sentence in the fixed prompt was needed.
+
 ### Next
 
 - No choice between 4B and 9B yet. Measure again when the shell and multi-step tasks exist, with the real task format, temperature 0 and the 35B as a reference.
 - Until then the default stays the 4B Q4_K_M.
-- Proposed fixes, not done: `files find` ignoring short words and splitting quoted phrases; `files read` looking a bare name up; one line in the `look` description ("only for what is on the screen, not for files").

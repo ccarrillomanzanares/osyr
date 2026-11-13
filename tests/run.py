@@ -189,6 +189,26 @@ def native():
         report("agent-change-applied", now == 800, f"brightness is {now}")
         report("chat-history-saved", bool(glob.glob(f"{tmp}/.local/share/osyr/chats/*.json")), "no history file")
 
+        # osyr files: words as people say them, and a file read by its bare name
+        os.makedirs(f"{tmp}/Documents/old")
+        open(f"{tmp}/Documents/factura-luz-marzo.txt", "w").write("Total: 48,20 euros.\n")
+        open(f"{tmp}/Documents/nota.txt", "w").write("Sala 4471.\n")
+        for d in ("Documents", "Documents/old"):
+            open(f"{tmp}/{d}/twice.txt", "w").write("x\n")
+
+        def osyr_json(*args):
+            p = subprocess.run([f"{bindir}/osyr", *args, "--json"], env=dict(os.environ, **chat_env),
+                               capture_output=True, text=True)
+            return json.loads(p.stdout or "{}")
+        found = osyr_json("files", "find", "factura de la luz")
+        report("files-find-phrase", [f["path"] for f in found.get("data", {}).get("files", [])]
+               == ["~/Documents/factura-luz-marzo.txt"] and not found["data"].get("partial"), str(found)[:200])
+        found = osyr_json("files", "find", "factura", "agua")
+        report("files-find-partial", found.get("data", {}).get("partial") is True, str(found)[:200])
+        got = osyr_json("files", "read", "nota.txt")
+        report("files-read-by-name", "4471" in got.get("data", {}).get("text", ""), str(got)[:200])
+        report("files-read-several", osyr_json("files", "read", "twice.txt").get("code") == "FILES_SEVERAL")
+
         # /install: the installer in the same window (fake sudo: only checks that it is launched)
         fakebin = f"{tmp}/fakesudo"
         os.makedirs(fakebin, exist_ok=True)

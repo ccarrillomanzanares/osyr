@@ -400,6 +400,10 @@ mkdir -p ~/Documents/Bills; echo "Electricity bill October 54 EUR" > ~/Documents
 [ "$(osyr files find bill --json | wj 'd["data"]["files"][0]["path"]')" = "~/Documents/Bills/bill-october.txt" ] \
     && pass files-find || fail files-find "$(osyr files find bill 2>&1 | tail -2)"
 osyr files read Documents/Bills/bill-october.txt --json | wj 'd["data"]["text"]' | grep -q "54 EUR" && pass files-read || fail files-read "?"
+# Words as people say them ("the bill of October") and a bare file name
+[ "$(osyr files find 'the bill of October' --json | wj 'd["data"]["files"][0]["path"]')" = "~/Documents/Bills/bill-october.txt" ] \
+    && pass files-find-phrase || fail files-find-phrase "$(osyr files find 'the bill of October' 2>&1 | tail -2)"
+osyr files read bill-october.txt --json | wj 'd["data"]["text"]' | grep -q "54 EUR" && pass files-read-by-name || fail files-read-by-name "?"
 [ "$(osyr files read .config/osyr/providers.json --json | jcode)" = FILES_PRIVATE ] && pass files-private || fail files-private "?"
 [ "$(osyr files read /etc/shadow --json | jcode)" = FILES_OUTSIDE ] && pass files-outside || fail files-outside "?"
 command -v pdftotext >/dev/null && pass files-pdf || fail files-pdf "no pdftotext"

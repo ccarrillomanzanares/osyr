@@ -9,9 +9,11 @@ With a remote AI provider, osyr-chat asks before sending it the contents of
 a file (as with the clipboard).
 """
 import os
+import re
 import shutil
 import subprocess
 import time
+import unicodedata
 
 from .result import Result, fail
 
@@ -71,35 +73,72 @@ def walk(root):
             yield os.path.join(d, n)
 
 
+def fold(text):
+    """Lower case without accents, to compare names ('Música' = 'musica')."""
+    return "".join(c for c in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(c))
+
+
+def terms_of(words):
+    """Search terms: quoted phrases are split, and words of one or two letters
+    ('de', 'la', 'of') are dropped when there are longer ones."""
+    terms = [t for w in words for t in re.split(r"[\s,;]+", fold(w)) if t]
+    return [t for t in terms if len(t) > 2] or terms
+
+
 def find(args):
     root = resolve(args.inside)
     err = check(root)
     if err:
         return err
-    terms = [w.lower() for w in args.words]
-    hits = []
+    terms = terms_of(args.words)
+    hits, partial = [], []
     for p in walk(root):
-        name = os.path.basename(p).lower()
-        ok = all(t in name for t in terms)
+        name = fold(os.path.basename(p))
+        matched = sum(t in name for t in terms)
+        ok = matched == len(terms)
         if not ok and args.content and os.path.splitext(name)[1] in TEXT_EXT:
             try:
                 if os.path.getsize(p) <= CONTENT_MAX_BYTES:
-                    body = open(p, encoding="utf-8", errors="ignore").read().lower()
-                    ok = all(t in body for t in terms)
+                    body = fold(open(p, encoding="utf-8", errors="ignore").read())
+                    ok = all(t in body or t in name for t in terms)
             except OSError:
                 pass
         if ok:
-            st = os.stat(p)
-            hits.append({"path": short(p), "size": human(st.st_size),
-                         "modified": time.strftime("%Y-%m-%d", time.localtime(st.st_mtime))})
+            hits.append(p)
             if len(hits) >= FIND_MAX:
                 break
-    hits.sort(key=lambda h: h["modified"], reverse=True)
-    if not hits:
+        elif matched:
+            partial.append((matched, p))
+    # Nothing has every word: offer the names that have most of them
+    loose = not hits and bool(partial)
+    if loose:
+        best = max(m for m, _ in partial)
+        hits = [p for m, p in partial if m == best][:FIND_MAX]
+    found = []
+    for p in hits:
+        st = os.stat(p)
+        found.append({"path": short(p), "size": human(st.st_size),
+                      "modified": time.strftime("%Y-%m-%d", time.localtime(st.st_mtime))})
+    found.sort(key=lambda h: h["modified"], reverse=True)
+    if not found:
         return Result(True, "FILES_NONE", {"files": []},
                       None if args.content else "Try: osyr files find <words> --content", text="Nothing found.")
-    return Result(True, "OK", {"files": hits},
-                  text="\n".join(f'{h["modified"]}  {h["size"]:>7}  {h["path"]}' for h in hits))
+    data = {"files": found, "partial": True} if loose else {"files": found}
+    return Result(True, "OK", data,
+                  "No name has all the words: these have some of them." if loose else None,
+                  text="\n".join(f'{h["modified"]}  {h["size"]:>7}  {h["path"]}' for h in found))
+
+
+def by_name(name):
+    """Files in the home folder called exactly like this (accents and case aside)."""
+    want = fold(name)
+    out = []
+    for p in walk(HOME):
+        if fold(os.path.basename(p)) == want:
+            out.append(p)
+            if len(out) >= FIND_MAX:
+                break
+    return out
 
 
 def list_(args):
@@ -140,6 +179,14 @@ def text_of(p):
 
 def read(args):
     p = resolve(args.path)
+    if not os.path.exists(p) and "/" not in args.path:
+        # Only a name ('nota.txt') that is not in the home folder itself: look for it
+        same = by_name(args.path)
+        if len(same) == 1:
+            p = same[0]
+        elif same:
+            return fail("FILES_SEVERAL", "Several files have that name: read one by its path.",
+                        {"files": [short(x) for x in same]})
     err = check(p)
     if err:
         return err

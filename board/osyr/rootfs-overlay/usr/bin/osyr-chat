@@ -75,8 +75,9 @@ SYSTEM = (
     "For anything about this computer (network and wifi, sound, screen brightness, "
     "AI settings, updates) use the osyr tool and base your answer on its JSON result; "
     "never invent results. If a result has a hint, follow it or tell the user. "
-    "Use the look tool when the user asks about what is on the screen, and the clipboard "
-    "tool when they mention what they copied or want something copied. "
+    "Use the look tool only when the user asks about what is on the screen, and the clipboard "
+    "tool when they mention what they copied or want something copied. For the user's files "
+    "(find one, read one) use the osyr tool's files commands, never look. "
     "If something is not among your tools' commands, OSYR cannot do it yet: say so "
     "plainly and do not invent steps. To install OSYR on the computer's disk, tell the user to "
     "type /install in this chat while OSYR runs from the USB: it asks for their password, the "
@@ -132,7 +133,7 @@ TOOLS = [
             "- backup run <disk>: copy the user's folder to that disk, in the background | "
             "backup status | backup restore <disk>\n"
             "- files find <words> [--in <folder>] [--content]: find the user's files by name (or inside "
-            "text files) | files list [folder] | files read <path> [--from <n>]: text or PDF, in parts\n"
+            "text files) | files list [folder] | files read <path or name> [--from <n>]: text or PDF, in parts\n"
             "- doc <english words>: the OSYR help on a subject (shortcuts, screen lock, updates, "
             "browser, install...); use it before explaining how to do something in OSYR\n"
             "- memory list: what you remember about the user | memory forget <n|all> "
@@ -163,7 +164,8 @@ TOOLS = [
             "required": ["text"]}}},
     {"type": "function", "function": {
         "name": "look",
-        "description": "Look at the user's screen and answer a question about it.",
+        "description": ("Look at what is on the user's screen right now and answer a question about it. "
+                        "Not for files: read a file with the osyr tool (files read <name>)."),
         "parameters": {"type": "object", "properties": {
             "question": {"type": "string"}}, "required": ["question"]}}},
 ]
