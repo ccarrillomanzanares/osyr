@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-from . import ai, audio, backup, bt, disk, doc, files, memory, net, remind, sys as osyr_sys, ui, update, web
+from . import ai, app, audio, backup, box, bt, disk, doc, files, memory, net, remind, sys as osyr_sys, ui, update, web
 from .result import fail
 
 
@@ -19,7 +19,7 @@ def build_parser():
     p = Parser(prog="osyr", description="OSYR system command line")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     sub = p.add_subparsers(dest="space", required=True)
-    for space in (ai, audio, backup, bt, disk, doc, files, memory, net, remind, osyr_sys, ui, update, web):
+    for space in (ai, app, audio, backup, box, bt, disk, doc, files, memory, net, remind, osyr_sys, ui, update, web):
         space.register(sub)
     return p
 

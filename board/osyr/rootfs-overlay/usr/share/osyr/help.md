@@ -45,7 +45,7 @@ It can also find and read your files: "where is the electricity bill PDF?", "sum
 
 It remembers what you ask it to: "remember that my sister is called Ana", "remember that I prefer short answers". It never saves passwords, PINs or card numbers. It only uses what it remembers with the local model, never with a remote provider. To see or erase it: `osyr memory list`, `osyr memory forget <n>` or `osyr memory forget all`.
 
-**Its voice.** Spanish has two speakers, English many, the other languages one. Ask "use another voice" or run `osyr audio voice` to see which one is in use and `osyr audio voice speaker 2` to change it (it says a sample). If understanding what you say is slow on this computer, `osyr audio voice listen fast` makes it about twice as fast but it makes more mistakes (it downloads 60 MB once); `osyr audio voice listen accurate` goes back.
+**Its voice.** Spanish has two speakers, English many, the other languages one. Ask "use another voice" or run `osyr audio voice` to see which one is in use and `osyr audio voice speaker 2` to change it (it says a sample; `--lang <code>` for the voice of another language). If understanding what you say is slow on this computer, `osyr audio voice listen fast` makes it about twice as fast but it makes more mistakes (it downloads 60 MB once); `osyr audio voice listen accurate` goes back.
 
 The first `/look` after a while takes a few more seconds: OSYR loads the part of the model that sees images only when it is needed, and frees that memory after 10 minutes without use.
 
@@ -79,6 +79,17 @@ The browser is part of the assistant. Ask it "open the weather in Madrid", "sear
 - The pages open on workspace 2 (Super+2), as tabs. Super+1 goes back to the chat.
 - There is no address bar: use Super+O, or ask the assistant.
 - Sites that need DRM (Netflix, Spotify, Disney+) do not play.
+
+## Installing programs and applications
+
+Ask the assistant: "install VLC", "is there a program to edit photos?", "open VLC", "close it". OSYR itself has no package manager: its system is replaced as a whole by updates and stays clean. What you install goes into **the box**, a small Debian system that lives in your folder, is created the first time you install something (it downloads about 50 MB) and survives OSYR updates. Each user of the computer has their own.
+
+- `osyr box search <words>` looks for a program (in English: "video player"); `osyr box install <name>` installs it, with Debian's name for it (`vlc`, `gimp`, `libreoffice-writer`); `osyr box remove <name>` removes it; `osyr box list` shows what is installed and `osyr box update` brings it up to date.
+- Applications with a window are opened and closed with `osyr app run <name> [file]` and `osyr app stop <name>`; `osyr app list` shows them. Each opens on a workspace of its own: Super+3, Super+4... show them (Super+2 is the web browser), and Super+1 comes back to the assistant.
+- Programs without a window (`ffmpeg`, `git`, `python3`...) run with `osyr box run <command>`.
+- The programs in the box see your folder (Documents, Downloads...), the screen and the sound. They do not see your keys and passwords (`.ssh`, `.gnupg`), the assistant's settings and conversations, or the system itself.
+- From the USB stick there is little room for programs: install OSYR on the disk first (`/install`).
+- `osyr box reset` deletes the box and everything installed in it; your own files are not touched.
 
 ## Keyboard shortcuts
 
@@ -128,6 +139,8 @@ Most of these you can simply ask the assistant for, in your own words. To type t
 | `osyr disk list`, `osyr disk eject <name>` | USB sticks and external disks: they open by themselves when plugged in; eject before unplugging |
 | `osyr memory list`, `osyr memory forget <n\|all>` | what the assistant remembers about you |
 | `osyr backup run <disk>`, `osyr backup status`, `osyr backup restore <disk>` | copy your folder to a USB or external disk, and bring it back |
+| `osyr box install <program>`, `osyr box search <words>`, `osyr box list` | install programs (see Installing programs above) |
+| `osyr app list`, `osyr app run <name>`, `osyr app stop <name>` | open and close applications |
 | `osyr doc <words>` | this help, by topic |
 | `sudo osyr update code check` | look for OSYR updates (see Updates above) |
 | `sudo osyr-install` | install OSYR on the disk (erases the whole disk; same as `/install` in the chat) |

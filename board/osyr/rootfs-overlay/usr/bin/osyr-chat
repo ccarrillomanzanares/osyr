@@ -91,9 +91,8 @@ SYSTEM = (
     "tool when they mention what they copied or want something copied. For the user's files "
     "(find one, read one) use the osyr tool's files commands, never look. "
     "{limit} To install OSYR on the computer's disk, tell the user to "
-    "type /install in this chat while OSYR runs from the USB: it asks for their password, the "
-    "disk (the whole disk is erased) and whether to encrypt their files (then a passphrase is "
-    "asked at every start-up), and copies the system and their files. You cannot run it for them. "
+    "type /install in this chat while OSYR runs from the USB (it erases the whole disk, and asks "
+    "first). You cannot run it for them. "
     "OSYR updates: tell the user to type /update in this chat (it shows what would change and "
     "asks before applying; /update undo puts back the previous version). You cannot apply them. "
     "If the user reports a problem with OSYR or the computer that you cannot solve, suggest "
@@ -172,12 +171,9 @@ TOOLS = [
             "OSYR asks the user for it privately)\n"
             "- audio status: volume and devices | audio volume <0-100|up|down> | "
             "audio mute <on|off> | audio test\n"
-            "- audio voice status: your voice (speaker n of N) and listening mode | "
-            "audio voice speaker <n>: another speaker for spoken answers (says a sample) | "
-            "audio voice listen fast|accurate: fast = understands speech about twice as fast "
-            "but makes more mistakes (downloads 60 MB once), accurate = the default. "
-            "status and speaker take --lang <code> (the voice of another language; without "
-            "it, the language the user is speaking to you in, or the system's)\n"
+            "- audio voice status: your voice and listening mode | audio voice speaker <n>: another "
+            "voice for spoken answers | audio voice listen fast|accurate: fast = quicker, more mistakes "
+            "(status and speaker take --lang <code> for another language's voice)\n"
             "- ui brightness: read the screen brightness | ui brightness <percent>: set it, "
             "e.g. 'ui brightness 80' for 80% | ui brightness up|down: one small step\n"
             "- ui lock: when the screen locks by itself | ui lock <minutes|off>: change it\n"
@@ -198,6 +194,11 @@ TOOLS = [
             "text files) | files list [folder] | files read <path or name> [--from <n>]: text or PDF, in parts"
             + (" | files undo: put back the previous version of the last file you changed with write or edit"
                if WRITE else "") + "\n"
+            "- box install <program>: install a program OSYR does not have (a Debian package name, e.g. "
+            "vlc; the only way to install software: there is no apt outside it; it takes minutes) | "
+            "box search <english words> | box remove <program> | box list | box run <command>: run a "
+            "program without a window that was installed this way\n"
+            "- app list: applications, and which are open | app run <id> [file]: open one | app stop <id>\n"
             "- doc <english words>: the OSYR help on a subject (shortcuts, screen lock, updates, "
             "browser, install...); use it before explaining how to do something in OSYR\n"
             "- memory list: what you remember about the user | memory forget <n|all> "
@@ -241,6 +242,7 @@ READ_ONLY = [("net", "status"), ("net", "wifi", "scan"), ("audio", "status"), ("
              ("sys", "thermal"),
              ("remind", "add"), ("remind", "list"), ("remind", "cancel"), ("doc",), ("files",), ("disk", "list"),
              ("memory", "list"), ("memory", "add"), ("backup", "status"),
+             ("box", "status"), ("box", "list"), ("box", "search"), ("app", "list"),
              # browsing and reading change nothing; pressing buttons and filling fields do (they ask)
              ("web", "open"), ("web", "read"), ("web", "go"), ("web", "back"), ("web", "status"), ("web", "close")]
 VALID_HINT = ("Valid commands: net status, net wifi scan, net wifi connect <ssid>, "
@@ -741,10 +743,14 @@ def run_osyr(command, sess=None):
                     "hint": "The user did not give the administrator password. Do not ask for it in the chat."}
     args = voice_args(args, sess)
     # 'audio voice listen fast' downloads 60 MB: on a slow link, well over the usual limit
-    timeout = 1800 if [a for a in args if not a.startswith("-")][:3] == ["audio", "voice", "listen"] else 180
+    words = [a for a in args if not a.startswith("-")]
+    slow = words[:3] == ["audio", "voice", "listen"] or words[:1] == ["box"]
+    timeout = 3600 if words[:1] == ["box"] else 1800 if slow else 180
     for _ in range(2):
         try:
-            p = subprocess.run(["osyr", *args, "--json"], capture_output=True, text=True,
+            # (the box says what it is doing on stderr: shown as it comes, it can take minutes)
+            p = subprocess.run(["osyr", *args, "--json"], stdout=subprocess.PIPE, text=True,
+                               stderr=None if words[:1] == ["box"] else subprocess.PIPE,
                                timeout=timeout, stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired:
             return {"ok": False, "code": "TIMEOUT", "data": {"error": f"osyr {shown} took more than {timeout} s"},
@@ -754,7 +760,7 @@ def run_osyr(command, sess=None):
         try:
             res = json.loads(p.stdout.strip().splitlines()[-1])
         except (ValueError, IndexError):
-            return {"ok": False, "code": "BAD_OUTPUT", "data": {"output": (p.stdout + p.stderr)[-500:]}}
+            return {"ok": False, "code": "BAD_OUTPUT", "data": {"output": (p.stdout + (p.stderr or ""))[-500:]}}
         # The contract asks for a token for sensitive actions: the user already said yes
         # (or is asked now, with what the command explains)
         # A file's content going to a remote provider: like the clipboard, ask first

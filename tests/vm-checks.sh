@@ -593,6 +593,54 @@ python3 -B /tmp/shell-drive.py "$PW" 2>&1 | grep -E '^(PASS|FAIL) ' > /tmp/shell
 grep -q '"command": "sudo id -u"' ~/.local/state/osyr/shell.log && ! grep -q 'id -u' ~/.local/state/osyr/chat.log 2>/dev/null \
     && pass shell-audit || fail shell-audit "$(tail -1 ~/.local/state/osyr/shell.log 2>&1 | cut -c1-200)"
 
+# --- Programs in the box: the real container engine, Debian and its package manager -------
+# (needs the Internet: Debian's image and packages. /home is small in the test image:
+# one tiny program, 'hello', and one with a window, 'xterm' is not Wayland: 'foot')
+[ "$(stat -c '%a %U' /usr/bin/newuidmap)" = "4755 root" ] && grep -q '^osyr:' /etc/subuid && pass box-ids || fail box-ids "$(stat -c '%a %U' /usr/bin/newuidmap) $(cat /etc/subuid)"
+r=$(osyr box status --json); [ "$(echo "$r" | wj 'd["data"]["created"]')" = False ] && pass box-status-empty || fail box-status-empty "$r"
+r=$(osyr box search video --json | jcode); [ "$r" = BOX_NOT_CREATED ] && pass box-search-does-not-create || fail box-search-does-not-create "$r"
+mkdir -p ~/.ssh && echo SECRET-KEY > ~/.ssh/id_test && echo visible > ~/box-visible.txt
+r=$(timeout 1500 osyr box install hello --json 2>/tmp/box-install.err)
+[ "$(echo "$r" | wj 'd["ok"] and d["data"]["installed"]')" = "['hello']" ] && pass box-install || fail box-install "$(echo "$r" | cut -c1-200) $(tail -2 /tmp/box-install.err | tr '\n' ' ')"
+r=$(osyr box run hello --json); [ "$(echo "$r" | wj 'd["data"]["stdout"].strip()')" = "Hello, world!" ] && pass box-run || fail box-run "$(echo "$r" | cut -c1-200)"
+# What the box sees: the user's files, as the same user; not the keys, not the assistant's settings
+r=$(osyr box run sh -c 'id -u; cat ~/box-visible.txt; touch ~/box-made.txt' --json | wj 'd["data"]["stdout"].split()')
+[ "$r" = "['1000', 'visible']" ] && [ "$(stat -c %U ~/box-made.txt)" = osyr ] && pass box-sees-home || fail box-sees-home "$r $(stat -c %U ~/box-made.txt 2>&1)"
+r=$(osyr box run sh -c 'cat ~/.ssh/id_test ~/.config/osyr/* ~/.local/share/osyr/*/* 2>/dev/null | wc -c; ls ~/.ssh ~/.config/osyr 2>/dev/null | grep -c .' --json | wj 'd["data"]["stdout"].split()')
+[ "$r" = "['0', '0']" ] || [ "$r" = "['0', '2']" ] && pass box-hides-secrets || fail box-hides-secrets "$r"
+# (the folders look empty from inside, or cannot be opened at all; '2' = the two titles ls prints)
+r=$(osyr box run sh -c 'ls /usr/lib/osyr 2>&1; cat /etc/os-release | grep ^ID=' --json | wj 'd["data"]["stdout"]')
+echo "$r" | grep -q 'ID=debian' && ! echo "$r" | grep -q shellguard && pass box-not-the-system || fail box-not-the-system "$r"
+r=$(osyr box run sh -c 'locale 2>&1 | grep -c "Cannot set"; echo $LANG' --json | wj 'd["data"]["stdout"].split()')
+[ "$r" = "['0', '$LANG']" ] && pass box-language || fail box-language "$r (LANG=$LANG)"
+r=$(osyr box install nosuchprogram-xyz --json | jcode); [ "$r" = BOX_NO_SUCH_PROGRAM ] && pass box-no-such-program || fail box-no-such-program "$r"
+r=$(osyr box search hello --json | wj '[x["name"] for x in d["data"]["results"]][:1]'); [ "$r" = "['hello']" ] && pass box-search || fail box-search "$r"
+# A program with a window, opened and closed with osyr app (foot is small and speaks Wayland)
+r=$(timeout 1500 osyr box install foot --json 2>>/tmp/box-install.err)
+echo "$r" | wj '[a["id"] for a in d["data"]["applications"]]' | grep -q "'foot'" && pass box-install-app || fail box-install-app "$(echo "$r" | cut -c1-300)"
+export SWAYSOCK=$(ls /run/user/1000/sway-ipc.*.sock 2>/dev/null | head -1) WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}
+r=$(OSYR_APPLICATIONS=/nonexistent osyr app run foot --wait 8 --json)
+ws=$(echo "$r" | wj 'd["data"].get("workspace")')
+sleep 5
+tree=$(swaymsg -t get_tree | python3 -c 'import json,sys
+def walk(n, ws=None):
+    ws = n.get("num", ws) if n.get("type") == "workspace" else ws
+    if n.get("pid") and n.get("app_id") == "foot": print(ws)
+    for c in n.get("nodes", []) + n.get("floating_nodes", []): walk(c, ws)
+walk(json.load(sys.stdin))' | sort -n | tail -1)
+[ "$(echo "$r" | wj 'd["ok"]')" = True ] && [ -n "$ws" ] && [ "$ws" != None ] && [ "$tree" = "$ws" ] && pass app-run-box || fail app-run-box "$(echo "$r" | cut -c1-250) window on: $tree"
+r=$(OSYR_APPLICATIONS=/nonexistent osyr app list --json | wj '[a["running"] for a in d["data"]["applications"] if a["id"] == "foot"]')
+[ "$r" = "[True]" ] && pass app-list-running || fail app-list-running "$r"
+r=$(OSYR_APPLICATIONS=/nonexistent osyr app stop foot --json); sleep 2
+# (the system's own terminals, the same program outside the box, must still be there)
+[ "$(echo "$r" | wj 'd["ok"]')" = True ] && [ -z "$(podman top osyr-box comm | grep -x foot)" ] && pgrep -x foot >/dev/null && pass app-stop || fail app-stop "$(echo "$r" | cut -c1-200) outside: $(pgrep -x foot | tr '\n' ' ')"
+swaymsg workspace number 1 >/dev/null
+r=$(osyr box remove foot --json | wj 'd["ok"]'); [ "$r" = True ] && pass box-remove || fail box-remove "$r"
+r=$(osyr box reset --json); t=$(echo "$r" | wj 'd["confirm"]')
+[ "$(echo "$r" | jcode)" = CONFIRM_REQUIRED ] && [ "$(osyr box reset --confirm "$t" --json | wj 'd["ok"]')" = True ] && ! podman container exists osyr-box \
+    && [ -f ~/box-visible.txt ] && pass box-reset || fail box-reset "$(echo "$r" | cut -c1-200)"
+rm -f ~/.ssh/id_test ~/box-visible.txt ~/box-made.txt; podman rmi -a -f >/dev/null 2>&1
+
 # --- Neural voice (Piper): synthesizes a real sentence with each language's voice --------
 for l in es en; do
     d=/usr/share/osyr/models/piper/$l
