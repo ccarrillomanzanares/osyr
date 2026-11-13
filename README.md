@@ -2,8 +2,6 @@
 
 **OSYR** is an operating system with its own AI assistant that runs on the laptop itself, even without Internet, on ordinary 8 GB machines. This repository is its base: a Buildroot `BR2_EXTERNAL` tree for x86_64 that builds a bootable image (USB, BIOS and UEFI) and a VirtualBox appliance.
 
-It is also the common base of **newos**, a voice-first interface (Wayland kiosk + WPE WebKit).
-
 Website and downloads: [ccmai.org/osyr](https://ccmai.org/osyr/) · Help and keyboard shortcuts: [ccmai.org/osyr/help.html](https://ccmai.org/osyr/help.html)
 
 ## What it does

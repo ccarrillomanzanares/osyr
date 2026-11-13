@@ -5,7 +5,7 @@ BOARD_DIR="$(dirname "$(readlink -f "$0")")"
 ROOT_DIR="$(readlink -f "$BOARD_DIR/../..")"
 
 # --- Overlay scripts: LF first, THEN the executable bit ---------------------
-# (lesson from newos: edited from Windows they arrive with CRLF and the shebang
+# (lesson learned: edited from Windows they arrive with CRLF and the shebang
 #  fails; and "tr > f.lf && mv" creates a new 0644 file, so chmod goes last)
 for f in "$TARGET_DIR"/usr/bin/osyr "$TARGET_DIR"/usr/bin/osyr-* \
          "$TARGET_DIR"/usr/lib/osyr/osyr/*.py "$TARGET_DIR"/home/osyr/.bash_profile; do
@@ -160,7 +160,7 @@ fi
 
 # --- GRUB ----------------------------------------------------------------------
 # Buildroot's generic grub.cfg in the root would confuse the embedded config's
-# search for /boot/grub/grub.cfg (lesson from newos).
+# search for /boot/grub/grub.cfg (lesson learned).
 rm -f "$TARGET_DIR/boot/grub/grub.cfg"
 
 # --- GRUB for the internal disk (osyr-install) --------------------------------

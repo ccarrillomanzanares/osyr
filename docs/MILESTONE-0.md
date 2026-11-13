@@ -10,8 +10,8 @@ Full architecture: [ARCHITECTURE.md](ARCHITECTURE.md).
 | --- | --- |
 | `external.desc`, `external.mk`, `Config.in` | Done. `external.mk` enables all the llama.cpp CPU variants |
 | `configs/osyr_x86_64_defconfig` | Done, not built yet (Buildroot 2026.08.1); added `SYSTEMD_VCONSOLE` |
-| Kernel 6.18.10: newos base + `board/osyr/kernel/osyr.fragment` | Done |
-| GRUB BIOS + UEFI, `genimage.cfg`, `post-build.sh`, `post-image.sh` | Done (adapted from newos) |
+| Kernel 6.18.10: base config + `board/osyr/kernel/osyr.fragment` | Done |
+| GRUB BIOS + UEFI, `genimage.cfg`, `post-build.sh`, `post-image.sh` | Done |
 | `osyr` user and autologin on tty1 | Done |
 | Session: `.bash_profile` → `osyr-session` → sway + foot | Done. Without a `renderD*` node it uses `WLR_RENDERER=pixman`; if there is a node but mesa has no driver (Intel without iris) and sway cannot create the renderer, it retries with pixman (EGL log in `sway-egl.log`); if sway fails it leaves a shell on tty1 and the log in `~/.local/state/osyr/sway.log` |
 | WarGames theme for sway and foot | Done: `/etc/sway/config` (shortcuts carried over from the previous system), `/etc/osyr/theme/sway.conf`, `/etc/xdg/foot/foot.ini` (`[colors-dark]`, foot 1.26), `osyr-status` bar |
@@ -73,7 +73,7 @@ Night session: first boots on the HP 15s (2019) and on the HP 15-ba (old), fixes
   - `osyr-install` (or `osyr sys install`) from the USB: picks the disk (never the USB's own), confirmation by typing the disk name, summary of what gets wiped.
   - GPT with a BIOS boot partition (GRUB i386-pc) + FAT ESP (GRUB EFI, kernel, `grub.cfg`), for BIOS and UEFI like the USB.
   - Root A and root B (ext4, same size as the USB's or larger): A is copied; B stays empty for the A/B update (done in v0.27 with GRUB, without RAUC). `grub.cfg` with the default slot in a GRUB environment variable, so A/B fits in later.
-  - `/home` on LUKS2 (cryptsetup), unlocked at boot with systemd-cryptsetup (asks for the passphrase on tty1 before the session). The root is not encrypted: there is no initramfs (lesson from newos).
+  - `/home` on LUKS2 (cryptsetup), unlocked at boot with systemd-cryptsetup (asks for the passphrase on tty1 before the session). The root is not encrypted: there is no initramfs.
   - Packages to review: `cryptsetup`, `BR2_PACKAGE_SYSTEMD_CRYPTSETUP` (or its equivalent in 2026.08), `dosfstools`, `e2fsprogs`, `gptfdisk`/`sfdisk`, kernel with `DM_CRYPT` and AES/XTS `=y`.
   - Test first in QEMU with an extra virtual disk (BIOS and UEFI), add it to `make test`, and only then on the laptop.
 - **Push** only when the user asks (last: 30 Oct, `c516b26`).
@@ -476,7 +476,7 @@ Decisions in the table of [TRAINING-PLAN.md](TRAINING-PLAN.md): software is inst
 - QEMU on the VPS runs without KVM: the model speed there (~0.4 tok/s) says nothing; measure on real hardware.
 - The disk filled up mid-build (3 Nov: kernel with debug info, 25 GB, plus the old tree). Now `make` runs `scripts/disk-guard.sh` first: it deletes build dirs of packages no longer in the configuration or with an old version (Buildroot never does), images and .ova of versions that are neither published nor current, all but the latest `build/prev-*` and the 3 latest `build/web-prev-*`, and stops if less than 30 GB are free (100 GB without `build/output`; `OSYR_MIN_FREE_GB`). `make prune` only frees. A full `build/output` is ~80 GB.
 
-## Lessons inherited from newos (do not repeat)
+## Lessons learned (do not repeat)
 
 - No initramfs: disk and USB controllers must be `=y` in the kernel or the root does not appear (black screen).
 - GRUB on UEFI reads `/EFI/BOOT/grub.cfg`: Buildroot's points to the FAT partition and gives a black screen.

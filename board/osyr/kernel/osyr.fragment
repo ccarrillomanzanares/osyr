@@ -1,7 +1,7 @@
 # =============================================================================
 # OSYR — kernel fragment (x86_64), applied on top of kernel_base.config
 #
-# Inherited from newos, where every line was verified by booting real hardware.
+# Every line was verified by booting real hardware.
 # RULE: drivers are not listed here. Drivers come from the base config as
 # modules and udev loads them on its own. Only what is essential to mount the
 # root WITHOUT an initramfs (OSYR uses none) is built in (=y).
@@ -68,14 +68,14 @@ CONFIG_SERIAL_8250=y
 CONFIG_SERIAL_8250_CONSOLE=y
 
 # --- Built-in storage: without initramfs, a module means no root -----------
-# (newos: booted with an IDE disk and black screen with SATA while ahci was =m)
+# (seen: booted with an IDE disk and black screen with SATA while ahci was =m)
 CONFIG_SATA_AHCI=y
 CONFIG_ATA_PIIX=y
 CONFIG_BLK_DEV_NVME=y
 CONFIG_NVME_CORE=y
 CONFIG_USB_STORAGE=y
 CONFIG_USB_UAS=y
-# (newos: without xhci-pci built in, a root on a USB stick never shows up)
+# (seen: without xhci-pci built in, a root on a USB stick never shows up)
 CONFIG_USB_XHCI_HCD=y
 CONFIG_USB_XHCI_PCI=y
 CONFIG_USB_EHCI_HCD=y

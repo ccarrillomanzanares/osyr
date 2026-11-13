@@ -50,35 +50,19 @@ flowchart TB
 
 The base only changes as a whole, through the A/B update; extensions are enabled and removed without touching it; whatever is not in any extension goes in a container. It is the same model Home Assistant OS uses (Buildroot + A/B + containers). In OSYR the A/B is our own and is done (v0.27): two roots, GRUB chooses with `grubenv`, the new one boots once on trial and, if it does not get to work, the previous one comes in next time; RAUC was evaluated and was not needed. In addition, the overlay code is updated through git with signed tags (`osyr update code`), almost always without rebooting.
 
-## Two systems, one base
+## Graphical environment: Wayland
 
-OSYR and newos share a single `BR2_EXTERNAL` tree with two configurations: same base, same agent, same model and same CLI; only the face the user sees changes.
+sway + foot terminal with a WarGames look; the main interaction is the keyboard and the agent's terminal. Local model, own server and API-key provider speak the same OpenAI-compatible API, so for the agent they are interchangeable.
 
-| | OSYR | newos |
-| --- | --- | --- |
-| Main interaction | Keyboard, agent terminal | Voice |
-| Interface | sway + foot terminal, WarGames look | Kiosk compositor (cage) + web interface in WPE WebKit |
-| Model | Local, own server or API key | Same (today only API key; being rethought) |
-
-**Common to both:** kernel and firmware, systemd, Wayland (mesa, seatd), llama.cpp, agent and `osyr` CLI, local voice, extensions and A/B update. Local, own server and API-key provider speak the same OpenAI-compatible API, so for the agent they are interchangeable.
-
-**Graphical environment: Wayland on both.** Recommended, for four reasons:
+Wayland, for three reasons:
 
 - i3 is not in Buildroot and sway is; sway reads i3 configuration, so your shortcuts and your theme carry over almost unchanged.
-- newos already solved Wayland on Buildroot (mesa, seatd, GPU driver loading, fallback framebuffer).
 - `swaymsg -t get_tree` returns the windows as JSON: the agent knows what is on screen without using vision.
 - X11 is in maintenance mode.
 
 The cost: xdotool does not work on Wayland. Screenshots and keyboard input are done with grim and wtype, which have to be packaged (they are small).
 
-**What changes in newos to join the common base:**
-
-- BusyBox init → systemd (required by `systemd-sysext`).
-- llama-cpp-python with Llama 3.1 8B → `llama-server` with the shared Qwen models.
-- `<tool>` tags with GBNF → standard tool calling, the same format used in training.
-- A single pinned Buildroot version (today a 2024.02 copy in the repo and the Makefile's 2024.11.1 coexist).
-
-**Voice first has consequences for the model:** short spoken answers (no tables or code), tolerance to recognition errors and spoken confirmations. They go into the benchmark and the training data as a mode of their own.
+**Using it by voice has consequences for the model:** short spoken answers (no tables or code), tolerance to recognition errors and spoken confirmations. They go into the benchmark and the training data as a mode of their own.
 
 ## The osyr CLI and its JSON contract
 
@@ -240,11 +224,9 @@ The biggest risk is that Buildroot is meant for embedded systems, not for laptop
 **Open decisions**
 
 - [x] Lambda credits: about 12 months left.
-- [x] Language of the agent and of the `osyr` CLI: Python, like both current agents.
-- [x] Graphical environment: Wayland (sway in OSYR, kiosk in newos).
+- [x] Language of the agent and of the `osyr` CLI: Python.
+- [x] Graphical environment: Wayland (sway).
 - [x] Distribution: USB image (`osyr.img.xz`, BIOS and UEFI) with a disk installer, and `osyr.ova` for VirtualBox. There is no ISO.
-- [x] Second OS: newos, on the same Buildroot base.
-- [ ] Repository where the common base lives.
 
 ## Sources
 

@@ -200,7 +200,7 @@ BR2_PACKAGE_PYTHON3_ZLIB=y
 BR2_PACKAGE_LLAMA_CPP=y
 BR2_PACKAGE_LLAMA_CPP_TOOLS=y
 
-# --- Boot: GRUB for BIOS and UEFI (configuration proven in newos) ----------
+# --- Boot: GRUB for BIOS and UEFI (configuration proven on real hardware) ----------
 BR2_TARGET_GRUB2=y
 BR2_TARGET_GRUB2_I386_PC=y
 BR2_TARGET_GRUB2_X86_64_EFI=y

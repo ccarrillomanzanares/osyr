@@ -14,7 +14,7 @@ cp "$BINARIES_DIR/bzImage" "$ESP/boot/bzImage"
 sed "s|@ROOT@|PARTUUID=$ROOT_PARTUUID|g" "$BOARD_DIR/grub.cfg" > "$ESP/boot/grub/grub.cfg"
 # GRUB reads different paths depending on the firmware: BIOS -> /boot/grub/grub.cfg,
 # UEFI -> /EFI/BOOT/grub.cfg. Buildroot's points at partition 1 (the FAT), which
-# gives a black screen on UEFI (lesson from newos): ours is written to both.
+# gives a black screen on UEFI (lesson learned): ours is written to both.
 cp "$ESP/boot/grub/grub.cfg" "$ESP/EFI/BOOT/grub.cfg"
 
 # GRUB's BIOS first sector
