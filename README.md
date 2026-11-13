@@ -40,7 +40,7 @@ The base system is a read-only image that only changes as a whole (A/B update), 
 
 ```mermaid
 flowchart TB
-    user["<b>You or the assistant</b><br/>&quot;install VLC&quot; · osyr box install vlc · osyr app run vlc"]
+    user["<b>You or the assistant</b><br/><i>install VLC</i> · osyr box install vlc · osyr app run vlc"]
     cli["<b>osyr box · osyr app</b><br/>Asks before installing or removing<br/>Opens the program on a free workspace"]
     subgraph box["The box: container osyr-box (podman without root, crun, pasta)"]
         deb["<b>Debian stable</b><br/>apt and the installed programs<br/>Same user inside as outside"]
