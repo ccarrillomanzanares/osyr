@@ -12,7 +12,7 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "board", "osyr", "rootfs-overlay", "usr", "lib", "osyr"))
-from osyr.shellguard import allowed_by, classify, rule, rule_text  # noqa: E402
+from osyr.shellguard import allowed_by, classify, effect, rule, rule_text  # noqa: E402
 
 P, C, B = "pass", "confirm", "block"
 I, U = "INTERACTIVE", "USE_OSYR_TOOL"
@@ -257,6 +257,40 @@ COVERED = [
     ("sudo git commit -m x", "~/proj", False),
     ("git commit -m \"$(cat ~/.ssh/id_rsa)\"", "~/proj", False),
 ]
+# The plain line shown with the question: (command, folder, line or None).
+# ~/heavy holds a.bin (1,500 bytes), b.bin (500), sub/c.txt (0), an empty folder
+# 'void' and a link to ~/Documents, whose files must not be counted.
+EFFECTS = [
+    ("rm -r ~/heavy", "~", "This deletes 4 files (2.0 kB) in ~/heavy"),
+    ("rm -rf heavy", "~", "This deletes 4 files (2.0 kB) in ~/heavy"),
+    ("cd heavy && rm -r sub", "~", "This deletes 1 file (0 bytes) in ~/heavy/sub"),
+    ("rm *.bin", "~/heavy", "This deletes 2 files (2.0 kB) in ~/heavy"),
+    ("rm -r ~/heavy/*", "~", "This deletes 4 files (2.0 kB) in ~/heavy"),
+    ("rm -r heavy/{sub,void}", "~", "This deletes 1 file (0 bytes) in ~/heavy"),
+    ("sudo rm -r ~/heavy", "~", "This deletes 4 files (2.0 kB) in ~/heavy"),
+    ("rm -r void", "~/heavy", "This deletes an empty folder: ~/heavy/void"),
+    # the command line already says it all, or nothing would be deleted
+    ("rm a.bin", "~/heavy", None),
+    ("rm a.bin b.bin", "~/heavy", None),
+    ("rm heavy", "~", None),
+    ("rm -r missing", "~", None),
+    ("rm *.none", "~/heavy", None),
+    ("rm -r docs", "~/heavy", None),
+    ("rm $(cat list)", "~", None),
+    ("ls heavy", "~", None),
+    ("sudo systemctl stop iwd", "~", "This stops the wifi: the wireless connection drops"),
+    ("sudo systemctl disable --now bluetooth.service", "~",
+     "This stops Bluetooth: devices connected by it stop working"),
+    ("sudo systemctl restart systemd-networkd", "~", "This restarts the network: it is off for a moment"),
+    ("sudo systemctl disable osyr-llama", "~",
+     "This keeps the local model off from the next start: the assistant cannot answer without it"),
+    ("sudo systemctl restart sshd", "~", None),
+    ("systemctl status iwd", "~", None),
+    ("systemctl poweroff", "~", "This turns the computer off: anything not saved is lost"),
+    ("sudo reboot", "~", "This restarts the computer: anything not saved is lost"),
+    ("sudo shutdown -r now", "~", "This restarts the computer: anything not saved is lost"),
+    ("shutdown -c", "~", None),
+]
 
 
 def main():
@@ -266,6 +300,12 @@ def main():
         os.makedirs(os.path.join(home, d))
     for f in ("Documents/notes.txt", ".ssh/id_ed25519", ".ssh/id_ed25519.pub", ".ssh/id_rsa", "backup.tar.gz"):
         open(os.path.join(home, f), "w").close()
+    for d in ("heavy/sub", "heavy/void"):
+        os.makedirs(os.path.join(home, d))
+    for f, n in (("heavy/a.bin", 1500), ("heavy/b.bin", 500), ("heavy/sub/c.txt", 0)):
+        with open(os.path.join(home, f), "wb") as fh:
+            fh.write(b"x" * n)
+    os.symlink(os.path.join(home, "Documents"), os.path.join(home, "heavy", "docs"))
     failed = 0
     for command, cls, code in CASES:
         r = classify(command, home, home)
@@ -285,7 +325,12 @@ def main():
         if allowed_by(saved, command, at(cwd), home) != want:
             failed += 1
             print(f"FAIL covered {command!r} in {cwd}: expected {want}")
-    total = len(CASES) + len(RULES) + len(COVERED)
+    for command, cwd, want in EFFECTS:
+        got = effect(command, at(cwd), home)
+        if got != want:
+            failed += 1
+            print(f"FAIL effect {command!r} in {cwd}: expected {want}, got {got}")
+    total = len(CASES) + len(RULES) + len(COVERED) + len(EFFECTS)
     print(f"{total - failed}/{total} cases pass")
     return 1 if failed else 0
 

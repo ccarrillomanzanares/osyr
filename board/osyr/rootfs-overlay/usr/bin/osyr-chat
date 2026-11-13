@@ -607,6 +607,9 @@ def run_shell(command, sess, timeout=None):
         else:
             if g["root"]:
                 print(f"{DIM}  as administrator: your password may be asked{RESET}")
+            heavy = shellguard.effect(command, cwd, home)
+            if heavy:
+                print(f"  {heavy}.")
             answer, said = ask(f"Run '{command}'?", shellguard.rule(command, cwd, home))
             if answer == "no":
                 oshell.audit(**log, answer="no")

@@ -16,6 +16,9 @@ classify(command, cwd, home) returns a dict:
 rule(command, cwd, home) gives the permission a "yes, always" would save for a
 command, or None when it must ask every time.
 
+effect(command, cwd, home) gives one plain line for the question of a heavy
+command ("This deletes 214 files (1.2 GB) in ~/Downloads"), or None.
+
 It guards against the model's mistakes; it is not a security boundary. A list of
 patterns can be dodged: the shell runs as the user, root needs sudo and the
 user's password, and the base system is A/B. Anything it does not understand
@@ -25,6 +28,7 @@ import glob
 import os
 import re
 import shlex
+import time
 
 PASS, CONFIRM, BLOCK = "pass", "confirm", "block"
 ORDER = {PASS: 0, CONFIRM: 1, BLOCK: 2}
@@ -130,8 +134,8 @@ def block(reason, code="BLOCKED"):
     return result(BLOCK, reason, code)
 
 
-def resolve(arg, cwd, home):
-    """Absolute path of an argument, with ~, $HOME, .. and existing symlinks resolved."""
+def expand(arg, cwd, home):
+    """Absolute path of an argument, with ~, $HOME and .. resolved; symlinks as written."""
     a = arg
     if a == "~" or a.startswith("~/"):
         a = home + a[1:]
@@ -144,7 +148,12 @@ def resolve(arg, cwd, home):
     a = a.replace("${HOME}", home).replace("$HOME", home)
     if not a.startswith("/"):
         a = os.path.join(cwd, a)
-    a = os.path.normpath(a)
+    return os.path.normpath(a)
+
+
+def resolve(arg, cwd, home):
+    """Absolute path of an argument, with ~, $HOME, .. and existing symlinks resolved."""
+    a = expand(arg, cwd, home)
     # symlinks of the part that exists (so that ~/link-to-etc is seen as /etc)
     head, tail = a, []
     while head != "/" and not os.path.lexists(head):
@@ -766,3 +775,145 @@ def allowed_by(rules, command, cwd=None, home=None):
     r = rule(command, cwd, home)
     return bool(r) and any(x.get("program") == r["program"] and x.get("sub", "") == r["sub"]
                            and x.get("dir") and under(r["dir"], x["dir"]) for x in rules)
+
+
+# --- The plain line for heavy commands ----------------------------------------------------
+
+COUNT_LIMIT, COUNT_SECONDS = 200000, 2.0
+# unit (without .service): (what it is, what happens without it)
+UNITS = {
+    "iwd": ("the wifi", "the wireless connection drops"),
+    "systemd-networkd": ("the network", "wired and wireless connections stop working"),
+    "systemd-resolved": ("name resolution", "web addresses stop working"),
+    "bluetooth": ("Bluetooth", "devices connected by it stop working"),
+    "osyr-llama": ("the local model", "the assistant cannot answer without it"),
+    "osyr-firewall": ("the firewall", "the computer accepts connections from the network"),
+    "nftables": ("the firewall", "the computer accepts connections from the network"),
+    "pipewire": ("the sound", "nothing plays or records"),
+    "pipewire-pulse": ("the sound", "some programs lose it"),
+    "wireplumber": ("the sound", "nothing plays or records"),
+}
+POWER_OFF = "This turns the computer off: anything not saved is lost"
+POWER_RESTART = "This restarts the computer: anything not saved is lost"
+
+
+def short(path, home):
+    return "~" + path[len(home):] if under(path, home) else path
+
+
+def size_text(n):
+    if n < 1000:
+        return f"{n} bytes"
+    for unit in ("kB", "MB", "GB", "TB"):
+        n /= 1000
+        if n < 1000 or unit == "TB":
+            return f"{n:.1f} {unit}" if n < 10 else f"{n:.0f} {unit}"
+
+
+def delete_effect(opts, ops, cwd, home):
+    """What an rm takes with it, when the command line does not show it: folders and patterns."""
+    recursive = has_flag(opts, "rR", ("--recursive",))
+    targets, hidden = [], False
+    for a in ops:
+        p = expand(a, cwd, home)
+        if any(ch in a for ch in "*?["):
+            hidden = True
+            targets += sorted(glob.glob(p))
+        else:
+            targets.append(p)
+    targets = list(dict.fromkeys(targets))
+    files = size = folders = 0
+    partial = False  # folders that could not be read: the real figure is higher
+    stop = time.monotonic() + COUNT_SECONDS
+
+    def note(e):
+        nonlocal partial
+        partial = True
+
+    for t in targets:
+        try:
+            st = os.lstat(t)
+        except OSError:
+            continue
+        if not os.path.isdir(t) or os.path.islink(t):
+            files, size = files + 1, size + st.st_size
+            continue
+        if not recursive:
+            continue  # rm without -r leaves folders alone
+        hidden = True
+        folders += 1
+        for where, dirs, names in os.walk(t, onerror=note):
+            folders += len(dirs)
+            for n in names + [d for d in dirs if os.path.islink(os.path.join(where, d))]:
+                try:
+                    size += os.lstat(os.path.join(where, n)).st_size
+                    files += 1
+                except OSError:
+                    partial = True
+            if files > COUNT_LIMIT or time.monotonic() > stop:
+                return f"This deletes more than {files:,} files in {short(t, home)}"
+    if not hidden or not (files or folders):
+        return None
+    parents = [t if os.path.isdir(t) and not os.path.islink(t) and len(targets) == 1 else os.path.dirname(t)
+               for t in targets if os.path.lexists(t)]
+    where = short(os.path.commonpath(parents), home)
+    if not files:
+        if folders == 1:
+            return f"This deletes an empty folder: {where}"
+        return f"This deletes only empty folders in {where}"
+    return (f"This deletes {'at least ' if partial else ''}{files:,} file{'s' if files != 1 else ''} "
+            f"({size_text(size)}) in {where}")
+
+
+def service_effect(opts, ops):
+    verb, units = (ops[0] if ops else ""), [re.sub(r"\.(service|socket)$", "", u) for u in ops[1:]]
+    if verb in ("poweroff", "halt"):
+        return POWER_OFF
+    if verb in ("reboot", "kexec", "soft-reboot"):
+        return POWER_RESTART
+    known = [UNITS[u] for u in units if u in UNITS]
+    if not known:
+        return None
+    thing, then = known[0]
+    if verb in ("stop", "kill") or (verb in ("disable", "mask") and has_flag(opts, "", ("--now",))):
+        return f"This stops {thing}: {then}"
+    if verb in ("restart", "try-restart", "reload-or-restart"):
+        return f"This restarts {thing}: it is off for a moment"
+    if verb in ("disable", "mask"):
+        return f"This keeps {thing} off from the next start: {then}"
+    return None
+
+
+def effect(command, cwd=None, home=None):
+    """One plain line, for the person, about what a heavy command does; None for the rest.
+    It is shown with the question and is computed here, never written by the model."""
+    home = os.path.normpath(home or os.path.expanduser("~"))
+    cwd = os.path.normpath(cwd or home)
+    try:
+        cmds, opaque, _ = lex(command.strip())
+        if opaque:
+            return None
+        for c in cmds:
+            if strip_wrappers(c) or not c.words:
+                continue
+            c.words = c.words[:1] + [x for a in c.words[1:] for x in braces(a)]
+            prog = os.path.basename(c.words[0])
+            opts, ops = args_of(c)
+            line = None
+            if prog == "rm":
+                line = delete_effect(opts, ops, cwd, home)
+            elif prog == "systemctl":
+                line = service_effect(opts, ops)
+            elif prog in ("poweroff", "halt"):
+                line = POWER_OFF
+            elif prog == "reboot":
+                line = POWER_RESTART
+            elif prog == "shutdown" and not has_flag(opts, "ck", ("--help", "--show")):
+                line = POWER_RESTART if has_flag(opts, "r", ("--reboot",)) else POWER_OFF
+            if line:
+                return line
+            if prog == "cd":
+                cwd = resolve(c.words[1] if len(c.words) > 1 and c.words[1] != "-" else home, cwd, home)
+    except Exception:  # the line is a courtesy: a mistake here must not stop the question
+        return None
+    return None

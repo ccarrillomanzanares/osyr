@@ -436,7 +436,8 @@ First piece of stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md); design and decis
 - `write(path, content)` and `edit(path, old, new)` tools (`osyr/edits.py`): the question shows the lines that change, the previous version is kept and `osyr files undo` puts it back. **Off by default** (`OSYR_WRITE=1`): with them the untrained 4B invents files instead of reading them.
 - `osyr files find` understands phrases and `osyr files read` takes a bare file name.
 - Tests: `tests/shellguard_cases.py` (table of commands and permission rules), `tests/edits_cases.py` and four agent tests in the native phase.
-- Pending: the "this deletes N files" line, a test inside the image (`sudo` with a real password and terminal), and `MAX_STEPS` (6 calls per turn is short for a diagnosis).
+- The question for a heavy command carries a line computed by the system (`shellguard.effect()`): "This deletes 214 files (1.2 GB) in ~/Downloads", "This stops the wifi: the wireless connection drops".
+- Pending: a test inside the image (`sudo` with a real password and terminal), and `MAX_STEPS` (6 calls per turn is short for a diagnosis).
 - **The fixed prompt is about 2,000 tokens** with the shell, 2,380 with the write tools too (it was about 1,640 at v0.31.1, already over the 1,500 of the architecture). Decided 13 Nov: the limit is 2,000 until the model is fine-tuned, and 1,500 after.
 
 ## Still pending (4 Nov)
