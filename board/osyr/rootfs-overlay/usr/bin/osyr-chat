@@ -1439,6 +1439,8 @@ def main():
             continue
         if text.startswith("/speak"):
             sess.speak_always = text[6:].strip() != "off"
+            if not sess.speak_always:
+                voice.stop_speaking()  # also whatever is being said right now
             print(f"Spoken replies {'on' if sess.speak_always else 'off'}.")
             continue
         if text == "/voice":
