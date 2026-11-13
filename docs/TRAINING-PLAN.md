@@ -26,6 +26,7 @@ This document is meant to be read by the agent working on the `osyr` repository 
 | Small model | To be chosen between Qwen3.5-4B and a somewhat larger one, by measuring untrained candidates on the VPS |
 | Level 3 | Given by the fine-tuned 35B: on a server, or locally with 32 GB or more |
 | Machines with 32 GB or more | Only the 35B is loaded; revisited if it turns out slow for simple requests |
+| The second model (13 Nov) | The 35B and an external provider are the same thing: the second model the agent consults when the local one is not enough is a provider added with `osyr ai add` or `/pair`. Carlos's 35B is one such provider, served with `llama-server` (the llama-hardened project). Users can be offered the same: their own VPS or similar with llama-hardened |
 | Shell | With protections, for both models. The pilot decides whether the small one keeps it |
 | The 35B on the VPS (llama-hardened) | May be queried for tests, without touching its configuration |
 | Training | Two rounds with real use in between |
