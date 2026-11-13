@@ -570,7 +570,8 @@ res, text = drive("sudo touch /run/osyr-shell-test", [(ask, "y")] + [(password, 
 show("shell-sudo-wrong-password", res.get("code") == "SUDO_FAILED" and not os.path.exists("/run/osyr-shell-test"), res, text)
 # 3. "No": nothing runs and no password is asked
 res, text = drive("sudo touch /run/osyr-shell-test", [(ask, "n")])
-show("shell-sudo-declined", res.get("code") == "USER_DECLINED" and "assword" not in text
+# (the dim line "your password may be asked" is there; sudo's own prompt is not)
+show("shell-sudo-declined", res.get("code") == "USER_DECLINED" and not re.search(password, text.encode(), re.M)
      and not os.path.exists("/run/osyr-shell-test"), res, text)
 # 4. A program that reads the keyboard gets an error at once instead of waiting
 res, text = drive("cat /dev/tty", [])

@@ -438,7 +438,7 @@ First piece of stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md); design and decis
 - Tests: `tests/shellguard_cases.py` (table of commands and permission rules), `tests/edits_cases.py` and four agent tests in the native phase.
 - The question for a heavy command carries a line computed by the system (`shellguard.effect()`): "This deletes 214 files (1.2 GB) in ~/Downloads", "This stops the wifi: the wireless connection drops".
 - A turn has up to 12 answers of the model (`MAX_STEPS`, it was 6: short for a diagnosis). A call that comes back with the same result as before in the same turn is not answered again: the model is told to stop repeating, and the second time the turn ends with a notice. Tested with a scripted model (`tests/turn_cases.py`); not measured with the real model yet.
-- Pending: a test inside the image (`sudo` with a real password and terminal).
+- Tested inside the image (13 Nov, image `309c1d2`, vm 153/154 and native 31/31): the chat's shell function in a real terminal with `sudo` — right password, wrong password three times, a "no", a program that reads the keyboard, the heavy-command line, a blocked command and the audit file. The one failure was the check itself (it took the notice "your password may be asked" for sudo's prompt), fixed afterwards and not run again yet.
 - **The fixed prompt is about 2,000 tokens** with the shell, 2,380 with the write tools too (it was about 1,640 at v0.31.1, already over the 1,500 of the architecture). Decided 13 Nov: the limit is 2,000 until the model is fine-tuned, and 1,500 after.
 
 ## Still pending (4 Nov)
