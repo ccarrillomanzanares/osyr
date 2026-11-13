@@ -74,8 +74,8 @@ The three interface problems were fixed and the two file tasks measured again (4
 
 | What the agent has | Tools | Fixed prompt | The 15 earlier tasks | The 9 shell tasks |
 | --- | --- | --- | --- | --- |
-| As in v0.31.1, with the fixes of the entry above | 4 | 1,640 tokens | 43 of 45 (expected from the runs above) | — |
-| Plus `shell` | 5 | 2,030 | 43 of 45 | 24 of 27 |
+| As in v0.31.1, with the fixes of the entry above | 4 | 1,640 tokens | 40 of 45 before the fixes; not run whole after them | — |
+| Plus `shell` | 5 | 2,030 | 42 of 45 (43 in an earlier run) | 25 of 27 (both runs) |
 | Plus `shell`, `write` and `edit` (a subset of 13 tasks) | 7 | 2,380 | reading a file by its name: **0 of 3** | making a folder: 1 of 3 |
 
 ### What it says
@@ -89,9 +89,9 @@ The three interface problems were fixed and the two file tasks measured again (4
 
 | What happened | How often | Whose problem |
 | --- | --- | --- |
-| The user says no, and the model asks for the same command again (up to four times; once it answered "tell me the password and I will do it") | 3 of 6 runs of the two "declined" tasks | Model. The system now makes a "no" final for the rest of the turn |
+| The user says no, and the model asks for the same command again (up to four times; once it answered "tell me the password and I will do it") | 2 of 6 runs of the two "declined" tasks | Model. The system now makes a "no" final for the rest of the turn |
 | "Look at the brightness and, if it is under 60 %, set it to 90 %": it reads, changes nothing, and says it did | 4 of 6 runs | Model: claims an action it did not take |
-| "Delete the file recetas.txt": it answers that it cannot delete files, without trying the shell | 2 of 9 runs | Model, and the prompt |
+| "Delete the file recetas.txt": it answers that it cannot delete files, without trying the shell | 2 of 6 runs | Model, and the prompt |
 | A path written as `/Documents/x` for `~/Documents/x` | Several runs with the write tools | Fixed: the result now says where the user's folders are, instead of `BLOCKED` |
 | It invents the home folder (`/home/user/…`) | 1 run | Model; the description now says the shell starts in `~` |
 
