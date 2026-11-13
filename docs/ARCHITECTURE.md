@@ -12,7 +12,7 @@ The difference from the previous system is not the base but the design order: th
 | Piece | Previous system | New OSYR |
 | --- | --- | --- |
 | Base | LFS 13 + sven (Arch packages) | Buildroot, immutable image with A/B update |
-| Extra software | sven over the root, which gets modified | Own `systemd-sysext` extensions + containers |
+| Extra software | sven over the root, which gets modified | A Debian container per user (`osyr box`) |
 | Agent interface | 29 tools, free-text output | 3 fixed tools (`osyr`, `clipboard`, `look`): almost everything goes through the `osyr` CLI with JSON |
 | Fixed prompt | ~7,000 tokens with 8K of context | ≤ 2,000 tokens until the model is fine-tuned; ≤ 1,500 after |
 | Local model | Qwen3.5-9B Q4 (6.2 GB) | Qwen3.5-4B fine-tuned for OSYR |
@@ -30,25 +30,46 @@ Every technical decision is checked against six principles; if a feature breaks 
 5. **Everything is verifiable.** Every feature is born with its test cases and a verifier of the final state. That is at once the benchmark and the training data factory.
 6. **One image, everywhere.** The same image boots on the laptop, in QEMU and in the training containers on Lambda. The model is trained on the exact system the user receives.
 
-## The three layers
+## The base and the box
 
-OSYR has no classic package manager: Buildroot does not produce binary packages by design, so software is organised in three layers and the agent manages all of them through the `osyr` CLI.
+OSYR has no classic package manager: Buildroot does not produce binary packages by design. Software is organised in two layers, and the agent manages both through the `osyr` CLI: the base, which is the image, and the box, a container where everything else is installed.
 
 ```mermaid
 flowchart TB
-    agent["<b>OSYR agent</b><br/>Tool loop over llama-server<br/>Qwen3.5-4B locally · Qwen3.6-35B-A3B on a server"]
+    agent["<b>OSYR agent</b><br/>Tool loop over llama-server<br/>Small model locally · a second model on a provider"]
     cli["<b>osyr --json CLI</b><br/>Single interface, stable JSON; enforces security: block, confirm or pass"]
-    ext["<b>Official extensions</b><br/>systemd-sysext, enabled without rebooting<br/>browser, voice, development, multimedia<br/>Signed, same version as the base"]
-    box["<b>Containers</b><br/>Software outside the extensions<br/>Alpine, Arch… with their manager inside<br/>Isolated: the base stays clean"]
-    base["<b>Immutable base (Buildroot), read only</b><br/>Kernel, systemd, Wayland, Python, llama.cpp, local voice<br/>Two A/B slots: full update (GRUB + grubenv, no RAUC) and rollback if it fails<br/>The same image on the laptop, in QEMU and in training on Lambda"]
+    subgraph boxg["The box: container osyr-box, one per user (podman without root, crun, pasta)"]
+        box["<b>Debian stable</b><br/>apt and the programs installed on request<br/>Same user inside as outside<br/>Starts empty; created at the first install"]
+    end
+    home["<b>The user's home folder</b><br/>documents, settings<br/>the box's own storage lives here"]
+    session["<b>Session</b><br/>Wayland, PipeWire, /dev/dri"]
+    hidden["<b>Hidden from the box</b><br/>.ssh · .gnupg · keyrings · password store<br/>the assistant's settings, conversations and logs"]
+    base["<b>Immutable base (Buildroot), read only</b><br/>Kernel, systemd, Wayland, Python, llama.cpp, local voice, browser<br/>Two A/B slots: full update (GRUB + grubenv, no RAUC) and rollback if it fails<br/>The same image on the laptop, in QEMU and in training on Lambda"]
     agent --> cli
-    cli -- "osyr ext" --> ext
-    cli -- "osyr box" --> box
-    ext -- "overlaid on /usr" --> base
-    box -- "run on top of the base" --> base
+    cli -- "osyr box: install, remove, run" --> boxg
+    cli -- "osyr app: open and close windows" --> boxg
+    boxg -- "sees" --> home
+    boxg -- "window and sound" --> session
+    boxg -. "covered by empty folders" .-> hidden
+    boxg -- "runs on top of, cannot change" --> base
 ```
 
-The base only changes as a whole, through the A/B update; extensions are enabled and removed without touching it; whatever is not in any extension goes in a container. It is the same model Home Assistant OS uses (Buildroot + A/B + containers). In OSYR the A/B is our own and is done (v0.27): two roots, GRUB chooses with `grubenv`, the new one boots once on trial and, if it does not get to work, the previous one comes in next time; RAUC was evaluated and was not needed. In addition, the overlay code is updated through git with signed tags (`osyr update code`), almost always without rebooting.
+The base only changes as a whole, through the A/B update; whatever is not in it is installed in the box. It is the same model Home Assistant OS uses (Buildroot + A/B + containers).
+
+**The box** (decided 13 Nov 2026, in v0.32.0; the reasons are in the decisions table of [TRAINING-PLAN.md](TRAINING-PLAN.md)):
+
+- **One default box per user, with Debian stable.** It is created by itself the first time something is installed (`osyr box install <program>`), and starts empty. The user never has to know what a container is; more boxes or other distributions are left as an advanced option.
+- **Engine:** `podman` without root, with `crun` and `pasta` for the network, all in the base. The container runs with `--userns=keep-id`: inside, the user is the same user, so the files a program writes belong to them.
+- **What it sees:** the user's home folder, the session folder (Wayland screen, PipeWire sound, the session bus) and `/dev/dri`. A program in the box opens its window on the same desktop as the rest.
+- **What it does not see:** `.ssh`, `.gnupg`, the keyrings, the password store, the assistant's settings, conversations and logs, and podman's own storage. Each is covered by an empty tmpfs (mounted with `notmpcopyup`, so that what is hidden is not copied into it).
+- **Where it lives:** in the user's home folder (`~/.local/share/containers`), so it survives the A/B updates of the base. `osyr box reset` empties it, asking first.
+- **It is a convenience, not a security boundary.** The box keeps the base clean and keeps keys out of sight of ordinary programs; a program in it still runs as the user and can read and change their documents.
+- **Applications** from the base and from the box are opened and closed the same way, with `osyr app`: each opens on a free workspace from the third on, and the agent's console stays the main screen.
+- **Limits today:** programs that only speak X11 have no window (there is no Xwayland in the base); USB disks mounted after the box started are not seen in it; it needs the Internet and at least 500 MB free.
+
+**Official extensions (`osyr ext`, `systemd-sysext`) are set aside** (13 Nov 2026). The first design had a third layer of signed extensions overlaid on `/usr`; what they were for is now either in the base (voice, browser) or installed in the box (development, multimedia, office).
+
+In OSYR the A/B is our own and is done (v0.27): two roots, GRUB chooses with `grubenv`, the new one boots once on trial and, if it does not get to work, the previous one comes in next time; RAUC was evaluated and was not needed. In addition, the overlay code is updated through git with signed tags (`osyr update code`), almost always without rebooting.
 
 ## Graphical environment: Wayland
 
@@ -85,10 +106,9 @@ The cost: xdotool does not work on Wayland. Screenshots and keyboard input are d
 | --- | --- | --- |
 | `osyr sys` | `status`, `health`, `logs --unit X` | CPU, RAM, disk, temperature status, recent errors |
 | `osyr net` | `status`, `wifi scan`, `wifi connect` | Wired network and wifi |
-| `osyr ext` | `search`, `install`, `remove`, `list` | Official extensions (the "package manager") |
-| `osyr app` | `list`, `run --bg`, `stop` | Launch and close graphical applications |
+| `osyr app` | `list`, `run <name> [file]`, `stop` | Open and close applications, the base's and the box's |
 | `osyr svc` | `list`, `start`, `stop`, `enable` | systemd services |
-| `osyr box` | `create`, `exec`, `rm` | Containers for software outside the extensions |
+| `osyr box` | `install`, `remove`, `search`, `list`, `run`, `update`, `reset`, `status` | Programs in the user's Debian container (the "package manager") |
 | `osyr update` | `code check/apply/rollback`, `image check/apply/rollback` | Signed code from git; whole image in the other A/B slot (GRUB) |
 | `osyr ai` | `status`, `model`, `server` | Local model, remote server, voice |
 | `osyr ui` | `theme`, `keyboard`, `screen` | WarGames theme, keyboard, screenshot |
@@ -195,7 +215,7 @@ flowchart TB
     h1["<b>Milestone 1 · osyr CLI and agent v0</b><br/>osyr sys, net, svc, app and ui with the JSON contract<br/>Agent with 8 tools and a prompt of 1,500 tokens at most<br/><i>Gate: basic tasks end to end in QEMU</i>"]
     h2["<b>Milestone 2 · Benchmark and sandbox</b><br/>300–500 tasks with a final-state verifier<br/>Disposable image in containers, hundreds in parallel<br/><i>Gate: measured baseline of the 4B and the 35B</i>"]
     h3["<b>Milestone 3 · Training on Lambda</b><br/>35B teacher, verified data, SFT<br/>Distillation and RL in a sandbox on the 4B<br/><i>Gate: the 4B beats its baseline</i>"]
-    h4["<b>Milestone 4 · Extensions and updates</b><br/>Extensions: browser, voice, development<br/>A/B (done in milestone 0, with GRUB) and disk installer (done)<br/><i>Gate: updates and rolls back without losing data</i>"]
+    h4["<b>Milestone 4 · Software and updates</b><br/>Programs in the box (first version in v0.32.0)<br/>A/B (done in milestone 0, with GRUB) and disk installer (done)<br/><i>Gate: updates and rolls back without losing data</i>"]
     h5["<b>Milestone 5 · Real hardware and version 1.0</b><br/>Tests on both laptops and in VirtualBox<br/>USB image and .ova published with the fine-tuned model<br/><i>Gate: the benchmark passes on the minimum 8 GB profile</i>"]
     h0 --> h1 --> h2
     h2 --> h3
@@ -215,8 +235,7 @@ The biggest risk is that Buildroot is meant for embedded systems, not for laptop
 | Risk | Mitigation |
 | --- | --- |
 | PC hardware support (wifi, GPU, audio, suspend) | Start from a distro's kernel config, as you did with kernel #7; full `linux-firmware`; test early on both laptops |
-| Browser: Firefox and Chromium are not in official Buildroot | Package the official Firefox binary as a sysext extension, with GTK3 in the base; requires glibc |
-| `systemd-sysext` requires extensions to match the base version | Extensions built from the same tree and published with each base version |
+| Browser: Firefox and Chromium are not in official Buildroot | Done another way: WPE WebKit + cog in the base; another browser can be installed in the box |
 | A/B on PCs with BIOS and UEFI | Done without RAUC: GRUB + `grubenv`, trial boot and rollback; tested in QEMU (BIOS and UEFI) and on the HP 15-ba (BIOS) |
 | The 4B does not reach the expected level | The benchmark will tell early; plan B: recommended 16 GB profile with a larger model |
 | Lambda credits with an expiry date | ~12 months left: milestones 0–2 in the first 4–5 months and training from then on |
