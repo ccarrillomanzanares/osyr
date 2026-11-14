@@ -285,7 +285,9 @@ def t_clipboard():
         return
     token = f"osyr-hwtest-{os.getpid()}"
     try:
-        subprocess.run(["wl-copy", token], timeout=5, check=True)
+        # wl-copy stays behind to serve the clipboard: it must not keep this program's output open
+        subprocess.run(["wl-copy", token], timeout=5, check=True, stdin=subprocess.DEVNULL,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         _, out, _ = sh(["wl-paste", "--no-newline"], 5)
     except (OSError, subprocess.SubprocessError) as e:
         record("clipboard", "fail", str(e))
@@ -407,7 +409,10 @@ def t_network():
         except OSError as e:
             record(name, "fail", f"{url}: {e}")
     r = osyr_json("update", "code", "check", timeout=120)
-    record("update-check", "ok" if r.get("ok") else "warn", f'{r.get("code")}: {str(r.get("data"))[:120]}')
+    if r.get("code") == "NEEDS_ROOT":  # the check is root's; the timer above says whether it runs
+        record("update-check", "skip", "needs administrator rights (the daily timer does it)")
+    else:
+        record("update-check", "ok" if r.get("ok") else "warn", f'{r.get("code")}: {str(r.get("data"))[:120]}')
 
 
 def t_bluetooth_scan():
@@ -600,7 +605,17 @@ def mem_available_mib():
 def t_vision():
     from osyr import ai
     if not ai.provider().get("local"):
-        record("vision", "skip", "the active AI is not the local model (osyr ai use local)")
+        # A remote provider: one look, no vision server to start or to weigh
+        q = "What is on the screen? Answer in one short sentence."
+        t0 = time.time()
+        r = osyr_json("ai", "look", q, timeout=300)
+        if not r.get("ok"):
+            record("vision", "warn", f'the remote model did not look: {r.get("code")} {str(r.get("data"))[:200]}')
+            return
+        answer = r["data"]["answer"]
+        record("vision", "ok", f"remote model: one look in {time.time() - t0:.0f} s")
+        human("vision-right", f'The model saw: "{answer[:120]}". Is that right?',
+              f"right: {answer[:80]}", f"wrong: {answer[:80]}")
         return
     conf = open("/etc/osyr/llama.conf").read() if os.path.exists("/etc/osyr/llama.conf") else ""
     m = re.search(r"^VISION=(\w+)", conf, re.M)
