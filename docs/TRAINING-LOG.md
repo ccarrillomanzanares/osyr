@@ -100,3 +100,45 @@ The three interface problems were fixed and the two file tasks measured again (4
 - A test of the shell inside the image, in the virtual machine: `sudo` with a real password and a real terminal.
 - The benchmark needs tasks for the three model failures above; "says it did something it did not do" should be checked on every task that changes state.
 - Each new capability has to fit in the 2,000 tokens: a new description means shortening another.
+
+## 14 November 2026 — smaller candidates: Qwen3.5-0.8B and 2B against the 4B
+
+**Spent: 0 %.** Same harness and the same limits as the entries above (provisional tasks, the VPS, 4 threads, the server's default sampling). Asked because the 4B is too slow on the user's laptops: would a smaller model do?
+
+**Not a benchmark.** 27 provisional tasks, three runs each: the fifteen of the first entry, nine with the shell and three that write files. The agent as it stood that morning, with `shell`, `write` and `edit` on.
+
+### Result
+
+| Model | File | Passed (of 81) | Run by run (of 27) | Memory in use | Reading | Writing | Median task |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3.5-0.8B Q4_K_M | 0.5 GB | 25 | 9, 7, 9 | 1.1 GB | 127 tok/s | 21.8 tok/s | 13.5 s |
+| Qwen3.5-0.8B Q8_0 | 0.8 GB | 34 | 9, 13, 12 | 1.2 GB | 133 tok/s | 21.0 tok/s | 13.4 s |
+| Qwen3.5-2B Q4_K_M | 1.3 GB | 58 | 18, 19, 21 | 2.1 GB | 68.5 tok/s | 16.3 tok/s | 15.0 s |
+| Qwen3.5-4B Q4_K_M (today's) | 2.7 GB | 76 | 24, 26, 26 | 4.5 GB | 28.5 tok/s | 7.2 tok/s | 30.5 s |
+
+The 4B's third run was cut after 16 tasks when the session ended; its last 11 tasks were run later the same day, with one line more in the list of commands (`ai advise`). Its speeds are from those 11 tasks.
+
+Speed on the 2014 laptop (A8-7410, no AVX2, 4 threads), the only real hardware where all were measured:
+
+| Model | Reading | Writing | Reading 2,000 tokens |
+| --- | --- | --- | --- |
+| Qwen3.5-0.8B Q4_K_M | 15–16.5 tok/s | 3.9–4.4 tok/s | 2 min 14 s |
+| Qwen3.5-2B Q4_K_M | 7.4–7.7 tok/s | 2.5 tok/s | 4 min 32 s |
+| Qwen3.5-4B Q4_K_M | 3.0 tok/s | 1.1–1.2 tok/s | 11 min 29 s |
+
+### What it says
+
+1. **The 0.8B is not an agent.** A third of the tasks. It fails one-step requests (setting the brightness in Spanish and in German: 0 of 3; answering without a tool: 0 of 3) and loops, up to 12 calls in a task. The commands are in its prompt, so this is not missing information, and retrieval would not give it what it lacks. Ruled out.
+2. **The 2B is close on what the 4B does well and falls on the shell and on writing.** All fifteen first tasks but four runs (41 of 45); 17 of 36 on the shell and writing. The failures read are judgement, not format: `mkdir Documents\viaje` (a Windows path) reported as done; asked for the free space, it lists external disks, finds none and says there is no free space; asked to create a file, it writes it in `/tmp` and stops.
+3. **The 2B is about twice as fast as the 4B** everywhere it was measured, and takes half the memory.
+4. **The 4B fails one task in every run:** creating a file with `write` (0 of 3). The other 26 pass in two of three runs or more.
+
+### Decision (the user's, 14 Nov)
+
+The untrained 4B is not usable on the reference 16 GB laptop (HP 15s: 25.9 tok/s reading and 5.35 writing, about 32 s for a simple request), so the wait there becomes a criterion and the 2B joins the 4B as a candidate for fine-tuning. Whether a fine-tuned 2B reaches a useful level is not known: the pilot is to say. Training a small model from scratch was considered and discarded: what a small model lacks is general language and reasoning, which the budget cannot buy, not knowledge of OSYR.
+
+### Next
+
+- The 2B's speed on the HP 15s, from `osyr ai advise --measure` with that model loaded.
+- In the pilot, fine-tune the 2B alongside the 4B and compare on the held-out tasks.
+- The benchmark needs tasks for the 2B's three kinds of failure: a wrong path reported as done, an answer from the wrong command, a file written somewhere else.
