@@ -518,3 +518,9 @@ make qemu    # or 'make qemu-uefi'; QEMU_DISPLAY=vnc=:1 on a headless server
 ```
 
 The image ends up in `build/output/images/osyr.img`.
+
+## Unattended test bench (14 Nov)
+
+- To test on real hardware without the user at the keyboard: `scripts/bench-setup.sh USER@SERVER`, run once on the bench machine as the normal user (`--remove` undoes it). It is not in the image: a tunnel key, an SSH server on `127.0.0.1:2022` that accepts one key, and the reverse tunnel to the server's `127.0.0.1:2222`, as two user services in the home folder (they survive image updates; no root). The machine's public key travels in an `osyr-diag` description; the server's entry for it only allows that one listening port and answers with the key allowed to log in.
+- The bench is the 2014 laptop (no AVX2) with a remote provider: it covers hardware, the system, updates, the box and the agent's tools and confirmations. The local model's speed and heat are still measured on the HP 15s.
+- Tried on the VPS with a stand-in laptop (stubbed `systemctl` and `osyr-diag`): key exchange, login, terminal and file copy through the tunnel; the bench's key gets no shell and no local forward on the server. The configuration parses with the image's `sshd` (10.6). Not yet run on the laptop.
