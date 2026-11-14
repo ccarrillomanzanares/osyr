@@ -129,7 +129,7 @@ Speed on the 2014 laptop (A8-7410, no AVX2, 4 threads), the only real hardware w
 ### What it says
 
 1. **The 0.8B is not an agent.** A third of the tasks. It fails one-step requests (setting the brightness in Spanish and in German: 0 of 3; answering without a tool: 0 of 3) and loops, up to 12 calls in a task. The commands are in its prompt, so this is not missing information, and retrieval would not give it what it lacks. Ruled out.
-2. **The 2B is close on what the 4B does well and falls on the shell and on writing.** All fifteen first tasks but four runs (41 of 45); 17 of 36 on the shell and writing. The failures read are judgement, not format: `mkdir Documents\viaje` (a Windows path) reported as done; asked for the free space, it lists external disks, finds none and says there is no free space; asked to create a file, it writes it in `/tmp` and stops.
+2. **The 2B is close on what the 4B does well and falls on the shell and on writing.** 40 of 45 on the fifteen first tasks; 18 of 36 on the shell and writing. The failures read are judgement, not format: `mkdir Documents\viaje` (a Windows path) reported as done; asked for the free space, it lists external disks, finds none and says there is no free space; asked to create a file, it writes it in `/tmp` and stops.
 3. **The 2B is about twice as fast as the 4B** everywhere it was measured, and takes half the memory.
 4. **The 4B fails one task in every run:** creating a file with `write` (0 of 3). The other 26 pass in two of three runs or more.
 
