@@ -292,8 +292,8 @@ def use(args):
         return fail("AI_UNKNOWN_PROVIDER", "Run: osyr ai list", {"name": args.name})
     if getattr(args, "model", None):
         if args.name == "local":
-            return fail("AI_LOCAL_MODEL", "Edit MODEL in /etc/osyr/llama.conf.",
-                        text="The local model is chosen in /etc/osyr/llama.conf.")
+            return fail("AI_LOCAL_MODEL", "Run: osyr ai local list",
+                        text="The local model is chosen with: osyr ai local use <small|large>")
         q = cfg["providers"][args.name]
         if q.get("model") != args.model:
             ids = model_ids(dict(q, name=args.name))
@@ -389,6 +389,8 @@ def register(sub):
     ad = s.add_parser("advise", help="where the model should run on this computer: the choices and the recommended one")
     ad.add_argument("--measure", action="store_true", help="measure the local model's speed first (up to a few minutes)")
     ad.set_defaults(func=_advise)
+    from . import models as local_models  # "models" is the command above
+    local_models.register(s)
     r = s.add_parser("remove", help="delete a provider and its API key")
     r.add_argument("name")
     r.set_defaults(func=remove)

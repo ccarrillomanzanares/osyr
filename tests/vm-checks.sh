@@ -668,5 +668,23 @@ if curl -sf -m 300 http://127.0.0.1:8084/health >/dev/null; then pass vision-on-
 else fail vision-on-demand "$(systemctl status osyr-llama-vision --no-pager 2>&1 | tail -3 | tr '\n' ' ')"; fi
 pgrep -af llama-server | grep -q -- '--mmproj' && pass vision-server-up || fail vision-server-up "$(pgrep -af llama-server | cut -c1-120)"
 S systemctl stop osyr-llama-vision-proxy.service
+
+# --- A downloaded model: it lives in /home/.osyr/models and the service, which sees
+# nothing else of /home, loads it from there. Last, because it reloads the model.
+check ai-local-list osyr ai local list
+if [ "$(df -m /home | awk 'NR==2 {print $4}')" -gt 4000 ]; then
+    S mkdir -p /home/.osyr/models
+    S cp /usr/share/osyr/models/Qwen3.5-4B-Q4_K_M.gguf /home/.osyr/models/copy-of-4B.gguf
+    S sed -i 's|^MODEL=.*|MODEL=/home/.osyr/models/copy-of-4B.gguf|' /etc/osyr/llama.conf
+    S systemctl restart osyr-llama
+    i=0; while [ $i -lt 120 ] && ! curl -sf -m 5 http://127.0.0.1:8083/health >/dev/null; do sleep 5; i=$((i + 1)); done
+    m=$(osyr ai status --json | wj 'd["data"]["model"] if d["ok"] else d["code"]')
+    seen=$(S ls -A "/proc/$(systemctl show -p MainPID --value osyr-llama)/root/home" 2>&1 | tr '\n' ' ')
+    [ "$m" = copy-of-4B ] && pass model-from-home || \
+        fail model-from-home "$m; $(journalctl -u osyr-llama --no-pager -n 4 | cut -c1-160 | tr '\n' ' ')"
+    [ "$seen" = ".osyr " ] && pass model-service-home-hidden || fail model-service-home-hidden "$seen"
+else
+    fail model-from-home "less than 4 GB free in /home"
+fi
 pkill -CONT -x swayidle
 echo "CHECKS DONE"

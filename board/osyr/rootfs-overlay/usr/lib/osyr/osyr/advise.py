@@ -144,42 +144,61 @@ def request_seconds(speed):
     return round(REQUEST_READ / speed["read_tps"] + REQUEST_WRITE / speed["write_tps"])
 
 
-def advise(m, speed, cfg):
+def advise(m, speed, cfg, local=None):
     """The choices and the recommended one. m = machine(), speed = measured or
-    None, cfg = ai.load(). Pure: the tests call it with made-up machines."""
+    None, cfg = ai.load(), local = models.state() or None. Pure: the tests call
+    it with made-up machines."""
     wait = request_seconds(speed) if speed else None
     remote = sorted(cfg["providers"])
     active = cfg["active"]
     big_gpu = max((g["vram_gb"] or 0 for g in m["gpus"]), default=0)
+    large = next((x for x in (local or {}).get("models", []) if x["id"] == "large"), None)
+    using_large = bool(large and large["active"])
 
     if wait is None:
-        local_note = "speed not measured yet"
+        speed_note = "speed not measured yet"
     elif wait <= FAST:
-        local_note = f"about {wait} s for a simple request"
+        speed_note = f"about {wait} s for a simple request"
     elif wait <= SLOW:
-        local_note = f"about {wait} s for a simple request: slow, but usable"
+        speed_note = f"about {wait} s for a simple request: slow, but usable"
     else:
-        local_note = f"about {wait} s for a simple request: too slow to use comfortably"
+        speed_note = f"about {wait} s for a simple request: too slow to use comfortably"
     if not m["avx2"]:
-        local_note += "; this processor has no AVX2, which the model needs to run fast"
+        speed_note += "; this processor has no AVX2, which the model needs to run fast"
 
+    # The measured speed is that of the model loaded now: the small one or the large one
     fits_large = m["ram_gb"] >= LARGE_RAM_GB or big_gpu >= LARGE_VRAM_GB
+    big = {"id": "large", "title": "A large model on this computer",
+           "detail": "Nothing leaves the computer. Also diagnoses problems of many steps.",
+           "available": True, "how": None}
+    if using_large:
+        big["note"] = speed_note
+    elif large and large["installed"]:
+        big.update(note="downloaded, not in use; its speed here is known after switching to it",
+                   how="sudo osyr ai local use large", chat="/model use large")
+    elif large and fits_large:
+        big.update(note=f'{large["size_gb"]:g} GB to download; its speed here is known only after trying it',
+                   how="sudo osyr ai local get large", chat="/model get large")
+    elif fits_large:
+        big.update(available=False, note="this computer has the memory for it")
+    else:
+        big.update(available=False,
+                   note=f"needs {LARGE_RAM_GB + 2} GB of memory; this computer has {m['ram_gb']:g} GB")
     options = [
-        {"id": "local", "title": "The model on this computer",
+        {"id": "local", "title": "The small model on this computer",
          "detail": "Nothing leaves the computer. Everyday requests and routine administration.",
-         "available": True, "note": local_note, "how": "osyr ai use local"},
-        {"id": "large", "title": "A large model on this computer",
-         "detail": "Nothing leaves the computer. Also diagnoses problems of many steps.",
-         "available": False,
-         "note": ("this computer has the memory for it, but OSYR cannot download it yet" if fits_large
-                  else f"needs {LARGE_RAM_GB + 2} GB of memory; this computer has {m['ram_gb']:g} GB"),
-         "how": None},
+         "available": True, "note": "not in use" if using_large else speed_note,
+         "how": "sudo osyr ai local use small" if using_large else "osyr ai use local",
+         "chat": "/model use small" if using_large else "/ai local"},
+        big,
         {"id": "server", "title": "A model on another machine",
          "detail": "Your own server, or a provider with an API key. What you write is sent there.",
          "available": True,
          "note": ("configured: " + ", ".join(remote)) if remote else "none configured yet",
-         "how": (f"osyr ai use {remote[0]}" if remote else "osyr ai pair")},
+         "how": (f"osyr ai use {remote[0]}" if remote else "osyr ai pair"),
+         "chat": (f"/ai {remote[0]}" if remote else "/pair")},
     ]
+    here = "large" if using_large else "local"
 
     if active != "local" and active in cfg["providers"]:
         rec, why = "server", f'"{active}" is already in use.'
@@ -188,9 +207,9 @@ def advise(m, speed, cfg):
     elif wait is not None and wait > SLOW:
         rec, why = "server", f"The local model takes about {wait} s for a simple request on this computer."
     elif wait is None:
-        rec, why = "local", "Not measured yet; run: osyr ai advise --measure"
+        rec, why = here, "Not measured yet; run: osyr ai advise --measure"
     else:
-        rec, why = "local", f"The local model answers a simple request in about {wait} s."
+        rec, why = here, f"The local model answers a simple request in about {wait} s."
 
     notes = []
     for g in m["gpus"]:
@@ -198,7 +217,7 @@ def advise(m, speed, cfg):
             mem = f' with {g["vram_gb"]:g} GB' if g["vram_gb"] else ""
             notes.append(f'{g["vendor"]} graphics card{mem} found: OSYR runs the model on the '
                          "processor and does not use it yet.")
-    return {"machine": m, "speed": speed, "request_seconds": wait, "active": active,
+    return {"machine": m, "speed": speed, "request_seconds": wait, "active": active, "local_model": here,
             "options": options, "recommended": rec, "why": why, "notes": notes}
 
 
@@ -211,11 +230,14 @@ def text_of(a):
         lines.append(f'Local model ({s["model"] or "?"}): {s["read_tps"]:g} tokens/s reading, '
                      f'{s["write_tps"]:g} writing.')
     lines.append("")
+    current = a["local_model"] if a["active"] == "local" else "server"
     for i, o in enumerate(a["options"], 1):
         mark = "  <- recommended" if o["id"] == a["recommended"] else ""
         lines.append(f'{i}  {o["title"]}{"" if o["available"] else " (not available)"}{mark}')
         lines.append(f'   {o["detail"]}')
         lines.append(f'   {o["note"][0].upper() + o["note"][1:]}.')
+        if o.get("chat") and o["available"] and o["id"] != current:
+            lines.append(f'   To choose it, in the chat: {o["chat"]}')
     lines.append("")
     lines.append(a["why"])
     lines.extend(a["notes"])
@@ -229,10 +251,11 @@ def run(args):
         if speed is None and err == "HTTP 503":
             return fail("AI_LOADING", "Wait a few seconds; the model is loading.",
                         text="The local model is still loading.")
-    a = advise(machine(), speed, ai.load())
+    from . import models
+    a = advise(machine(), speed, ai.load(), models.state())
     if args.measure and speed is None:
         a["notes"].append(f"The local model could not be measured ({err}).")
     rec = next(o for o in a["options"] if o["id"] == a["recommended"])
-    current = "local" if a["active"] == "local" else "server"
+    current = a["local_model"] if a["active"] == "local" else "server"
     hint = f'Run: {rec["how"]}' if a["recommended"] != current else None
     return Result(True, "OK", a, hint, text=text_of(a))

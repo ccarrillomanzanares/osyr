@@ -196,7 +196,8 @@ TOOLS = [
             "- sys selftest: test the hardware | sys thermal: CPU temperature and throttling | "
             "sys power: on battery or plugged in, power profile\n"
             "- ai status | ai list: providers | ai models [provider]: models it offers\n"
-            "- ai advise: whether this computer is fast enough for the local model, and the choices\n"
+            "- ai advise: whether this computer is fast enough for the local model, and the choices | "
+            "ai local list: models on this computer (to change them, tell the user to type /model)\n"
             "- ai use <provider|local> [--model <id>]: switch AI (to add one, tell the user to type /pair)\n"
             "- remind add <when> <text>: reminder/alarm, spoken and on screen; when = 10m, 2h, "
             "1h30m, 18:30, 'tomorrow 9:00' or '2026-10-30 09:00' (quote it if it has spaces)\n"
@@ -252,7 +253,7 @@ TOOLS = [
 TOOLS[1:1] = ([SHELL_TOOL] if SHELL else []) + (WRITE_TOOLS if WRITE else [])
 # Queries the agent can run without asking (they change nothing)
 READ_ONLY = [("net", "status"), ("net", "wifi", "scan"), ("audio", "status"), ("audio", "voice", "status"),
-             ("ai", "status"), ("ai", "list"), ("ai", "models"), ("ai", "advise"),
+             ("ai", "status"), ("ai", "list"), ("ai", "models"), ("ai", "advise"), ("ai", "local", "list"),
              ("ui", "display", "list"), ("bt", "status"), ("bt", "scan"), ("sys", "selftest"),
              ("sys", "thermal"),
              ("remind", "add"), ("remind", "list"), ("remind", "cancel"), ("doc",), ("files",), ("disk", "list"),
@@ -1307,6 +1308,7 @@ HELP = ("Type a message. /voice to speak (or hold Super+Space), /look [question]
         "the screen,\n/speak on|off, /history, /resume [n], /clear starts over, /exit quits.\n"
         "AI: /ai lists them, /ai <name> [model] switches, /pair adds one with its API key,\n"
         "    /ai advise measures this computer and says where the model should run.\n"
+        "    /model lists the models on this computer; /model get|use|remove <id> changes them.\n"
         "/install puts OSYR on this computer's disk (from the USB; it erases the disk).\n"
         "/update installs OSYR updates (/update undo goes back); /report sends a problem report.\n"
         "/permissions shows what you allowed without asking (answer 'a' to a question) and takes it back.\n"
@@ -1437,6 +1439,18 @@ def main():
             else:
                 subprocess.run(["osyr", "ai", "use", words[0], *(["--model", words[1]] if len(words) > 1 else [])])
                 sess.follow_active()
+            continue
+        if text == "/model" or text.startswith("/model "):
+            words = text.split()[1:]
+            if len(words) == 2 and words[0] in ("get", "use", "remove"):
+                try:  # in this window: sudo asks for the password, get asks before downloading
+                    subprocess.run(["sudo", "osyr", "ai", "local", *words])
+                except KeyboardInterrupt:
+                    print("\nStopped. /model get continues where it stopped.")
+            else:
+                subprocess.run(["osyr", "ai", "local", "list"])
+                print(f"{DIM}/model get <id> downloads one, /model use <small|id> switches, "
+                      f"/model remove <id> deletes it{RESET}")
             continue
         if text == "/permissions" or text.startswith("/permissions "):
             permissions(text.split()[1:])

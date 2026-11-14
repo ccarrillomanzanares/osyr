@@ -12,7 +12,9 @@ ExecStartPost=/bin/sh -c 'for i in $(seq 240); do curl -sf -m 2 http://127.0.0.1
 TimeoutStartSec=180
 DynamicUser=yes
 ProtectSystem=strict
-ProtectHome=yes
+# /home stays hidden, except the downloaded models (osyr ai local get), read-only
+ProtectHome=tmpfs
+BindReadOnlyPaths=-/home/.osyr/models
 PrivateTmp=yes
 PrivateDevices=yes
 NoNewPrivileges=yes

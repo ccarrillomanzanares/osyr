@@ -15,7 +15,9 @@ RuntimeDirectory=osyr-llama
 CacheDirectory=osyr-llama
 # The model is read from disk: no network, and no writes beyond what is essential.
 ProtectSystem=strict
-ProtectHome=yes
+# /home stays hidden, except the downloaded models (osyr ai local get), read-only
+ProtectHome=tmpfs
+BindReadOnlyPaths=-/home/.osyr/models
 PrivateTmp=yes
 PrivateDevices=yes
 NoNewPrivileges=yes

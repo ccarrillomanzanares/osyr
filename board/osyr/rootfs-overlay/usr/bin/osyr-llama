@@ -22,10 +22,21 @@ pick() { # pick <find pattern> <exclude mmproj: yes/no>
     fi
 }
 
-if [ -n "$MODEL" ] && [ -f "$MODELS/$MODEL" ]; then
-    model="$MODELS/$MODEL"
-else
-    [ -n "$MODEL" ] && echo "osyr-llama: $MODELS/$MODEL not found, autodetecting" >&2
+# A file name is looked up in the image's folder; a full path is a downloaded
+# model (osyr ai local get, in /home/.osyr/models). If it is gone, the image's.
+resolve() { # resolve <name or path>
+    case "$1" in
+        /*) [ -f "$1" ] && echo "$1" ;;
+        ?*) [ -f "$MODELS/$1" ] && echo "$MODELS/$1" ;;
+    esac
+    return 0
+}
+model=$(resolve "$MODEL")
+if [ -z "$model" ]; then
+    if [ -n "$MODEL" ]; then
+        echo "osyr-llama: $MODEL not found, autodetecting" >&2
+        MMPROJ=  # the projector of the missing model does not fit another one
+    fi
     model=$(pick '*.gguf' yes)
 fi
 if [ -z "$model" ]; then
@@ -33,11 +44,8 @@ if [ -z "$model" ]; then
     exit 1
 fi
 
-if [ -n "$MMPROJ" ] && [ -f "$MODELS/$MMPROJ" ]; then
-    mmproj="$MODELS/$MMPROJ"
-else
-    mmproj=$(pick '*mmproj*.gguf' no)
-fi
+mmproj=$(resolve "$MMPROJ")
+[ -n "$mmproj" ] || mmproj=$(pick '*mmproj*.gguf' no)
 
 # VISION=ondemand (default): the agent's server runs without the projector. That
 # way it uses less RAM and llama.cpp can save the fixed prompt to disk (it does
