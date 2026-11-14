@@ -1,0 +1,7 @@
+#%PAM-1.0
+# The stack that shadow's tools (passwd, chpasswd, newusers, chfn, chsh) include.
+# Without this file every password change failed with "Permission denied".
+auth		required	pam_unix.so nullok
+account		required	pam_unix.so
+password	required	pam_unix.so nullok sha512 shadow
+session		required	pam_unix.so

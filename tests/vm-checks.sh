@@ -606,7 +606,8 @@ r=$(osyr box search video --json | jcode); [ "$r" = BOX_NOT_CREATED ] && pass bo
 mkdir -p ~/.ssh && echo SECRET-KEY > ~/.ssh/id_test && echo visible > ~/box-visible.txt
 r=$(timeout 1500 osyr box install hello --json 2>/tmp/box-install.err)
 [ "$(echo "$r" | wj 'd["ok"] and d["data"]["installed"]')" = "['hello']" ] && pass box-install || fail box-install "$(echo "$r" | cut -c1-200) $(tail -2 /tmp/box-install.err | tr '\n' ' ')"
-r=$(osyr box run hello --json); [ "$(echo "$r" | wj 'd["data"]["stdout"].strip()')" = "Hello, world!" ] && pass box-run || fail box-run "$(echo "$r" | cut -c1-200)"
+# GNU hello greets in the user's language, which the box inherits
+r=$(osyr box run hello --json); case "$(echo "$r" | wj 'd["data"]["stdout"].strip()')" in "Hello, world!"|"¡Hola mundo!") true ;; *) false ;; esac && pass box-run || fail box-run "$(echo "$r" | cut -c1-200)"
 # What the box sees: the user's files, as the same user; not the keys, not the assistant's settings
 r=$(osyr box run sh -c 'id -u; cat ~/box-visible.txt; touch ~/box-made.txt' --json | wj 'd["data"]["stdout"].split()')
 [ "$r" = "['1000', 'visible']" ] && [ "$(stat -c %U ~/box-made.txt)" = osyr ] && pass box-sees-home || fail box-sees-home "$r $(stat -c %U ~/box-made.txt 2>&1)"
