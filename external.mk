@@ -27,5 +27,10 @@ LLAMA_CPP_CONF_OPTS += \
 # shaders with glslc at build time: OSYR's host-shaderc provides it.
 ifeq ($(BR2_PACKAGE_LLAMA_CPP_VULKAN),y)
 LLAMA_CPP_DEPENDENCIES += host-shaderc
+# The package's rules were already generated when this file is read: the line
+# above only reaches what is expanded later (the per-package copy), so the
+# order has to be given by hand or a build from scratch never builds glslc.
+$(LLAMA_CPP_TARGET_CONFIGURE): | host-shaderc
+llama-cpp-depends: host-shaderc
 LLAMA_CPP_CONF_OPTS += -DVulkan_GLSLC_EXECUTABLE=$(HOST_DIR)/bin/glslc
 endif
