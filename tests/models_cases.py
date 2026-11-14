@@ -159,6 +159,60 @@ def main():
     big = {o["id"]: o for o in a["options"]}["large"]
     check("advise-large-offered", big["available"] and big["how"] == "sudo osyr ai local get large", big)
 
+    # --- Graphics card: what llama-server lists, and "on" kept only if it is faster
+    fake = f"{TMP}/llama-server"
+    write(fake, "#!/bin/sh\necho 'Available devices:'\n"
+                "echo '  Vulkan0: AMD Radeon RX 7900 XT (RADV NAVI31) (20464 MiB, 20000 MiB free)'\n"
+                "echo '  Vulkan1: Intel(R) UHD Graphics (ICL GT1) (7802 MiB, 7000 MiB free)'\n")
+    os.chmod(fake, 0o755)
+    models.LLAMA_SERVER = fake
+    devs = models.gpu_devices()
+    check("gpu-devices", [d["id"] for d in devs] == ["Vulkan0", "Vulkan1"] and devs[0]["vram_gb"] == 20.0 and
+          devs[0]["name"] == "AMD Radeon RX 7900 XT (RADV NAVI31)", devs)
+    models.LLAMA_SERVER = f"{TMP}/missing"
+    check("gpu-none", models.gpu_devices() == [] and models.gpu_set(Args("", state="on", keep=False)).code == "GPU_NONE")
+    models.LLAMA_SERVER = fake
+
+    cpu = {"read_tps": 26.0, "write_tps": 5.3, "model": "m", "when": 0}
+    ready, speeds, saved = [True], [], []
+    models.wait_ready = lambda timeout=900: ready[0]
+    advise.saved_speed = lambda: cpu
+    advise.measure = lambda timeout=300: speeds.pop(0)
+    advise.save_speed = saved.append
+
+    def gpu_line():
+        return [x for x in open(f"{TMP}/llama.conf").read().splitlines() if x.startswith("GPU=")]
+
+    del restarts[:]
+    speeds.append(({"read_tps": 400.0, "write_tps": 40.0, "model": "m", "when": 0}, None))
+    r = models.gpu_set(Args("", state="on", keep=False))
+    check("gpu-faster-kept", r.ok and gpu_line() == ["GPU=on"] and restarts == [1] and "about 3 s" in r.text and
+          "about 32 s" in r.text, (r.as_dict(), r.text))
+    check("gpu-status-on", models.gpu_status(Args("")).data["gpu"] is True)
+    check("gpu-already", models.gpu_set(Args("", state="on", keep=False)).ok and restarts == [1])
+    check("gpu-off", models.gpu_set(Args("", state="off", keep=False)).ok and gpu_line() == ["GPU=off"] and
+          restarts == [1, 1])
+
+    del restarts[:]
+    speeds.append(({"read_tps": 20.0, "write_tps": 4.0, "model": "m", "when": 0}, None))
+    r = models.gpu_set(Args("", state="on", keep=False))
+    check("gpu-slower-reverted", r.code == "GPU_SLOWER" and gpu_line() == ["GPU=off"] and restarts == [1, 1] and
+          saved[-1] == cpu and "stays on the processor" in r.text, (r.as_dict(), r.text))
+    speeds.append(({"read_tps": 20.0, "write_tps": 4.0, "model": "m", "when": 0}, None))
+    r = models.gpu_set(Args("", state="on", keep=True))
+    check("gpu-slower-kept", r.ok and gpu_line() == ["GPU=on"], r.as_dict())
+    models.gpu_set(Args("", state="off", keep=False))
+
+    ready[0] = False  # the server never comes back with the card
+    r = models.gpu_set(Args("", state="on", keep=False))
+    check("gpu-no-start-reverted", r.code == "GPU_FAILED" and gpu_line() == ["GPU=off"], r.as_dict())
+    ready[0] = True
+    speeds.append((None, "timed out"))  # it starts, but does not answer
+    r = models.gpu_set(Args("", state="on", keep=False))
+    check("gpu-no-answer-reverted", r.code == "GPU_FAILED" and gpu_line() == ["GPU=off"], r.as_dict())
+    conf = open(f"{TMP}/llama.conf").read()
+    check("conf-intact", "CTX=auto" in conf and "# comment" in conf and conf.count("MODEL=") == 1, conf)
+
     server.shutdown()
     server.server_close()
     for b in bad:

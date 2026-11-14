@@ -19,7 +19,12 @@ ProtectSystem=strict
 ProtectHome=tmpfs
 BindReadOnlyPaths=-/home/.osyr/models
 PrivateTmp=yes
-PrivateDevices=yes
+# No devices but the graphics cards' render nodes, for GPU=on in llama.conf
+DevicePolicy=closed
+DeviceAllow=char-drm rw
+SupplementaryGroups=render
+# Mesa keeps its compiled shaders here (the service has no home folder)
+Environment=XDG_CACHE_HOME=%C/osyr-llama
 NoNewPrivileges=yes
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 # The agent and the interface take priority over inference.

@@ -122,13 +122,17 @@ def measure(timeout=300):
         return None, "no timings in the answer"
     speed = {"read_tps": round(read, 1), "write_tps": round(write, 1),
              "model": ai.local_model_name(p) or "", "when": int(time.time())}
+    save_speed(speed)
+    return speed, None
+
+
+def save_speed(speed):
     try:
         os.makedirs(os.path.dirname(STATE), exist_ok=True)
         with open(STATE, "w") as f:
             json.dump(speed, f)
     except OSError:
         pass
-    return speed, None
 
 
 def saved_speed():
@@ -144,10 +148,11 @@ def request_seconds(speed):
     return round(REQUEST_READ / speed["read_tps"] + REQUEST_WRITE / speed["write_tps"])
 
 
-def advise(m, speed, cfg, local=None):
+def advise(m, speed, cfg, local=None, cards=None, card_on=False):
     """The choices and the recommended one. m = machine(), speed = measured or
-    None, cfg = ai.load(), local = models.state() or None. Pure: the tests call
-    it with made-up machines."""
+    None, cfg = ai.load(), local = models.state() or None, cards = the graphics
+    cards the model can run on (models.gpu_devices()), card_on = one is in use.
+    Pure: the tests call it with made-up machines."""
     wait = request_seconds(speed) if speed else None
     remote = sorted(cfg["providers"])
     active = cfg["active"]
@@ -212,11 +217,16 @@ def advise(m, speed, cfg, local=None):
         rec, why = here, f"The local model answers a simple request in about {wait} s."
 
     notes = []
-    for g in m["gpus"]:
-        if g["vendor"] == "NVIDIA" or (g["vram_gb"] or 0) >= 4:
-            mem = f' with {g["vram_gb"]:g} GB' if g["vram_gb"] else ""
-            notes.append(f'{g["vendor"]} graphics card{mem} found: OSYR runs the model on the '
-                         "processor and does not use it yet.")
+    for c in cards or []:
+        if card_on:
+            notes.append(f'The model runs on the graphics card {c["name"]}. Back to the processor, '
+                         "in the chat: /gpu off")
+        else:
+            notes.append(f'Graphics card OSYR can run the model on: {c["name"]} ({c["vram_gb"]:g} GB). '
+                         "To try it, in the chat: /gpu on (it is kept only if it is faster).")
+        break
+    if not cards and any(g["vendor"] == "NVIDIA" for g in m["gpus"]):
+        notes.append("NVIDIA graphics card found: OSYR has no driver to run the model on it.")
     return {"machine": m, "speed": speed, "request_seconds": wait, "active": active, "local_model": here,
             "options": options, "recommended": rec, "why": why, "notes": notes}
 
@@ -252,7 +262,7 @@ def run(args):
             return fail("AI_LOADING", "Wait a few seconds; the model is loading.",
                         text="The local model is still loading.")
     from . import models
-    a = advise(machine(), speed, ai.load(), models.state())
+    a = advise(machine(), speed, ai.load(), models.state(), models.gpu_devices(), models.gpu_on())
     if args.measure and speed is None:
         a["notes"].append(f"The local model could not be measured ({err}).")
     rec = next(o for o in a["options"] if o["id"] == a["recommended"])

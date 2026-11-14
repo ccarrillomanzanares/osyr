@@ -38,7 +38,7 @@ This document is meant to be read by the agent working on the `osyr` repository 
 | Shell | With protections, for both models. The pilot decides whether the small one keeps it |
 | The 35B on the VPS (llama-hardened) | May be queried for tests, without touching its configuration |
 | Training | Two rounds with real use in between |
-| Local GPU | An OSYR requirement, for later and with no date. It blocks nothing in this plan |
+| Local GPU | Built on 14 Nov for AMD and Intel cards through Vulkan (`osyr ai gpu on`), untested on a discrete card; NVIDIA with the proprietary driver stays for later, with no date. It blocks nothing in this plan |
 
 ## Levels and profiles
 

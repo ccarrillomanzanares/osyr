@@ -120,7 +120,12 @@ def main():
     check("large-unavailable", opt(a, "large")["available"] is False)
     a = advise.advise(m(ram=16, gpus=[{"vendor": "NVIDIA", "driver": "", "vram_gb": 24.0}]), None, LOCAL)
     check("large-by-gpu", "has the memory" in opt(a, "large")["note"], opt(a, "large")["note"])
-    check("gpu-note", any("NVIDIA graphics card with 24 GB" in n for n in a["notes"]), a["notes"])
+    check("nvidia-note", any("no driver" in n for n in a["notes"]), a["notes"])
+    card = [{"id": "Vulkan0", "name": "AMD Radeon RX 7900 XT (RADV NAVI31)", "vram_gb": 20.0, "free_gb": 19.5}]
+    a = advise.advise(m(), None, LOCAL, None, card)
+    check("card-offered", len(a["notes"]) == 1 and "/gpu on" in a["notes"][0] and "20 GB" in a["notes"][0], a["notes"])
+    a = advise.advise(m(), None, LOCAL, None, card, True)
+    check("card-in-use", "/gpu off" in a["notes"][0], a["notes"])
     a = advise.advise(m(gpus=[{"vendor": "Intel", "driver": "i915", "vram_gb": None}]), None, LOCAL)
     check("integrated-no-note", a["notes"] == [], a["notes"])
 

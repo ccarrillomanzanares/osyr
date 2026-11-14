@@ -125,6 +125,10 @@ BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_R600=y
 BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_NOUVEAU=y
 BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_VIRGL=y
 BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_LLVMPIPE=y
+# Vulkan, for running the model on a graphics card (llama.cpp): AMD (radv) and
+# Intel (anv). NVIDIA cards have no Vulkan driver here.
+BR2_PACKAGE_MESA3D_VULKAN_DRIVER_AMD=y
+BR2_PACKAGE_MESA3D_VULKAN_DRIVER_INTEL=y
 BR2_PACKAGE_MESA3D_GBM=y
 BR2_PACKAGE_MESA3D_OPENGL_EGL=y
 BR2_PACKAGE_MESA3D_OPENGL_ES=y
@@ -199,6 +203,9 @@ BR2_PACKAGE_PYTHON3_ZLIB=y
 # --- Local AI ---------------------------------------------------------------
 BR2_PACKAGE_LLAMA_CPP=y
 BR2_PACKAGE_LLAMA_CPP_TOOLS=y
+# The Vulkan backend is one more library next to the CPU ones; it is only
+# used when llama.conf says so (GPU=on). Its shaders need OSYR's host-shaderc.
+BR2_PACKAGE_LLAMA_CPP_VULKAN=y
 
 # --- Boot: GRUB for BIOS and UEFI (configuration proven on real hardware) ----------
 BR2_TARGET_GRUB2=y

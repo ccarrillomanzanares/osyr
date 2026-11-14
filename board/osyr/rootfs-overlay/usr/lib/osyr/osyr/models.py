@@ -1,4 +1,5 @@
 """osyr ai local — the models on this computer: list, download, switch, remove.
+osyr ai gpu — run the local model on a graphics card, if that is faster.
 
 The image ships one small model in /usr/share/osyr/models. A larger one does
 not fit in the system partition (8 to 16 GiB), so downloaded models live in
@@ -14,6 +15,7 @@ point to stand-ins (and with OSYR_MODELS_EXTRA set, root is not asked for).
 """
 import hashlib
 import os
+import re
 import subprocess
 import sys
 import time
@@ -26,6 +28,7 @@ MODELS = os.environ.get("OSYR_MODELS", "/usr/share/osyr/models")
 EXTRA = os.environ.get("OSYR_MODELS_EXTRA", "/home/.osyr/models")
 CONF = os.environ.get("OSYR_LLAMA_CONF", "/etc/osyr/llama.conf")
 PROC = os.environ.get("OSYR_PROC", "/proc")
+LLAMA_SERVER = os.environ.get("OSYR_LLAMA_SERVER", "/usr/bin/llama-server")
 GIB = 1024 ** 3
 
 # What can be downloaded. "ram_gb": memory from which it is offered (a "32 GB"
@@ -67,8 +70,8 @@ def ram_gb():
 
 
 def conf_values():
-    """MODEL and MMPROJ as written in llama.conf ('' = autodetect)."""
-    values = {"MODEL": "", "MMPROJ": ""}
+    """MODEL, MMPROJ and GPU as written in llama.conf ('' = not set)."""
+    values = {"MODEL": "", "MMPROJ": "", "GPU": ""}
     try:
         for line in open(CONF):
             key, eq, value = line.strip().partition("=")
@@ -79,12 +82,13 @@ def conf_values():
     return values
 
 
-def write_conf(model, mmproj):
+def write_conf(**new):
+    """Sets KEY=value lines of llama.conf, keeping everything else as it is."""
     try:
         lines = open(CONF).read().splitlines()
     except OSError:
         lines = []
-    new, seen = {"MODEL": model, "MMPROJ": mmproj}, set()
+    seen = set()
     for i, line in enumerate(lines):
         key = line.partition("=")[0].strip()
         if key in new and "=" in line and not line.lstrip().startswith("#"):
@@ -314,7 +318,7 @@ def use(args):
         return fail("MODEL_UNKNOWN", "Run: osyr ai local list", {"id": args.id})
     if active_id() == args.id:
         return Result(True, "OK", {"active": args.id}, text=f'Already using "{args.id}".')
-    write_conf(model, mmproj)
+    write_conf(MODEL=model, MMPROJ=mmproj)
     ok, err = restart()
     if not ok:
         return fail("MODEL_RESTART_FAILED", "Run: systemctl status osyr-llama", {"active": args.id, "error": err},
@@ -345,7 +349,118 @@ def remove(args):
                   text=f'Removed "{args.id}" ({freed / 1e9:.1f} GB freed).')
 
 
+# --- graphics card -------------------------------------------------------------------
+
+def gpu_devices():
+    """The graphics cards llama-server can run the model on (Vulkan), as it lists them."""
+    try:
+        p = subprocess.run([LLAMA_SERVER, "--list-devices"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    found = []
+    for line in (p.stdout + "\n" + p.stderr).splitlines():
+        m = re.match(r"\s*(\w+):\s+(.+?)\s+\((\d+) MiB, (\d+) MiB free\)\s*$", line)
+        if m:
+            found.append({"id": m.group(1), "name": m.group(2),
+                          "vram_gb": round(int(m.group(3)) / 1024, 1),
+                          "free_gb": round(int(m.group(4)) / 1024, 1)})
+    return found
+
+
+def gpu_on():
+    return conf_values()["GPU"].lower() not in ("", "off", "no", "0")
+
+
+def wait_ready(timeout=900):
+    """True when the local server answers again after a restart (a large model takes minutes)."""
+    from . import ai
+    url = ai.server_root(ai.provider("local")["url"]) + "/health"
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as r:
+                if r.status == 200:
+                    return True
+        except (urllib.error.URLError, OSError):
+            pass
+        time.sleep(3)
+    return False
+
+
+def gpu_status(args):
+    devices, on = gpu_devices(), gpu_on()
+    if not devices:
+        text = "No graphics card that OSYR can run the model on (AMD and Intel cards with Vulkan)."
+    else:
+        text = "\n".join(f'{d["id"]}: {d["name"]}, {d["vram_gb"]:g} GB' for d in devices)
+        text += "\nThe model runs on " + ("the graphics card." if on else "the processor.")
+    return Result(True, "OK", {"gpu": on, "devices": devices},
+                  "To try the graphics card: sudo osyr ai gpu on" if devices and not on else None, text=text)
+
+
+def _back_to_cpu(before):
+    from . import advise
+    write_conf(GPU="off")
+    restart()
+    wait_ready()
+    if before:
+        advise.save_speed(before)
+
+
+def gpu_set(args):
+    from . import advise
+    r = need_root(f"gpu {args.state}")
+    if r:
+        return r
+    if args.state == "off":
+        if gpu_on():
+            write_conf(GPU="off")
+            restart()
+        return Result(True, "OK", {"gpu": False}, text="The model runs on the processor.")
+    devices = gpu_devices()
+    if not devices:
+        return fail("GPU_NONE", None, {"devices": []},
+                    text="No graphics card that OSYR can run the model on (AMD and Intel cards with Vulkan).")
+    if gpu_on():
+        return Result(True, "OK", {"gpu": True, "devices": devices}, text="The graphics card is already in use.")
+    # The processor's speed first, to compare: the saved one, or measured now
+    before = advise.saved_speed() or advise.measure()[0]
+    write_conf(GPU="on")
+    ok, err = restart()
+    if not ok or not wait_ready():
+        _back_to_cpu(before)
+        return fail("GPU_FAILED", "Report it with /report: it helps to support this card.",
+                    {"devices": devices, "error": err},
+                    text=f'The model did not start on {devices[0]["name"]}. Back on the processor.')
+    after, err = advise.measure()
+    data = {"gpu": True, "devices": devices, "processor": before, "card": after}
+    if after is None:
+        _back_to_cpu(before)
+        return fail("GPU_FAILED", "Report it with /report: it helps to support this card.",
+                    data | {"gpu": False, "error": err},
+                    text=f'The model did not answer on {devices[0]["name"]} ({err}). Back on the processor.')
+    t_card = advise.request_seconds(after)
+    t_cpu = advise.request_seconds(before) if before else None
+    if t_cpu is not None and t_card >= t_cpu and not args.keep:
+        _back_to_cpu(before)
+        return Result(False, "GPU_SLOWER", data | {"gpu": False},
+                      "To use the card anyway: sudo osyr ai gpu on --keep",
+                      text=f'On {devices[0]["name"]} a simple request takes about {t_card} s; on the '
+                           f"processor, about {t_cpu} s. The model stays on the processor.")
+    versus = f"; on the processor it was about {t_cpu} s" if t_cpu is not None else ""
+    return Result(True, "OK", data,
+                  text=f'The model now runs on {devices[0]["name"]}: about {t_card} s for a simple request{versus}.')
+
+
 def register(s):
+    g = s.add_parser("gpu", help="run the local model on a graphics card (kept only if it is faster)")
+    ga = g.add_subparsers(dest="gpu_action", required=True)
+    ga.add_parser("status", help="the cards OSYR can use and whether one is in use").set_defaults(func=gpu_status)
+    for state in ("on", "off"):
+        x = ga.add_parser(state, help="switch to the graphics card and measure it" if state == "on"
+                          else "back to the processor")
+        x.add_argument("--keep", action="store_true", help="keep the card even if it is slower")
+        x.set_defaults(func=gpu_set, state=state)
     p = s.add_parser("local", help="the models on this computer: list, download, switch, remove")
     a = p.add_subparsers(dest="local_action", required=True)
     a.add_parser("list", help="models on this computer and those that can be downloaded").set_defaults(func=list_models)

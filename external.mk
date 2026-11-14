@@ -22,3 +22,10 @@ LLAMA_CPP_CONF_OPTS += \
 	-DGGML_BACKEND_DL=ON \
 	-DGGML_CPU_ALL_VARIANTS=ON \
 	-DGGML_BACKEND_DIR=/usr/lib/ggml
+
+# The Vulkan backend (libggml-vulkan.so, next to the CPU ones) compiles its
+# shaders with glslc at build time: OSYR's host-shaderc provides it.
+ifeq ($(BR2_PACKAGE_LLAMA_CPP_VULKAN),y)
+LLAMA_CPP_DEPENDENCIES += host-shaderc
+LLAMA_CPP_CONF_OPTS += -DVulkan_GLSLC_EXECUTABLE=$(HOST_DIR)/bin/glslc
+endif

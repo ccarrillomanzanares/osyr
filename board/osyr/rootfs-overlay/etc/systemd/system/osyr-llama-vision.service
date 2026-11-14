@@ -11,12 +11,18 @@ ExecStart=/usr/bin/osyr-llama vision
 ExecStartPost=/bin/sh -c 'for i in $(seq 240); do curl -sf -m 2 http://127.0.0.1:8085/health >/dev/null && exit 0; sleep 0.5; done; exit 1'
 TimeoutStartSec=180
 DynamicUser=yes
+CacheDirectory=osyr-llama-vision
 ProtectSystem=strict
 # /home stays hidden, except the downloaded models (osyr ai local get), read-only
 ProtectHome=tmpfs
 BindReadOnlyPaths=-/home/.osyr/models
 PrivateTmp=yes
-PrivateDevices=yes
+# No devices but the graphics cards' render nodes, for GPU=on in llama.conf
+DevicePolicy=closed
+DeviceAllow=char-drm rw
+SupplementaryGroups=render
+# Mesa keeps its compiled shaders here (the service has no home folder)
+Environment=XDG_CACHE_HOME=%C/osyr-llama-vision
 NoNewPrivileges=yes
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 Nice=5
