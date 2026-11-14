@@ -349,6 +349,11 @@ def _look(args):
     return look.look(args)
 
 
+def _advise(args):
+    from . import advise  # advise imports this module
+    return advise.run(args)
+
+
 def register(sub):
     p = sub.add_parser("ai", help="AI model: local or external providers")
     s = p.add_subparsers(dest="action", required=True)
@@ -381,6 +386,9 @@ def register(sub):
     lk.add_argument("question", nargs="?")
     lk.add_argument("--file", help="an image instead of a screen capture")
     lk.set_defaults(func=_look)
+    ad = s.add_parser("advise", help="where the model should run on this computer: the choices and the recommended one")
+    ad.add_argument("--measure", action="store_true", help="measure the local model's speed first (up to a few minutes)")
+    ad.set_defaults(func=_advise)
     r = s.add_parser("remove", help="delete a provider and its API key")
     r.add_argument("name")
     r.set_defaults(func=remove)

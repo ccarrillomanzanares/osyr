@@ -196,6 +196,7 @@ TOOLS = [
             "- sys selftest: test the hardware | sys thermal: CPU temperature and throttling | "
             "sys power: on battery or plugged in, power profile\n"
             "- ai status | ai list: providers | ai models [provider]: models it offers\n"
+            "- ai advise: whether this computer is fast enough for the local model, and the choices\n"
             "- ai use <provider|local> [--model <id>]: switch AI (to add one, tell the user to type /pair)\n"
             "- remind add <when> <text>: reminder/alarm, spoken and on screen; when = 10m, 2h, "
             "1h30m, 18:30, 'tomorrow 9:00' or '2026-10-30 09:00' (quote it if it has spaces)\n"
@@ -251,7 +252,7 @@ TOOLS = [
 TOOLS[1:1] = ([SHELL_TOOL] if SHELL else []) + (WRITE_TOOLS if WRITE else [])
 # Queries the agent can run without asking (they change nothing)
 READ_ONLY = [("net", "status"), ("net", "wifi", "scan"), ("audio", "status"), ("audio", "voice", "status"),
-             ("ai", "status"), ("ai", "list"), ("ai", "models"),
+             ("ai", "status"), ("ai", "list"), ("ai", "models"), ("ai", "advise"),
              ("ui", "display", "list"), ("bt", "status"), ("bt", "scan"), ("sys", "selftest"),
              ("sys", "thermal"),
              ("remind", "add"), ("remind", "list"), ("remind", "cancel"), ("doc",), ("files",), ("disk", "list"),
@@ -1304,7 +1305,8 @@ def permissions(words):
 
 HELP = ("Type a message. /voice to speak (or hold Super+Space), /look [question] to show "
         "the screen,\n/speak on|off, /history, /resume [n], /clear starts over, /exit quits.\n"
-        "AI: /ai lists them, /ai <name> [model] switches, /pair adds one with its API key.\n"
+        "AI: /ai lists them, /ai <name> [model] switches, /pair adds one with its API key,\n"
+        "    /ai advise measures this computer and says where the model should run.\n"
         "/install puts OSYR on this computer's disk (from the USB; it erases the disk).\n"
         "/update installs OSYR updates (/update undo goes back); /report sends a problem report.\n"
         "/permissions shows what you allowed without asking (answer 'a' to a question) and takes it back.\n"
@@ -1424,9 +1426,14 @@ def main():
             words = text.split()[1:]
             if not words:
                 subprocess.run(["osyr", "ai", "list"])
-                print(f"{DIM}/ai <name> [model] to switch, /ai models <name> to list models{RESET}")
+                print(f"{DIM}/ai <name> [model] to switch, /ai models <name> to list models, "
+                      f"/ai advise to see what suits this computer{RESET}")
             elif words[0] == "models":
                 subprocess.run(["osyr", "ai", "models", *words[1:2]])
+            elif words[0] == "advise":
+                print(f"{DIM}Measuring the local model (up to a few minutes on a slow computer)...{RESET}")
+                subprocess.run(["osyr", "ai", "advise", "--measure"])
+                print(f"{DIM}/ai <name> to switch, /pair to add a server{RESET}")
             else:
                 subprocess.run(["osyr", "ai", "use", words[0], *(["--model", words[1]] if len(words) > 1 else [])])
                 sess.follow_active()

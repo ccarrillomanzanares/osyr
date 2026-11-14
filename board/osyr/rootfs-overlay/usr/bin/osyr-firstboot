@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""OSYR — first start: language, keyboard, time zone, own password and
-network. Started by sway before the chat as long as
+"""OSYR — first start: language, keyboard, time zone, own password, network
+and where the assistant's model should run. Started by sway before the chat as long as
 ~/.local/state/osyr/firstboot-done does not exist. Enter keeps each value as is.
 
 The image ships with osyr/osyr and root/osyr: passwords anyone knows, with
@@ -182,10 +182,10 @@ def disclaimer():
     ask("Press Enter to continue. ")
 
 
-def osyr(*args, secret=None):
+def osyr(*args, secret=None, timeout=120):
     """secret: through stdin (with --password-stdin), never on the command line."""
     try:
-        p = subprocess.run(["osyr", *args, "--json"], capture_output=True, text=True, timeout=120,
+        p = subprocess.run(["osyr", *args, "--json"], capture_output=True, text=True, timeout=timeout,
                            input=(secret + "\n") if secret is not None else None)
     except subprocess.TimeoutExpired:
         return {"ok": False, "code": "TIMEOUT", "hint": "It took too long."}
@@ -232,6 +232,32 @@ def network():
         print(f'Could not connect: {res.get("code")}. {res.get("hint") or ""}')
 
 
+def assistant():
+    """Where the assistant's model should run: measures the local one and shows
+    the choices (osyr ai advise). Nothing changes unless the person asks."""
+    say("ASSISTANT")
+    print("Checking how fast the assistant runs on this computer (up to a few minutes on a slow one)...")
+    res = {}
+    for _ in range(36):  # the model may still be loading: up to 3 minutes
+        res = osyr("ai", "advise", "--measure", timeout=400)
+        if res.get("code") != "AI_LOADING":
+            break
+        time.sleep(5)
+    data = res.get("data") or {}
+    if not res.get("ok") or not data.get("options"):
+        print("Could not check it now. Later, in the chat: /ai advise")
+        return
+    from osyr import advise
+    print(advise.text_of(data))
+    if data["recommended"] == "server" and data["active"] == "local":
+        if ask("\nConnect a model on another machine now? [y/N] ").lower() in ("y", "yes", "s", "si", "sí"):
+            subprocess.run(["osyr", "ai", "pair"])
+        else:
+            print("The model on this computer stays in use. Later, in the chat: /pair")
+    else:
+        print("\nTo see this again or change it, in the chat: /ai advise")
+
+
 def main():
     if os.path.exists(FLAG) and "--force" not in sys.argv:
         return 0
@@ -240,7 +266,7 @@ def main():
     print("A few quick questions. Press Enter to keep what is there.\n")
     try:
         disclaimer()
-        for step in (set_language, set_keyboard, set_timezone, set_password, network):
+        for step in (set_language, set_keyboard, set_timezone, set_password, network, assistant):
             try:
                 step()
             except (OSError, subprocess.SubprocessError, ValueError) as e:

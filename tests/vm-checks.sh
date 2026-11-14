@@ -253,6 +253,11 @@ python3 -c 'import locale; locale.setlocale(locale.LC_ALL, "fr_FR.UTF-8")' 2>/de
 m=$(osyr ai status --json | wj 'd["data"]["model"] if d["ok"] else "not-answering"')
 [ -n "$m" ] && [ "$m" != local ] && pass ai-status-local-model || fail ai-status-local-model "$m"
 
+# Where the model should run: the choices, one of them recommended. Without --measure:
+# the model in a VM without KVM is too slow for it (the measurement has its native cases)
+a=$(osyr ai advise --json | wj '"%s %s" % (len(d["data"]["options"]), d["data"]["recommended"])')
+case "$a" in "3 local"|"3 server") pass ai-advise ;; *) fail ai-advise "$a" ;; esac
+
 # --- External provider ------------------------------------------------------------------
 [ -n "$MOCKPORT" ] && {
     check ai-add osyr ai add mock --url "http://$HOST:$MOCKPORT/v1" --api-key secret123 --key-header X-API-Key
