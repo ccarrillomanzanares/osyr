@@ -15,6 +15,7 @@ osyr-image, /etc/osyr/update-signers) and carries the sha256 of the image and of
 the root. A root is never written unverified, and the version never goes back
 (git ancestry).
 """
+import calendar
 import hashlib
 import json
 import os
@@ -199,19 +200,51 @@ def installed_image():
     return c if c and c != "unknown" else None
 
 
+def _has_commit(c):
+    return subprocess.run(["git", "-C", code.SRC, "cat-file", "-e", f"{c}^{{commit}}"],
+                          capture_output=True).returncode == 0
+
+
+def _is_ancestor(a, b):
+    return subprocess.run(["git", "-C", code.SRC, "merge-base", "--is-ancestor", a, b],
+                          capture_output=True).returncode == 0
+
+
+def installed_date():
+    """Build time of the running image (seconds), or None if build-info does not say."""
+    d = code.read_kv(code.BUILD_INFO).get("DATE", "")
+    try:
+        return calendar.timegm(time.strptime(d, "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return None
+
+
 def is_newer(new, base):
-    """new comes after base in the signed history (the version never goes back)."""
+    """new comes after base in the signed history (the version never goes back).
+
+    The repository's history was started again on 12 Nov 2026: an image built before
+    that has a commit that is not an ancestor of anything published since, and may not
+    be in the clone at all. For such an image the dates decide: the new version is
+    newer if its commit was made after the running image was built."""
     code.fetch()  # up-to-date clone in /var/lib/osyr/src (shared with update code)
     if not base:
         return True
     if new == base:
         return False
-    for c in (new, base):
-        if subprocess.run(["git", "-C", code.SRC, "cat-file", "-e", f"{c}^{{commit}}"],
-                          capture_output=True).returncode != 0:
-            raise ImageError(f"commit {c[:10]} is not in the OSYR repository")
-    return subprocess.run(["git", "-C", code.SRC, "merge-base", "--is-ancestor", base, new],
-                          capture_output=True).returncode == 0
+    if not _has_commit(new):
+        raise ImageError(f"commit {new[:10]} is not in the OSYR repository")
+    if _has_commit(base):
+        if _is_ancestor(base, new):
+            return True
+        if _is_ancestor(new, base):
+            return False
+    built = installed_date()
+    if built is None:
+        raise ImageError(f"this image's commit {base[:10]} is not in the OSYR history "
+                         "and its build date is unknown")
+    r = subprocess.run(["git", "-C", code.SRC, "show", "-s", "--format=%ct", new],
+                       capture_output=True, text=True)
+    return int(r.stdout.strip()) > built
 
 
 # --- check -----------------------------------------------------------------------------
