@@ -4,6 +4,7 @@
 #   make qemu       boots the image in QEMU (BIOS); 'make qemu-uefi' with OVMF
 #   make test       tests: the image's binaries here + the image in QEMU
 #                   + the disk installer (test-native, test-vm, test-install)
+#                   One piece: make test-vm ONLY=models,firstboot (parts in tests/run.py)
 #                   (OSYR_TEST_SMP=N: VM CPUs, 12 by default)
 #   make menuconfig / savedefconfig / linux-menuconfig
 #   make prune      frees obsolete build dirs and old images (scripts/disk-guard.sh);

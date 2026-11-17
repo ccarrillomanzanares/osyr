@@ -12,8 +12,17 @@
           in BIOS and in UEFI (/home passphrase over the serial console).
 
 Usage: tests/run.py [native|vm|install|all], or tests/run.py boot DISK [format]
-(boots a publishable disk in BIOS and UEFI, used by scripts/publish.sh). Results in build/test-results/.
-Without KVM the VM is slow (~10 min); the native phase does not need it.
+(boots a publishable disk in BIOS and UEFI, used by scripts/publish.sh). Results in build/test-results/;
+what is printed also goes, with the time, to run-DATE-PHASE.log there, so a run that is cut keeps
+what it had got to.
+
+Without KVM the whole run takes about two hours, nearly all of it in the vm phase. To try one
+piece, ONLY=name,name runs only those parts (make test-vm ONLY=models,firstboot):
+  vm       the sections of tests/vm-checks.sh ('# --- [name]'), and 'firstboot'
+  install  'install' (encrypted and plain installs and their boots) and 'update-image'
+           (the plain install, then the image update on it)
+The native phase has no parts and is skipped by 'all' when ONLY is given. Before publishing,
+the whole run.
 """
 import glob
 import json
@@ -41,12 +50,43 @@ OVERLAY = os.path.join(ROOT, "board", "osyr", "rootfs-overlay")
 LIB = os.path.join(OVERLAY, "usr", "lib", "osyr")
 MODELS = os.path.join(TARGET, "usr", "share", "osyr", "models")
 
+ONLY = [x for x in re.split(r"[,\s]+", os.environ.get("ONLY", "")) if x]
+INSTALL_PARTS = ("install", "update-image")
+
 results = []
+log = None
+
+
+def say(text):
+    print(text, flush=True)
+    if log:
+        for line in text.split("\n"):
+            log.write(f"{time.strftime('%H:%M:%S')} {line}\n")
+        log.flush()
 
 
 def report(name, ok, detail=""):
     results.append((name, ok, detail))
-    print(f"{'PASS' if ok else 'FAIL'} {name}" + (f": {detail}" if detail and not ok else ""), flush=True)
+    say(f"{'PASS' if ok else 'FAIL'} {name}" + (f": {detail}" if detail and not ok else ""))
+
+
+def want(part):
+    return not ONLY or part in ONLY
+
+
+def vm_sections():
+    """tests/vm-checks.sh cut at its '# --- [name]' headers: what comes before the first one,
+    and the (name, text) of each section in order."""
+    parts = re.split(r"^(?=# --- \[[\w-]+\])", open(f"{ROOT}/tests/vm-checks.sh").read(), flags=re.M)
+    return parts[0], [(re.match(r"# --- \[([\w-]+)\]", x)[1], x) for x in parts[1:]]
+
+
+def vm_script():
+    """The checks to run in the VM: every section, or the ONLY ones; each announces itself
+    with the time, to know afterwards how long it took."""
+    head, sections = vm_sections()
+    return head + "".join(f'echo "SECTION {name} $(date +%s)"\n{text}' for name, text in sections
+                          if name == "end" or want(name))
 
 
 def free_port():
@@ -128,7 +168,7 @@ def pty_run(argv, env, script, timeout=600):
 # --- Native phase -----------------------------------------------------------------------
 
 def native():
-    print("== native: the image's binaries on this machine", flush=True)
+    say("== native: the image's binaries on this machine")
     tmp = tempfile.mkdtemp(prefix="osyr-test-")
     procs = []
     try:
@@ -498,11 +538,11 @@ def serve_repo(tmp):
     subprocess.run(g + ["commit", "-qm", "test update"], check=True)
     subprocess.run(g + ["push", "-q", "origin", "HEAD:main"], check=True)
     subprocess.run(["git", "-C", repo, "update-server-info"], check=True)
-    shutil.copy(f"{ROOT}/tests/vm-checks.sh", f"{tmp}/www/vm-checks.sh")
+    open(f"{tmp}/www/vm-checks.sh", "w").write(vm_script())
 
 
 def vm():
-    print("== vm: the image in QEMU (snapshot)", flush=True)
+    say("== vm: the image in QEMU (snapshot)" + (f", only {' '.join(ONLY)}" if ONLY else ""))
     if not os.path.exists(IMAGE):
         report("vm-image", False, "no image: run 'make' first")
         return
@@ -589,31 +629,42 @@ def vm():
             report(m.group(2), m.group(1) == "PASS", m.group(3) or "")
         if "CHECKS DONE" not in out:
             report("vm-checks-complete", False, "the script did not finish")
+        marks = [(m[1], int(m[2])) for m in re.finditer(r"^SECTION (\S+) (\d+)$", out, re.M)]
+        took = sorted(((b[1] - a[1], a[0]) for a, b in zip(marks, marks[1:])), reverse=True)
+        if took:
+            say("Minutes per section: " + ", ".join(f"{name} {secs / 60:.1f}" for secs, name in took))
 
         # First boot: new password and root locked
-        s.buf = b""
-        s.send("osyr-firstboot --force")
-        steps = [(rb"can make mistakes(.|\n)*Press Enter to continue\. $", ""),
-                 (rb"Language \(number, Enter to keep\): $", ""),
-                 (rb"Keyboard \(number, Enter to keep\): $", ""),
-                 (rb"Time zone \(number, Enter to keep\): $", ""),
-                 (rb"\[Y/n\] $", "y"), (rb"New password: $", "new-password1"),
-                 # one * per character: you can see that you are typing
-                 (rb"New password: \*{13}\r?\nRepeat it: $", "new-password1"),
-                 (rb"Repeat it: \*{13}\r?\n", None), (rb"Password changed", None)]
-        ok = True
-        for pat, ans in steps:
-            if not s.wait(pat, 120):
-                ok = False
-                break
-            if ans is not None:
-                s.send(ans)
-        s.wait(rb"\$ $", 120)
-        report("firstboot-password", ok, s.text()[-300:])
-        s.buf = b""
-        s.send("echo new-password1 | sudo -S -p '' grep '^root:' /etc/shadow | cut -d: -f2 | cut -c1; echo FB-END")
-        s.wait(rb"\nFB-END\r?\n", 60)
-        report("firstboot-root-locked", re.search(r"^!$", s.text(), re.M) is not None, s.text()[-200:])
+        if want("firstboot"):
+            s.buf = b""
+            s.send("osyr-firstboot --force")
+            steps = [(rb"can make mistakes(.|\n)*Press Enter to continue\. $", ""),
+                     (rb"Language \(number, Enter to keep\): $", ""),
+                     (rb"Keyboard \(number, Enter to keep\): $", ""),
+                     (rb"Time zone \(number, Enter to keep\): $", ""),
+                     (rb"\[Y/n\] $", "y"), (rb"New password: $", "new-password1"),
+                     # one * per character: you can see that you are typing
+                     (rb"New password: \*{13}\r?\nRepeat it: $", "new-password1"),
+                     (rb"Repeat it: \*{13}\r?\n", None), (rb"Password changed", None)]
+            ok = True
+            for pat, ans in steps:
+                if not s.wait(pat, 120):
+                    ok = False
+                    break
+                if ans is not None:
+                    s.send(ans)
+            report("firstboot-password", ok, s.text()[-300:])
+            # Last step: the model is measured (slow without KVM) and the choices are shown;
+            # when a server is recommended it asks whether to pair now (Enter: no)
+            shown = s.wait(rb"another machine now\? \[y/N\] $|in the chat: /ai advise\r?\n", 1200)
+            if re.search(rb"\[y/N\] $", s.buf):
+                s.send("")
+            report("firstboot-assistant", shown and "Could not check it now" not in s.text(), s.text()[-400:])
+            s.wait(rb"\$ $", 120)
+            s.buf = b""
+            s.send("echo new-password1 | sudo -S -p '' grep '^root:' /etc/shadow | cut -d: -f2 | cut -c1; echo FB-END")
+            s.wait(rb"\nFB-END\r?\n", 60)
+            report("firstboot-root-locked", re.search(r"^!$", s.text(), re.M) is not None, s.text()[-200:])
 
         monitor(mon, f"screendump {tmp}/screen.ppm")
         try:
@@ -623,7 +674,8 @@ def vm():
             shutil.copy(f"{tmp}/screen.ppm", f"{RESULTS}/vm-screen.ppm")
         monitor(mon, "quit")
         qemu.wait(30)
-        report("audio-reaches-speakers", audio_has_sound(wav), "the recorded output is silent")
+        if want("sound"):
+            report("audio-reaches-speakers", audio_has_sound(wav), "the recorded output is silent")
     except (OSError, subprocess.SubprocessError) as e:
         report("vm-setup", False, str(e))
     finally:
@@ -691,7 +743,8 @@ def serial_run(s, cmd, seconds=120):
 
 
 def install():
-    print("== install: osyr-install from the USB stick to a second disk (QEMU)", flush=True)
+    say("== install: osyr-install from the USB stick to a second disk (QEMU)"
+        + (f", only {' '.join(ONLY)}" if ONLY else ""))
     if not os.path.exists(IMAGE):
         report("install-image", False, "no image: run 'make' first")
         return
@@ -702,58 +755,60 @@ def install():
     try:
         with open(disk, "wb") as f:
             f.truncate(30 * 1024 ** 3)
-        q, s = qemu_boot(tmp, [(IMAGE, True), (disk, False)], name="usb")
-        ok, _ = serial_login(s, q)
-        report("install-usb-boots", ok, s.text()[-300:])
-        if not ok:
-            return
-        out = serial_run(s, "osyr-install --list --json")
-        m = re.search(r"^\[.*\]$", out, re.M)
-        lst = {d["name"]: d for d in json.loads(m.group(0))} if m else {}
-        report("install-list", lst.get("vda", {}).get("usable") is False and lst.get("vdb", {}).get("usable"),
-               out[-300:])
-        out = serial_run(s, "echo osyr | sudo -S -p '' osyr-install --disk /dev/vdb --confirm vda "
-                            "--passphrase-file /dev/null; echo RC=$?")
-        report("install-refuses-mismatch", "RC=1" in out and "Not confirmed" in out, out[-300:])
-        out = serial_run(s, "printf 'test-passphrase\\n' > /tmp/pp; echo osyr | sudo -S -p '' "
-                            "osyr-install --disk /dev/vdb --confirm vdb --passphrase-file /tmp/pp; echo RC=$?", 3600)
-        open(f"{RESULTS}/install-run.txt", "w").write(out)
-        report("install-runs", "RC=0" in out and "OSYR is installed" in out, out[-400:])
-        q.kill()
-        q.wait()
-        if "RC=0" not in out:
-            return
-
-        # The disk alone, in BIOS: /home passphrase (one wrong, one right), session and mounts
-        q, s = qemu_boot(tmp, [(disk, True)], name="disk-bios")
-        ok, asked = serial_login(s, q, passphrase="test-passphrase")
-        open(f"{RESULTS}/install-serial-bios.txt", "w").write(s.text())
-        report("install-boots-bios", ok, s.text()[-300:])
-        report("install-asks-again", asked >= 2, f"passphrase asked {asked} times")
-        if ok:
-            out = serial_run(s, "findmnt -no SOURCE /; findmnt -no SOURCE,FSTYPE /home; "
-                                "ls -a ~ | grep -c bash_profile; cat /etc/osyr/install.conf")
-            open(f"{RESULTS}/install-bios.txt", "w").write(out)
-            report("install-root-on-disk", re.search(r"^/dev/vda2$", out, re.M) is not None, out[-300:])
-            report("install-home-encrypted", re.search(r"^/dev/mapper/home ext4$", out, re.M) is not None,
+        if want("install"):
+            q, s = qemu_boot(tmp, [(IMAGE, True), (disk, False)], name="usb")
+            ok, _ = serial_login(s, q)
+            report("install-usb-boots", ok, s.text()[-300:])
+            if not ok:
+                return
+            out = serial_run(s, "osyr-install --list --json")
+            m = re.search(r"^\[.*\]$", out, re.M)
+            lst = {d["name"]: d for d in json.loads(m.group(0))} if m else {}
+            report("install-list", lst.get("vda", {}).get("usable") is False and lst.get("vdb", {}).get("usable"),
                    out[-300:])
-            report("install-home-copied", re.search(r"^1$", out, re.M) is not None, out[-300:])
-        q.kill()
-        q.wait()
+            out = serial_run(s, "echo osyr | sudo -S -p '' osyr-install --disk /dev/vdb --confirm vda "
+                                "--passphrase-file /dev/null; echo RC=$?")
+            report("install-refuses-mismatch", "RC=1" in out and "Not confirmed" in out, out[-300:])
+            out = serial_run(s, "printf 'test-passphrase\\n' > /tmp/pp; echo osyr | sudo -S -p '' "
+                                "osyr-install --disk /dev/vdb --confirm vdb --passphrase-file /tmp/pp; echo RC=$?", 3600)
+            open(f"{RESULTS}/install-run.txt", "w").write(out)
+            report("install-runs", "RC=0" in out and "OSYR is installed" in out, out[-400:])
+            q.kill()
+            q.wait()
+            if "RC=0" not in out:
+                return
 
-        # UEFI with the USB stick also plugged in: the disk boots, not the stick
-        q, s = qemu_boot(tmp, [(disk, True), (IMAGE, True)], uefi=True, name="disk-uefi")
-        ok, _ = serial_login(s, q, passphrase="test-passphrase")
-        open(f"{RESULTS}/install-serial-uefi.txt", "w").write(s.text())
-        report("install-boots-uefi", ok, s.text()[-300:])
-        if ok:
-            out = serial_run(s, "findmnt -no SOURCE /; cat /proc/cmdline")
-            report("install-uefi-not-usb", re.search(r"^/dev/vda2$", out, re.M) is not None
-                   and "a105a105" not in out, out[-300:])
-        q.kill()
-        q.wait()
+            # The disk alone, in BIOS: /home passphrase (one wrong, one right), session and mounts
+            q, s = qemu_boot(tmp, [(disk, True)], name="disk-bios")
+            ok, asked = serial_login(s, q, passphrase="test-passphrase")
+            open(f"{RESULTS}/install-serial-bios.txt", "w").write(s.text())
+            report("install-boots-bios", ok, s.text()[-300:])
+            report("install-asks-again", asked >= 2, f"passphrase asked {asked} times")
+            if ok:
+                out = serial_run(s, "findmnt -no SOURCE /; findmnt -no SOURCE,FSTYPE /home; "
+                                    "ls -a ~ | grep -c bash_profile; cat /etc/osyr/install.conf")
+                open(f"{RESULTS}/install-bios.txt", "w").write(out)
+                report("install-root-on-disk", re.search(r"^/dev/vda2$", out, re.M) is not None, out[-300:])
+                report("install-home-encrypted", re.search(r"^/dev/mapper/home ext4$", out, re.M) is not None,
+                       out[-300:])
+                report("install-home-copied", re.search(r"^1$", out, re.M) is not None, out[-300:])
+            q.kill()
+            q.wait()
 
-        # Unencrypted (--no-encrypt), over the encrypted installation: boots without a passphrase
+            # UEFI with the USB stick also plugged in: the disk boots, not the stick
+            q, s = qemu_boot(tmp, [(disk, True), (IMAGE, True)], uefi=True, name="disk-uefi")
+            ok, _ = serial_login(s, q, passphrase="test-passphrase")
+            open(f"{RESULTS}/install-serial-uefi.txt", "w").write(s.text())
+            report("install-boots-uefi", ok, s.text()[-300:])
+            if ok:
+                out = serial_run(s, "findmnt -no SOURCE /; cat /proc/cmdline")
+                report("install-uefi-not-usb", re.search(r"^/dev/vda2$", out, re.M) is not None
+                       and "a105a105" not in out, out[-300:])
+            q.kill()
+            q.wait()
+
+        # Unencrypted (--no-encrypt), over the encrypted installation: boots without a passphrase.
+        # Always: the image update is tried on this disk
         q, s = qemu_boot(tmp, [(IMAGE, True), (disk, False)], name="usb-plain")
         ok, _ = serial_login(s, q)
         if not ok:
@@ -768,18 +823,20 @@ def install():
         q.wait()
         if "RC=0" not in out:
             return
-        q, s = qemu_boot(tmp, [(disk, True)], name="disk-plain")
-        ok, asked = serial_login(s, q)
-        open(f"{RESULTS}/install-serial-plain.txt", "w").write(s.text())
-        report("install-plain-boots", ok and asked == 0, f"passphrase asked {asked} times; {s.text()[-300:]}")
-        if ok:
-            out = serial_run(s, "findmnt -no SOURCE,FSTYPE /home; grep ENCRYPTED /etc/osyr/install.conf; "
-                                "ls /etc/crypttab 2>&1")
-            report("install-home-plain", re.search(r"^/dev/vda4 ext4$", out, re.M) is not None
-                   and "ENCRYPTED=no" in out and "No such file" in out, out[-300:])
-        q.kill()
-        q.wait()
-        update_image_test(tmp, disk)
+        if want("install"):
+            q, s = qemu_boot(tmp, [(disk, True)], name="disk-plain")
+            ok, asked = serial_login(s, q)
+            open(f"{RESULTS}/install-serial-plain.txt", "w").write(s.text())
+            report("install-plain-boots", ok and asked == 0, f"passphrase asked {asked} times; {s.text()[-300:]}")
+            if ok:
+                out = serial_run(s, "findmnt -no SOURCE,FSTYPE /home; grep ENCRYPTED /etc/osyr/install.conf; "
+                                    "ls /etc/crypttab 2>&1")
+                report("install-home-plain", re.search(r"^/dev/vda4 ext4$", out, re.M) is not None
+                       and "ENCRYPTED=no" in out and "No such file" in out, out[-300:])
+            q.kill()
+            q.wait()
+        if want("update-image"):
+            update_image_test(tmp, disk)
     except (OSError, subprocess.SubprocessError, ValueError) as e:
         report("install-setup", False, str(e))
     finally:
@@ -916,7 +973,7 @@ def update_image_test(tmp, disk):
 def boot_check(path, fmt):
     """Boots a publishable disk (e.g. the .ova's VMDK) in BIOS and in UEFI up to
     logging in as osyr: used by scripts/publish.sh before publishing."""
-    print(f"== boot: {path} ({fmt})", flush=True)
+    say(f"== boot: {path} ({fmt})")
     tmp = tempfile.mkdtemp(prefix="osyr-boot-", dir=os.path.join(ROOT, "build"))
     try:
         for uefi in (False, True):
@@ -948,20 +1005,31 @@ def audio_has_sound(path):
 
 
 def main():
+    global log
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
+    vm_parts = [name for name, _ in vm_sections()[1] if name != "end"] + ["firstboot"]
+    unknown = [x for x in ONLY if x not in vm_parts and x not in INSTALL_PARTS]
+    if unknown:
+        print(f"ONLY: no part called {', '.join(unknown)}.\n  vm: {' '.join(vm_parts)}\n"
+              f"  install: {' '.join(INSTALL_PARTS)}")
+        return 2
     os.makedirs(RESULTS, exist_ok=True)
+    log = open(f"{RESULTS}/run-{time.strftime('%Y%m%d-%H%M')}-{which}.log", "w")
+    if os.path.exists(f"{TARGET}/etc/osyr/build-info"):
+        say("Image: " + " ".join(open(f"{TARGET}/etc/osyr/build-info").read().split()))
     if which == "boot":  # tests/run.py boot DISK [format]
         boot_check(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "raw")
-    if which in ("native", "all"):
+    if which == "native" or which == "all" and not ONLY:
         native()
-    if which in ("vm", "all"):
+    if which in ("vm", "all") and (not ONLY or any(x in vm_parts for x in ONLY)):
         vm()
-    if which in ("install", "all"):
+    if which in ("install", "all") and (not ONLY or any(x in INSTALL_PARTS for x in ONLY)):
         install()
     failed = [r for r in results if not r[1]]
-    print(f"\n{len(results) - len(failed)}/{len(results)} passed. Details in {RESULTS}/")
+    say(f"\n{len(results) - len(failed)}/{len(results)} passed"
+        + (f" (only {' '.join(ONLY)})" if ONLY else "") + f". Details in {RESULTS}/")
     for name, _, detail in failed:
-        print(f"  FAIL {name}: {detail}")
+        say(f"  FAIL {name}: {detail}")
     return 1 if failed or not results else 0
 
 

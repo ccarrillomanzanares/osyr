@@ -4,6 +4,8 @@
 # "FAIL name: detail". All test data goes to /run or /tmp: the VM boots in
 # snapshot mode and nothing is left when it shuts down.
 # Variables: HOST (the VPS as seen from QEMU), GITPORT, MOCKPORT, PW (password).
+# Every section starts with '# --- [name]': 'make test-vm ONLY=name,name' runs only those
+# (tests/run.py cuts the script there), so a section must not need an earlier one.
 HOST=${HOST:-10.0.2.2}; PW=${PW:-osyr}
 S() { echo "$PW" | sudo -S -p "" "$@"; }
 pass() { echo "PASS $1"; }
@@ -19,7 +21,7 @@ jcode() { python3 -c 'import json,sys; print(json.loads(sys.stdin.read().strip()
 # does not allow capturing a locked screen. Paused during the checks.
 pkill -STOP -x swayidle
 
-# --- System ---------------------------------------------------------------------
+# --- [system] System ---------------------------------------------------------------------
 # No dependency cycles at boot: systemd breaks them by dropping jobs
 # (with osyr-zram badly ordered, the /tmp mount was lost)
 cyc=$(journalctl -b --no-pager | grep -c 'ordering cycle')
@@ -61,7 +63,7 @@ fb=$(fc-match -s "DejaVu Sans Mono" family | awk '!s[$0]++' | sed -n 2p)
 [ "$fb" = "Noto Color Emoji" ] && fc-list ':charset=1f680' family | grep -q 'Noto Color Emoji' \
     && pass emoji-font || fail emoji-font "fallback: $fb"
 
-# --- Network ---------------------------------------------------------------------
+# --- [network] Network ---------------------------------------------------------------------
 check net-status osyr net status
 [ "$(osyr net status --json | jcode)" = OK ] && pass net-json || fail net-json "not OK"
 
@@ -124,7 +126,7 @@ r=$(python3 /tmp/wifi-drive.py 2>&1)
 echo "$r" | grep -q HIDDEN && echo "$r" | grep -q '"code": "OK"' && pass agent-wifi-password || fail agent-wifi-password "$(echo "$r" | tail -2 | tr '\n' ' ')"
 check wifi-disconnect osyr net wifi disconnect
 
-# --- Sound -------------------------------------------------------------------------
+# --- [sound] Sound -------------------------------------------------------------------------
 for u in pipewire pipewire-pulse wireplumber; do
     [ "$(systemctl --user is-active $u)" = active ] && pass "audio-$u" || fail "audio-$u" "$(systemctl --user is-active $u)"
 done
@@ -175,11 +177,11 @@ out=$(timeout 900 /opt/whisper/bin/whisper-cli -m /usr/share/osyr/models/whisper
 [ $rc -eq 0 ] && ! echo "$out" | grep -q GGML_ASSERT && pass voice-whisper-runs || fail voice-whisper-runs "rc=$rc $(echo "$out" | grep -m1 -E 'ASSERT|error')"
 ls /lib/firmware/intel/sof/sof-icl.ri >/dev/null 2>&1 && ls /usr/share/alsa/ucm2 >/dev/null 2>&1 && pass audio-sof-ucm || fail audio-sof-ucm "SOF or UCM missing"
 
-# --- Help (Super+F1): the same as https://ccmai.org/osyr/help.html ---------------
+# --- [help] Help (Super+F1): the same as https://ccmai.org/osyr/help.html ---------------
 osyr-help --plain 2>&1 | grep -q "Keyboard shortcuts" && grep -q 'mod+F1 exec.*osyr-help' /etc/sway/config && \
     pass help || fail help "$(osyr-help --plain 2>&1 | head -2)"
 
-# --- Screen and diagnostics -----------------------------------------------------------
+# --- [screen] Screen and diagnostics -----------------------------------------------------------
 # The VM is slow: swayidle will have turned the screen off and grim would have nothing to copy
 SWAYSOCK=$(ls /run/user/$(id -u)/sway-ipc.*.sock 2>/dev/null | head -1) swaymsg 'output * power on' >/dev/null
 sleep 3  # until sway draws a frame, grim fails ("failed to copy output")
@@ -206,7 +208,7 @@ t=$(sed -n 's/.*saved \(\/tmp\/[^ ]*\.tar\.gz\).*/\1/p' /tmp/diag.out)
 [ -n "$t" ] && gzip -dc "$t" | tar -tf - | grep -q 'screenshots/osyr-' && pass diag-screenshots || fail diag-screenshots "$(tail -2 /tmp/diag.out)"
 gzip -dc "$t" | tar -tf - | grep -q 'audio.txt' && pass diag-audio || fail diag-audio "no audio.txt"
 
-# --- Desktop: lock, notifications, displays -------------------------------------------
+# --- [desktop] Desktop: lock, notifications, displays -------------------------------------------
 export WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}
 for p in swayidle mako; do pgrep -x $p >/dev/null && pass "desktop-$p" || fail "desktop-$p" "not running"; done
 command -v swaylock >/dev/null && pass desktop-swaylock || fail desktop-swaylock "missing"
@@ -234,11 +236,11 @@ if [ "${n:-0}" -ge 2 ]; then
     ls ~/.config/sway/config.d/50-osyr-displays.conf >/dev/null && pass display-remembered || fail display-remembered "no config saved"
 fi
 
-# --- Bluetooth (the VM has no adapter: it must say so, not fail) -----------------------
+# --- [bluetooth] Bluetooth (the VM has no adapter: it must say so, not fail) -----------------------
 { [ "$(systemctl is-active bluetooth)" = active ] || [ ! -d /sys/class/bluetooth ]; } && pass bt-service || fail bt-service "$(systemctl is-active bluetooth)"
 c=$(osyr bt status --json | jcode); { [ "$c" = OK ] || [ "$c" = BT_NO_ADAPTER ]; } && pass bt-status || fail bt-status "$c"
 
-# --- Hardware self-test ----------------------------------------------------------------
+# --- [selftest] Hardware self-test ----------------------------------------------------------------
 osyr sys selftest --json > /tmp/selftest.json 2>&1
 python3 - <<'PY' && pass selftest-runs || fail selftest-runs "$(tail -c 200 /tmp/selftest.json)"
 import json
@@ -258,7 +260,7 @@ m=$(osyr ai status --json | wj 'd["data"]["model"] if d["ok"] else "not-answerin
 a=$(osyr ai advise --json | wj '"%s %s" % (len(d["data"]["options"]), d["data"]["recommended"])')
 case "$a" in "3 local"|"3 server") pass ai-advise ;; *) fail ai-advise "$a" ;; esac
 
-# --- External provider ------------------------------------------------------------------
+# --- [provider] External provider ------------------------------------------------------------------
 [ -n "$MOCKPORT" ] && {
     check ai-add osyr ai add mock --url "http://$HOST:$MOCKPORT/v1" --api-key secret123 --key-header X-API-Key
     [ "$(osyr ai use mock --json | jcode)" = CONFIRM_REQUIRED ] && pass ai-use-needs-confirm || fail ai-use-needs-confirm "?"
@@ -273,7 +275,7 @@ case "$a" in "3 local"|"3 server") pass ai-advise ;; *) fail ai-advise "$a" ;; e
     osyr ai use local >/dev/null; osyr ai remove mock >/dev/null
 }
 
-# --- Image update: a manifest signed by another key is rejected ----------------------
+# --- [image-signer] Image update: a manifest signed by another key is rejected ----------------------
 ssh-keygen -q -t ed25519 -N "" -f /tmp/badkey >/dev/null 2>&1
 printf 'VERSION=v0.0.0\nCOMMIT=0000000\nIMAGE_SHA256=0\nIMAGE_SIZE=1\nROOT_OFFSET=0\nROOT_SIZE=1\nROOT_SHA256=0\n' > /tmp/bad.manifest
 ssh-keygen -Y sign -f /tmp/badkey -n osyr-image /tmp/bad.manifest >/dev/null 2>&1
@@ -284,7 +286,7 @@ except image.ImageError as e:
     print("REJECTED", e)' > /tmp/badsig.out 2>&1
 grep -q '^REJECTED.*not signed by an OSYR release key' /tmp/badsig.out && pass image-bad-signature || fail image-bad-signature "$(tail -2 /tmp/badsig.out | tr '\n' ' ')"
 
-# --- Update via git ---------------------------------------------------------------------
+# --- [update] Update via git ---------------------------------------------------------------------
 [ -n "$GITPORT" ] && {
     printf "REPO=http://$HOST:$GITPORT/osyr.git\nBRANCH=main\nCHANNEL=release\n" > /tmp/u.conf
     S cp /tmp/u.conf /etc/osyr/update.conf
@@ -313,13 +315,13 @@ grep -q '^REJECTED.*not signed by an OSYR release key' /tmp/badsig.out && pass i
         pass update-no-reboot || fail update-no-reboot "$(tail -3 /tmp/upd-apply.out | tr '\n' ' ')"
     S osyr update code rollback >/dev/null && ! command -v osyr-test-update >/dev/null && pass update-rollback || fail update-rollback "?"
 }
-# --- Clipboard and dictation (wl-clipboard, wtype) ----------------------------------------
+# --- [clipboard] Clipboard and dictation (wl-clipboard, wtype) ----------------------------------------
 export WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}
 printf 'copied text ñ' | wl-copy && [ "$(wl-paste --no-newline)" = "copied text ñ" ] && pass clipboard || fail clipboard "$(wl-paste 2>&1 | head -1)"
 # Only presses and releases Shift: types nothing into the chat window
 wtype -M shift -m shift && pass dictate-wtype || fail dictate-wtype "virtual keyboard refused"
 
-# --- Pairing a provider (osyr ai pair) end to end -------------------------------------------
+# --- [pair] Pairing a provider (osyr ai pair) end to end -------------------------------------------
 # The "browser" encrypts the key with openssl, like WebCrypto (RSA-OAEP SHA-256)
 [ -n "$PAIRPORT" ] && [ -n "$MOCKPORT" ] && {
 cat > /tmp/pair-drive.py <<'PYEOF'
@@ -364,7 +366,7 @@ echo "$r" | grep -q PAIRED && osyr ai list | grep "paired" | grep -q "context=40
 osyr ai use local >/dev/null; osyr ai remove paired >/dev/null
 }
 
-# --- Reminders ---------------------------------------------------------------------------
+# --- [reminders] Reminders ---------------------------------------------------------------------------
 R=$HOME/.local/share/osyr/reminders.json
 st() { python3 -c "import json,sys; print([r.get('done') for r in json.load(open('$R')) if r['id']==sys.argv[1]][0])" "$1"; }
 id1=$(osyr remind add 3s "test reminder" --json | python3 -c 'import json,sys; print(json.loads(sys.stdin.read().strip().splitlines()[-1])["data"].get("id"))')
@@ -387,7 +389,7 @@ python3 -c "import json; d=json.load(open('$R')); d.append({'id':'old001','when'
 m=$(osyr remind restore --json | python3 -c 'import json,sys; print(json.loads(sys.stdin.read().strip().splitlines()[-1])["data"].get("missed"))')
 [ "$m" = 1 ] && pass remind-restore || fail remind-restore "missed=$m"
 
-# --- USB and external disks: mounted automatically (osyr-automount), osyr disk ---------
+# --- [disks] USB and external disks: mounted automatically (osyr-automount), osyr disk ---------
 d=$(osyr disk list --json | wj '[x["path"] for x in d["data"]["disks"] if x["name"]=="OSYRTEST"][0]' 2>/dev/null)
 [ "$d" = /run/media/osyr/OSYRTEST ] && pass disk-automount || fail disk-automount "$(osyr disk list 2>&1 | tail -2); $(systemctl status 'osyr-automount@*' --no-pager 2>&1 | tail -3 | tr '\n' ' ')"
 osyr files list "$d" --json | wj 'd["data"]["entries"]' | grep -q hello.txt && pass disk-files || fail disk-files "?"
@@ -404,7 +406,7 @@ b="$d/OSYR-backup/osyr"
 ! findmnt -rno TARGET | grep -q '^/run/media/osyr/.*vda' && pass disk-not-system || fail disk-not-system "?"
 [ "$(systemctl is-active osyr-diskwatch)" = active ] && pass diskwatch-running || fail diskwatch-running "$(systemctl status osyr-diskwatch --no-pager 2>&1 | tail -3 | tr '\n' ' ')"
 
-# --- Files and help for the agent (osyr files, osyr doc) -----------------------------------
+# --- [files] Files and help for the agent (osyr files, osyr doc) -----------------------------------
 mkdir -p ~/Documents/Bills; echo "Electricity bill October 54 EUR" > ~/Documents/Bills/bill-october.txt
 [ "$(osyr files find bill --json | wj 'd["data"]["files"][0]["path"]')" = "~/Documents/Bills/bill-october.txt" ] \
     && pass files-find || fail files-find "$(osyr files find bill 2>&1 | tail -2)"
@@ -420,7 +422,7 @@ osyr doc screen lock --json | wj '[s["topic"] for s in d["data"]["sections"]]' |
 [ "$(osyr doc quantum physics --json | jcode)" = DOC_NOT_FOUND ] && pass doc-not-found || fail doc-not-found "?"
 rm -rf ~/Documents/Bills
 
-# --- Browser (osyr web: cog driven by WebDriver) ------------------------------------------
+# --- [browser] Browser (osyr web: cog driven by WebDriver) ------------------------------------------
 # Over HTTP on 127.0.0.1: osyr web only opens http(s) (file:// would give the model local files)
 mkdir -p /tmp/webt
 cat > /tmp/webt/web.html <<'HTML'
@@ -457,7 +459,7 @@ done
 # in QEMU these are only reported (they are what has to be checked on the laptop)
 for t in web-window web-cookie web-codecs; do echo "INFO hwtest $(grep -m1 " $t " /tmp/hwtest-web.out)"; done
 
-# --- Idle lock (osyr-idle, osyr ui lock) -------------------------------------------------
+# --- [idle] Idle lock (osyr-idle, osyr ui lock) -------------------------------------------------
 idleargs() { tr '\0' ' ' < "/proc/$(pgrep -xn swayidle)/cmdline" 2>/dev/null; }
 echo "$(idleargs)" | grep -q 'timeout 1200 osyr-idle lock' && pass idle-default-20min || fail idle-default-20min "$(idleargs)"
 export SWAYSOCK=$(ls /run/user/$(id -u)/sway-ipc.*.sock 2>/dev/null | head -1)
@@ -478,7 +480,7 @@ osyr-idle lock; sleep 1
 if pgrep -x swaylock >/dev/null; then fail idle-paused "swaylock started (one before: $pre)"; pkill -x swaylock; else pass idle-paused; fi
 S rm -f /run/osyr/no-idle
 
-# --- Guided hardware test (osyr-hwtest): no questions, what needs neither the graphical
+# --- [hwtest] Guided hardware test (osyr-hwtest): no questions, what needs neither the graphical
 # session nor the model; the result is collected by osyr-diag --quick
 HW=$HOME/.local/state/osyr/hwtest
 rm -rf "$HW"
@@ -496,11 +498,11 @@ t4=$(sed -n 's/.*saved \(\/tmp\/[^ ]*\.tar\.gz\).*/\1/p' /tmp/diag4.out)
 gzip -dc "$t4" | tar -xOf - "$(basename "$t4" .tar.gz)/description.txt" 2>/dev/null | grep -q '^the wifi drops$' && \
     pass diag-description || fail diag-description "$(tail -2 /tmp/diag4.out | tr '\n' ' ')"
 
-# --- Memory: compressed swap in RAM -------------------------------------------------------
+# --- [swap] Memory: compressed swap in RAM -------------------------------------------------------
 grep -q '^/dev/zram0' /proc/swaps && [ "$(cat /proc/sys/vm/swappiness)" = 150 ] && pass zram-swap || \
     fail zram-swap "$(cat /proc/swaps | tail -1) swappiness=$(cat /proc/sys/vm/swappiness)"
 
-# --- Temperature and power -------------------------------------------------------------
+# --- [power] Temperature and power -------------------------------------------------------------
 c=$(osyr sys thermal --json | jcode); { [ "$c" = OK ] || [ "$c" = THERMAL_NO_SENSOR ]; } && pass sys-thermal || fail sys-thermal "$c"
 osyr sys power --json | grep -q '"on_ac": true' && pass power-on-ac || fail power-on-ac "$(osyr sys power 2>&1)"
 [ "$(systemctl show -p Result --value osyr-power.service)" = success ] && pass power-service || \
@@ -508,7 +510,7 @@ osyr sys power --json | grep -q '"on_ac": true' && pass power-on-ac || fail powe
 [ -z "$(S osyr sys power apply --profile battery --json | grep -v '"ok": true')" ] && pass power-battery-apply || fail power-battery-apply "?"
 S osyr sys power apply --profile ac >/dev/null
 
-# --- One voice at a time: the second cuts off the whole first one; speaking (recording) silences it ---
+# --- [voices] One voice at a time: the second cuts off the whole first one; speaking (recording) silences it ---
 python3 - > /tmp/voices.out 2>&1 <<'PYEOF'
 import sys, time, subprocess
 sys.path.insert(0, "/usr/lib/osyr")
@@ -524,7 +526,7 @@ print(g, a > 0, n(), voice.speaking())
 PYEOF
 [ "$(tail -1 /tmp/voices.out)" = "1 True 0 False" ] && pass voice-one-at-a-time || fail voice-one-at-a-time "$(tail -3 /tmp/voices.out | tr '\n' ' ')"
 
-# --- The agent's shell tool, with a real terminal and a real password --------------------
+# --- [shell] The agent's shell tool, with a real terminal and a real password --------------------
 # The chat's own function (osyr-chat, run_shell) in a new terminal, where sudo has no
 # password remembered: the "yes" and the password are typed as a person would.
 cat > /tmp/shell-drive.py <<'PYEOF'
@@ -602,7 +604,7 @@ python3 -B /tmp/shell-drive.py "$PW" 2>&1 | grep -E '^(PASS|FAIL) ' > /tmp/shell
 grep -q '"command": "sudo id -u"' ~/.local/state/osyr/shell.log && ! grep -q 'id -u' ~/.local/state/osyr/chat.log 2>/dev/null \
     && pass shell-audit || fail shell-audit "$(tail -1 ~/.local/state/osyr/shell.log 2>&1 | cut -c1-200)"
 
-# --- Programs in the box: the real container engine, Debian and its package manager -------
+# --- [box] Programs in the box: the real container engine, Debian and its package manager -------
 # (needs the Internet: Debian's image and packages. /home is small in the test image:
 # one tiny program, 'hello', and one with a window, 'xterm' is not Wayland: 'foot')
 [ "$(stat -c '%a %U' /usr/bin/newuidmap)" = "4755 root" ] && grep -q '^osyr:' /etc/subuid && pass box-ids || fail box-ids "$(stat -c '%a %U' /usr/bin/newuidmap) $(cat /etc/subuid)"
@@ -651,7 +653,7 @@ r=$(osyr box reset --json); t=$(echo "$r" | wj 'd["confirm"]')
     && [ -f ~/box-visible.txt ] && pass box-reset || fail box-reset "$(echo "$r" | cut -c1-200)"
 rm -f ~/.ssh/id_test ~/box-visible.txt ~/box-made.txt; podman rmi -a -f >/dev/null 2>&1
 
-# --- Neural voice (Piper): synthesizes a real sentence with each language's voice --------
+# --- [piper] Neural voice (Piper): synthesizes a real sentence with each language's voice --------
 for l in es en; do
     d=/usr/share/osyr/models/piper/$l
     rm -f /tmp/piper-$l.wav
@@ -663,18 +665,21 @@ for l in es en; do
         fail voice-piper-$l "${s:-no wav}: $(tail -2 /tmp/piper-$l.out | tr '\n' ' ')"
 done
 
-# --- On-demand vision: the first request to 8084 starts the server with the projector
+# --- [vision] On-demand vision: the first request to 8084 starts the server with the projector
 if curl -sf -m 300 http://127.0.0.1:8084/health >/dev/null; then pass vision-on-demand
 else fail vision-on-demand "$(systemctl status osyr-llama-vision --no-pager 2>&1 | tail -3 | tr '\n' ' ')"; fi
 pgrep -af llama-server | grep -q -- '--mmproj' && pass vision-server-up || fail vision-server-up "$(pgrep -af llama-server | cut -c1-120)"
 S systemctl stop osyr-llama-vision-proxy.service
 
-# --- A downloaded model: it lives in /home/.osyr/models and the service, which sees
+# --- [models] A downloaded model: it lives in /home/.osyr/models and the service, which sees
 # nothing else of /home, loads it from there. Last, because it reloads the model.
 check ai-local-list osyr ai local list
-if [ "$(df -m /home | awk 'NR==2 {print $4}')" -gt 4000 ]; then
-    S mkdir -p /home/.osyr/models
-    S cp /usr/share/osyr/models/Qwen3.5-4B-Q4_K_M.gguf /home/.osyr/models/copy-of-4B.gguf
+# (a hard link where /home is on the system's partition, as in the USB image: the copy does
+# not fit there)
+S mkdir -p /home/.osyr/models
+if S ln /usr/share/osyr/models/Qwen3.5-4B-Q4_K_M.gguf /home/.osyr/models/copy-of-4B.gguf 2>/dev/null || {
+        [ "$(df -m /home | awk 'NR==2 {print $4}')" -gt 4000 ] &&
+        S cp /usr/share/osyr/models/Qwen3.5-4B-Q4_K_M.gguf /home/.osyr/models/copy-of-4B.gguf; }; then
     S sed -i 's|^MODEL=.*|MODEL=/home/.osyr/models/copy-of-4B.gguf|' /etc/osyr/llama.conf
     S systemctl restart osyr-llama
     i=0; while [ $i -lt 120 ] && ! curl -sf -m 5 http://127.0.0.1:8083/health >/dev/null; do sleep 5; i=$((i + 1)); done
@@ -686,5 +691,7 @@ if [ "$(df -m /home | awk 'NR==2 {print $4}')" -gt 4000 ]; then
 else
     fail model-from-home "less than 4 GB free in /home"
 fi
+
+# --- [end] Always run
 pkill -CONT -x swayidle
 echo "CHECKS DONE"
