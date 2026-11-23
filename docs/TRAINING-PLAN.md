@@ -141,7 +141,7 @@ After the freeze a change is possible, but it forces the baseline to be measured
 
 Result: 30 to 50 tasks with a final-state verifier, run with a single command, and a list of what Carlos misses when using the system.
 
-1. **Define the task format.** One file per task with: initial state, user request, language, mode (text or voice), level (1, 2 or 3), verifier and expected behaviour (for example, asking for confirmation before changing something). A task is a family: besides the language and voice variants, the same situation is sampled into several variants (file names, values, the wording of the request), so that a score has an interval and the training data is not the same thirty conversations repeated (23 Nov; [BENCH-TASK-FORMAT.md](BENCH-TASK-FORMAT.md) is still to be updated with this).
+1. **Define the task format.** One file per task with: initial state, user request, language, mode (text or voice), level (1, 2 or 3), verifier and expected behaviour (for example, asking for confirmation before changing something). A task is a family: besides the language and voice variants, the same situation is sampled into several variants (file names, values, the wording of the request), so that a score has an interval and the training data is not the same thirty conversations repeated (23 Nov; [BENCH-TASK-FORMAT.md](BENCH-TASK-FORMAT.md) describes it).
 2. **Write the runner.** It starts from the native phase of `tests/run.py`. It saves the full trajectory (messages and tool calls) as JSON. The verifier looks at the final state and the trajectory, never at the terminal text. The runner sets the temperature to 0.
 3. **Write the tasks** by category:
     - Reading without changes and changes with confirmation (what exists today).
