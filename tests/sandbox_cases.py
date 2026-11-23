@@ -47,7 +47,7 @@ def doubles(tmp):
              ("mode", "ui display mode HDMI-A-1 1280x720"), ("off", "ui display off eDP-1"),
              ("last", "ui display off HDMI-A-1"), ("btscan", "bt scan --seconds 1"),
              ("btconn", "bt connect sony"), ("btpin", "bt connect keychron"), ("bt", "bt status"),
-             ("thermal", "sys thermal")]
+             ("thermal", "sys thermal"), ("power", "sys power"), ("loose", "files read shopping_list.txt")]
     script = "\n".join(f'echo "== {m}"; osyr --json {c}' for m, c in steps)
     script = script.replace('echo "== status1"', 'echo "== wrong"; echo wrongpass1 | osyr --json net wifi connect '
                             'casa-lopez --password-stdin\necho "== right"; echo girasol2026 | osyr --json net wifi '
@@ -76,6 +76,8 @@ def doubles(tmp):
     check("bt-status", [x["name"] for x in r("bt").get("data", {}).get("devices", []) if x["connected"]]
           == ["Sony WH-1000XM4"], r("bt"))
     check("thermal", r("thermal").get("data", {}).get("temp_c") == 47, r("thermal"))
+    check("battery", r("power").get("data", {}).get("battery") == {"percent": 76, "status": "Charging"}, r("power"))
+    check("file-name-loosely", r("loose").get("ok") is True, r("loose"))
 
 
 def isolation(tmp):
@@ -94,6 +96,26 @@ def isolation(tmp):
     check("no-sudo", "administrator commands are not available" in out, out)
     check("sample-files", "\n4\n" in out, out)
     check("home-capped", "256 MiB" in out, out)
+    out = session(tmp, """python3 - <<'P'
+import ctypes, os, socket, threading
+libc = ctypes.CDLL(None, use_errno=True)
+for nr in (101, 165, 250, 272, 321, 425):   # ptrace, mount, keyctl, unshare, bpf, io_uring_setup
+    print("call", libc.syscall(nr, 0, 0, 0, 0), ctypes.get_errno())
+print("clone-newuser", libc.syscall(56, 0x10000000 | 17, 0, 0, 0, 0), ctypes.get_errno())
+for family in (16, 17, 38):                 # netlink, packet, alg
+    try:
+        socket.socket(family, socket.SOCK_DGRAM)
+        print("socket open")
+    except OSError as e:
+        print("socket", e.errno)
+t = threading.Thread(target=lambda: print("thread ok"))
+t.start()
+t.join()
+print("fork", os.system("true"))
+P""")
+    check("calls-refused", out.count("call -1 1") == 6 and "clone-newuser -1 1" in out, out)
+    check("sockets-refused", out.count("socket 97") == 3, out)
+    check("threads-and-forks", "thread ok" in out and "fork 0" in out, out)
     # Each session starts from scratch
     again = session(tmp, "ls $HOME/big 2>&1; osyr --json ui brightness")
     check("starts-clean", "No such file" in again and '"percent": 50' in again, again)
@@ -147,9 +169,10 @@ def gate(tmp):
         http("/v1/chat/completions", "POST", msg, sock)
         check("gate-session-cap", http("/v1/chat/completions", "POST", msg, sock)[0] == 429)
         g.left = 5
-        http("/v1/chat/completions", "POST", {"messages": [{"role": "system", "content": "FIXED"},
+        http("/v1/chat/completions", "POST", {"messages": [{"role": "system", "content": "a visitor's"},
                                                            {"role": "user", "content": "hi"}]}, sock)
-        check("gate-keeps-fixed-prompt", up.prefix == ("FIXED", None), up.prefix)
+        check("gate-keeps-nothing", up.prefix is None, up.prefix)
+        up.prefix = ("FIXED", None)
         check("gate-warm", modelgate.warm(up) is not None)
         up.key = "wrong"
         st, body = http("/v1/chat/completions", "POST", msg, sock)
@@ -220,6 +243,8 @@ def visitor():
     check("visitor-direct", who("198.51.100.7", "1.2.3.4") == "198.51.100.7")       # the header is not believed
     check("visitor-web-server", who("127.0.0.1", "203.0.113.9") == "203.0.113.9")
     check("visitor-behind-cdn", who("127.0.0.1", "9.9.9.9, 203.0.113.9, 172.68.1.1") == "203.0.113.9")
+    check("visitor-ipv6-64", who("127.0.0.1", "2001:db8:1:2:aaaa::1") == who("127.0.0.1", "2001:db8:1:2:bbbb::9")
+          and who("127.0.0.1", "2001:db8:1:3::1") != who("127.0.0.1", "2001:db8:1:2::1"))
     check("visitor-forged", who("127.0.0.1", "not an address") == "not an address")  # one bucket for them all
 
 
@@ -264,6 +289,9 @@ def service(tmp):
         check("service-next-in-queue", b.until("started", 30)[0] is not None)
         open(os.path.join(tmp, "off"), "w").close()
         check("service-switch-ends", (b.until("end", 20)[0] or {}).get("why") == "off")
+        held = [Browser(port, "X-Forwarded-For: 203.0.113.77\r\n") for _ in range(4)]  # they say nothing
+        check("service-connections-per-address", Browser(port, "X-Forwarded-For: 203.0.113.77\r\n").status == 503
+              and all(h.status == 101 for h in held))
         d = Browser(port, "X-Forwarded-For: 203.0.113.10\r\n")
         d.send({"t": "start", "code": "letmein"})
         check("service-switch-refuses", (d.until("end", 10)[0] or {}).get("why") == "off")

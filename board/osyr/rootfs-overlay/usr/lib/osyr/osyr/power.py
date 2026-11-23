@@ -233,6 +233,15 @@ def llama_restart(args):
     return Result(True, "OK", {"llama": r}, text=f"llama: {r}")
 
 
+def battery():
+    """The charge of the (first) battery: {"percent", "status"}; None on a machine without one."""
+    for b in sorted(glob.glob(os.path.join(SYSFS, "class", "power_supply", "BAT*"))):
+        cap = _read(os.path.join(b, "capacity"))
+        if cap and cap.strip().isdigit():
+            return {"percent": int(cap), "status": (_read(os.path.join(b, "status")) or "").strip() or None}
+    return None
+
+
 def show(args):
     st = load_state()
     data = {"on_ac": on_ac(), "profile": st.get("profile"), "config": config(),
@@ -240,7 +249,11 @@ def show(args):
     epp = _read(os.path.join(SYSFS, "devices", "system", "cpu", "cpufreq", "policy0",
                              "energy_performance_preference"))
     data["epp"] = epp
-    text = (f'{"Plugged in" if data["on_ac"] else "On battery"}; profile {data["profile"] or "not applied"}'
+    data["battery"] = battery()
+    b = data["battery"]
+    text = (f'{"Plugged in" if data["on_ac"] else "On battery"}'
+            + (f'; battery {b["percent"]}%' + (f' ({b["status"].lower()})' if b.get("status") else "") if b else "")
+            + f'; profile {data["profile"] or "not applied"}'
             + (f"; CPU preference {epp}" if epp else ""))
     return Result(True, "OK", data, text=text)
 

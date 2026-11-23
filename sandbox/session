@@ -64,8 +64,15 @@ $(grep -v '^osyr:' "$ROOT/etc/group")
 osyr:x:1000:
 EOF
 
+# The system-call filter, as a descriptor too
+filter=$(mktemp)
+python3 "$HERE/seccomp.py" > "$filter"
+exec 5<"$filter"
+rm -f "$filter"
+
 set -- bwrap \
-    --unshare-all --uid 1000 --gid 1000 --die-with-parent --clearenv \
+    --unshare-all --unshare-user --disable-userns --uid 1000 --gid 1000 --hostname osyr \
+    --die-with-parent --clearenv --seccomp 5 \
     --ro-bind "$ROOT" / \
     --proc /proc --dev /dev \
     --tmpfs /tmp --tmpfs /run --dir /run/user/1000 --dir /run/osyr/hw \
@@ -78,6 +85,7 @@ set -- bwrap \
     --ro-bind "$HERE/bin" /run/osyr/bin \
     --ro-bind "$HERE/inside.sh" /run/osyr/inside.sh \
     --ro-bind "$HERE/relay.py" /run/osyr/relay.py \
+    --ro-bind "$HERE/prefix.py" /run/osyr/prefix.py \
     --setenv HOME /home/osyr --setenv USER osyr --setenv LOGNAME osyr --setenv SHELL /bin/bash \
     --setenv PATH /run/osyr/bin:/run/osyr/doubles:/usr/bin:/bin:/usr/sbin:/sbin \
     --setenv LANG "$LANG_IN" --setenv TERM "${TERM:-xterm-256color}" \

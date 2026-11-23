@@ -47,6 +47,12 @@ sudo rsync -a --delete --chown=root:root --exclude __pycache__ --exclude install
 sudo rsync -a --delete --chown=root:root --exclude __pycache__ "$REPO/tests/doubles/" "$DEST/tests/doubles/"
 sudo chmod -R a+rX,go-w "$DEST/sandbox" "$DEST/tests"
 git -C "$REPO" rev-parse --short HEAD | sudo tee "$DEST/commit" >/dev/null
+# The chat's fixed prompt, as a session's chat sends it: the service has the model read it ahead
+tmpd=$(mktemp -d)
+OSYR_SANDBOX_LIMITS=0 "$DEST/sandbox/session" "$tmpd" python3 /run/osyr/prefix.py > "$tmpd/prefix.json"
+python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); assert len(d["system"]) > 1000 and d["tools"]' "$tmpd/prefix.json"
+sudo install -m 0644 "$tmpd/prefix.json" "$DEST/prefix.json"
+rm -rf "$tmpd"
 
 if ! sudo test -f "$ETC/config.json"; then
     code=$(python3 -c 'import secrets; print(secrets.token_urlsafe(9))')
@@ -56,7 +62,7 @@ if ! sudo test -f "$ETC/config.json"; then
  "upstream": "http://127.0.0.1:18190/v1",
  "extra": {"chat_template_kwargs": {"enable_thinking": false}},
  "warm_minutes": 20,
- "state": "/var/lib/osyr-sandbox/prefix.json",
+ "prefix_file": "/opt/osyr-sandbox/prefix.json",
  "context": 16384,
  "sessions": 2,
  "code": "$code",
@@ -96,7 +102,6 @@ RestartSec=5
 RuntimeDirectory=osyr-sandbox
 RuntimeDirectoryMode=0750
 LogsDirectory=osyr-sandbox
-StateDirectory=osyr-sandbox
 LogsDirectoryMode=0750
 # The sessions start through sudo, so no NoNewPrivileges here; the rest is closed
 ProtectSystem=strict

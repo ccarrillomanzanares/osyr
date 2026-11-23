@@ -52,6 +52,7 @@ SHELL = os.environ.get("OSYR_SHELL", "1") != "0"  # the shell tool (the benchmar
 # The write and edit tools are off unless asked for: the untrained 4B model misuses them (it
 # "answers" a question about a file by writing a new one). See docs/TRAINING-LOG.md, 13 Nov 2026.
 WRITE = os.environ.get("OSYR_WRITE", "0") == "1"
+SANDBOX = os.environ.get("OSYR_SANDBOX") == "1"  # the web sandbox (sandbox/ in the repository): a pretend laptop
 TOOL_OUTPUT = 4000   # characters of tool output the model sees (~1,000 tokens)
 CHATS = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
                      "osyr", "chats")
@@ -194,7 +195,7 @@ TOOLS = [
             "- ui display list | ui display extend | ui display mirror\n"
             "- bt status | bt scan | bt connect <name>\n"
             "- sys selftest: test the hardware | sys thermal: CPU temperature and throttling | "
-            "sys power: on battery or plugged in, power profile\n"
+            "sys power: battery charge, plugged in or not, power profile\n"
             "- ai status | ai list: providers | ai models [provider]: models it offers\n"
             "- ai advise: whether this computer is fast enough for the local model, and the choices | "
             "ai local list: models on this computer (to change them, tell the user to type /model)\n"
@@ -1314,6 +1315,14 @@ HELP = ("Type a message. /voice to speak (or hold Super+Space), /look [question]
         "/update installs OSYR updates (/update undo goes back); /report sends a problem report.\n"
         "/permissions shows what you allowed without asking (answer 'a' to a question) and takes it back.\n"
         "Full help, keyboard shortcuts and a locked screen: Super+F1 (or osyr-help).")
+SANDBOX_HELP = ("THIS IS THE OSYR SANDBOX: a pretend laptop, yours for a few minutes. Nothing here is real\n"
+                "and nothing is kept. Ask in your own words, for example:\n"
+                "    which wifi networks are around?        turn the volume down a bit\n"
+                "    what is on my shopping list?           how hot is the processor?\n"
+                "    connect my Sony headphones             set a reminder in 10 minutes to call Ana\n"
+                "It asks before it changes anything: answer y or n.\n"
+                "/clear starts over, /history shows the conversation, /exit ends the session.\n"
+                "The real OSYR also speaks, listens, looks at the screen and installs programs; not here.")
 # Usage notice: the same text at first boot, in the help and on the website
 DISCLAIMER = ("OSYR is still in development and can make mistakes (so can its AI): check what it says and what it will do before you confirm.\n"
               "Do not give it sensitive data or use it for delicate operations (banking, payments, important files).\n"
@@ -1340,7 +1349,11 @@ def main():
             ok, err = aiconf.reachable(provider)
             if not ok:
                 dbg("unreachable", **pinfo(provider), error=str(err)[:300])
-            if ok:
+            if SANDBOX:
+                if not ok:
+                    print("THE ASSISTANT IS NOT ANSWERING RIGHT NOW. TRY AGAIN IN A FEW MINUTES.")
+                    return 1
+            elif ok:
                 print(f'REMOTE AI: {provider["name"]} ({provider["url"]})')
             else:
                 print(f'REMOTE AI {provider["name"]} NOT REACHABLE ({err}). USING LOCAL MODEL.')
@@ -1349,7 +1362,7 @@ def main():
     if not ready:
         return 1
     if not cont:
-        print(HELP + "\n")
+        print((SANDBOX_HELP if SANDBOX else HELP) + "\n")
         print(f"{DIM}{DISCLAIMER}{RESET}\n")
         if saved_chats():
             print(f"{DIM}Last conversation: {first_question(saved_chats()[0])} (/resume){RESET}\n")

@@ -132,15 +132,21 @@ def find(args):
 
 
 def by_name(name):
-    """Files in the home folder called exactly like this (accents and case aside)."""
+    """Files in the home folder called like this: accents and case aside and, if none
+    is, with '-', '_' and spaces taken as the same ('shopping_list.txt' for
+    'shopping-list.txt': people and models say the name, not its spelling)."""
     want = fold(name)
-    out = []
+    loose = lambda n: re.sub(r"[-_ ]+", "-", fold(n))  # noqa: E731
+    out, near = [], []
     for p in walk(HOME):
-        if fold(os.path.basename(p)) == want:
+        base = os.path.basename(p)
+        if fold(base) == want:
             out.append(p)
             if len(out) >= FIND_MAX:
                 break
-    return out
+        elif len(near) < FIND_MAX and loose(base) == loose(name):
+            near.append(p)
+    return out or near
 
 
 def list_(args):

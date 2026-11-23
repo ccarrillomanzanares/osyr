@@ -51,15 +51,17 @@ DEFAULTS = {
     "key_file": None, "key_header": "Authorization", "model": "", "context": 16384,
     "extra": {},              # fields added to every model request, e.g. {"chat_template_kwargs":
                               # {"enable_thinking": false}} for a llama-server
-    "warm_minutes": 0,        # keep the model server's copy of the chat's fixed prompt fresh: after
-                              # this long without a request, ask for it again (0: never)
-    "state": None,            # file where that fixed prompt is kept between restarts
+    "prefix_file": None,      # the chat's fixed prompt and tools (sandbox/prefix.py writes it at install)
+    "warm_minutes": 0,        # have the model server read that prompt ahead of the visitors, and again
+                              # after this long without a request (0: never)
     "parallel": 1,            # requests the model server takes at once
     "sessions": 3,            # sessions at once; the rest wait in a queue
     "queue": 20,              # visitors waiting; beyond that, "busy"
     "minutes": 15, "idle_minutes": 5,
     "requests": 150,          # model requests per session
     "per_address_hour": 6,    # sessions one address may start in an hour
+    "connections": 60,        # terminal connections open at once, whatever their state...
+    "per_address_connections": 4,   # ...and from one address
     "code": None,             # access code while the sandbox is private; None: open
     "off_file": None,         # if this file exists, nobody gets in (the switch)
     "log": None,              # one JSON line per event; None: standard output
@@ -88,43 +90,31 @@ class Service:
         self.waiting = collections.deque()   # tickets, in order of arrival
         self.starts = collections.defaultdict(collections.deque)  # address -> times of its sessions
         self.active = set()                  # addresses with a session or a place in the queue
+        self.open = collections.Counter()    # address -> its open terminal connections
         self.work = cfg["work"] or tempfile.mkdtemp(prefix="osyr-sandbox-")
         os.makedirs(self.work, exist_ok=True)
         self.log_file = open(cfg["log"], "a") if cfg["log"] else sys.stdout
         self.proxies = [ipaddress.ip_network(n) for n in cfg["trusted_proxies"]]
-        if cfg["state"] and os.path.exists(cfg["state"]):
-            try:
-                with open(cfg["state"]) as f:
-                    saved = json.load(f)
-                self.up.prefix = (saved["system"], saved.get("tools"))
-            except (OSError, ValueError, KeyError):
-                pass
-        if cfg["warm_minutes"]:
+        if cfg["prefix_file"] and cfg["warm_minutes"]:
+            with open(cfg["prefix_file"]) as f:
+                saved = json.load(f)
+            self.up.prefix = (saved["system"], saved.get("tools"))
             threading.Thread(target=self.keep_warm, daemon=True).start()
 
     def keep_warm(self):
-        """The chat's fixed prompt (never a visitor's words) is the same in every session:
-        the model server keeps it read, and here it is asked again before it forgets."""
-        saved = self.up.prefix
+        """Every session's conversation starts with the same prompt (the chat's own; no
+        visitor's words): on a CPU the model server takes minutes to read it."""
         while True:
-            up = self.up
-            if up.prefix and not self.off() and time.time() - up.used > self.cfg["warm_minutes"] * 60:
-                modelgate.warm(up, self.log)
-            if up.prefix != saved and self.cfg["state"]:
-                saved = up.prefix
-                try:
-                    with open(self.cfg["state"] + ".new", "w") as f:
-                        json.dump({"system": saved[0], "tools": saved[1]}, f)
-                    os.replace(self.cfg["state"] + ".new", self.cfg["state"])
-                except OSError as e:
-                    self.log(event="error", error=f"state: {e}")
+            if not self.off() and time.time() - self.up.used > self.cfg["warm_minutes"] * 60:
+                if modelgate.warm(self.up, self.log) is None:
+                    self.up.used = time.time() - self.cfg["warm_minutes"] * 60 + 120  # again in two minutes
             time.sleep(30)
 
     def visitor(self, peer, forwarded):
         """The visitor's address: the peer, or, behind the web server on this machine, the
         last address of X-Forwarded-For that is not one of the trusted proxies."""
         if peer not in ("127.0.0.1", "::1") or not forwarded:
-            return peer
+            return bucket(peer)
         hops = [h.strip() for h in forwarded.split(",") if h.strip()]
         for hop in reversed(hops):
             try:
@@ -132,8 +122,23 @@ class Service:
             except ValueError:
                 return hops[-1]
             if not any(ip in n for n in self.proxies):
-                return hop
+                return bucket(hop)
         return hops[-1] if hops else peer
+
+    def connect(self, address):
+        """Counts a terminal connection in; False if there are too many."""
+        with self.lock:
+            if (sum(self.open.values()) >= self.cfg["connections"]
+                    or self.open[address] >= self.cfg["per_address_connections"]):
+                return False
+            self.open[address] += 1
+            return True
+
+    def disconnect(self, address):
+        with self.lock:
+            self.open[address] -= 1
+            if self.open[address] <= 0:
+                del self.open[address]
 
     def log(self, **kw):
         kw = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), **kw}
@@ -275,6 +280,18 @@ class Service:
             self.log(event="session", seconds=round(time.time() - t0), why=why, requests=gate.requests,
                      tokens_in=gate.tokens_in, tokens_out=gate.tokens_out)
         return why
+
+
+def bucket(address):
+    """What counts as one visitor: an IPv4 address, or an IPv6 /64 (one home or one phone
+    has a whole /64 to pick addresses from)."""
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return address
+    if ip.version == 6:
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False).network_address) + "/64"
+    return address
 
 
 def resize(fd, cols, rows):
@@ -432,6 +449,16 @@ class Handler(BaseHTTPRequestHandler):
         origin, host = self.headers.get("Origin", ""), self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "")
         if origin and origin.split("://", 1)[-1] != host.split(",")[0].strip():
             return self.reply(403, b"wrong origin\n", "text/plain")  # only the sandbox's own page
+        address = self.address()
+        if not s.connect(address):
+            return self.reply(503, b"too many connections\n", "text/plain")
+        try:
+            self.terminal(address)
+        finally:
+            s.disconnect(address)
+
+    def terminal(self, address):
+        s = self.service
         key = self.headers.get("Sec-WebSocket-Key", "")
         accept = base64.b64encode(hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
         self.send_response(101)
@@ -441,7 +468,6 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
         ws = WebSocket(self.connection)
-        address = self.address()
         self.connection.settimeout(30)
         first = ws.receive()   # the 30 s stay: a visitor who stops mid-message is let go
         if not first or first.get("t") != "start":

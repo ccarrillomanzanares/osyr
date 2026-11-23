@@ -45,7 +45,8 @@ class Upstream:
         self.url = urllib.parse.urlsplit(url.rstrip("/"))
         self.name = name
         self.extra = extra or {}   # fields added to every request (the operator's, e.g. no reasoning)
-        self.prefix = None         # (system text, tools) of the last request: the same for every session
+        self.prefix = None         # (system text, tools): the start every session's conversation shares,
+                                   # given by the operator, never taken from a visitor's request
         self.used = 0.0            # when the server last answered a request
         self.key, self.key_header, self.model = key, key_header, model
         self.turns = threading.BoundedSemaphore(parallel)
@@ -263,9 +264,6 @@ class Gate:
             return self.answer(conn, 503, {"error": {"message": "the sandbox is busy; try again in a moment"}})
         t0 = time.time()
         usage = {}
-        first = req["messages"][0]
-        if first["role"] == "system" and isinstance(first.get("content"), str):
-            up.prefix = (first["content"], req.get("tools"))
         try:
             c = up.connect()
             c.request("POST", up.url.path + "/chat/completions", body=json.dumps({**req, **up.extra}).encode(),
