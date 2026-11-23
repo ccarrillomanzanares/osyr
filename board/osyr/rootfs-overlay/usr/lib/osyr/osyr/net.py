@@ -5,6 +5,7 @@ Wifi is handled by iwd: state and scans are read over D-Bus with busctl
 agent that hands the password to iwd. osyr is in wheel, which iwd's D-Bus
 policy allows to talk to it.
 """
+import argparse
 import getpass
 import json
 import os
@@ -461,6 +462,13 @@ def wifi_disconnect(args):
                   text=f'Disconnected from "{dev["ssid"]}".')
 
 
+class Words(argparse.Action):
+    """A name given as several words without quotes ('connect Sony WH-1000XM4') is one name."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, " ".join(values))
+
+
 def register(sub):
     p = sub.add_parser("net", help="network: status and wifi")
     s = p.add_subparsers(dest="action", required=True)
@@ -471,7 +479,7 @@ def register(sub):
     sc.add_argument("--device")
     sc.set_defaults(func=wifi_scan)
     c = w.add_parser("connect", help="connect to a network")
-    c.add_argument("ssid")
+    c.add_argument("ssid", nargs="+", action=Words)
     c.add_argument("--password", help="visible to other programs while it connects: better let it ask")
     c.add_argument("--password-stdin", action="store_true", help="read the password from the first line of stdin")
     c.add_argument("--ask", action="store_true", help="ask for the password even if the network is saved")

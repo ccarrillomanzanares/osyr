@@ -6,6 +6,7 @@ PipeWire picks up headphone sound with nothing else to do. Pairing without an
 agent uses BlueZ's "Just Works" mode, the one almost all headphones and
 speakers use; keyboards that ask for a PIN are not covered yet.
 """
+import argparse
 import os
 import time
 
@@ -160,6 +161,13 @@ def remove(args):
     return Result(True, "OK", {"device": d["name"]}, text=f'Forgot {d["name"]}.')
 
 
+class Words(argparse.Action):
+    """A name given as several words without quotes ('connect Sony WH-1000XM4') is one name."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, " ".join(values))
+
+
 def register(sub):
     p = sub.add_parser("bt", help="Bluetooth: headphones, speakers, keyboards, mice")
     s = p.add_subparsers(dest="action", required=True)
@@ -173,5 +181,5 @@ def register(sub):
                         ("disconnect", disconnect, "disconnect a device"),
                         ("remove", remove, "forget a paired device")):
         c = s.add_parser(name, help=h)
-        c.add_argument("device", help="name or address")
+        c.add_argument("device", nargs="+", action=Words, help="name or address")
         c.set_defaults(func=fn)
