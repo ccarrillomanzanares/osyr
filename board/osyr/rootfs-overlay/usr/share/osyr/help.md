@@ -45,6 +45,8 @@ It can also find and read your files: "where is the electricity bill PDF?", "sum
 
 It remembers what you ask it to: "remember that my sister is called Ana", "remember that I prefer short answers". It never saves passwords, PINs or card numbers. It only uses what it remembers with the local model, never with a remote provider. To see or erase it: `osyr memory list`, `osyr memory forget <n>` or `osyr memory forget all`.
 
+**A second, larger model.** If you added an AI provider (`/pair`) but keep the model of this computer in use, the local model can hand a task that is beyond it to that provider: a fault that takes several steps to find, for example. It asks first, because the conversation then leaves this computer: yes, always for that provider, or no. The larger model goes on with the task and asks before each change as usual; your next message goes to the local model again. `osyr ai second` shows which provider that is, `osyr ai second <name>` chooses it among several and `osyr ai second off` turns it off.
+
 **Its voice.** Spanish has two speakers, English many, the other languages one. Ask "use another voice" or run `osyr audio voice` to see which one is in use and `osyr audio voice speaker 2` to change it (it says a sample; `--lang <code>` for the voice of another language). If understanding what you say is slow on this computer, `osyr audio voice listen fast` makes it about twice as fast but it makes more mistakes (it downloads 60 MB once); `osyr audio voice listen accurate` goes back.
 
 The first `/look` after a while takes a few more seconds: OSYR loads the part of the model that sees images only when it is needed, and frees that memory after 10 minutes without use.

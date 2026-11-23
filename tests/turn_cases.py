@@ -107,6 +107,67 @@ def main():
     messages, out, used = run([("", [look]), ("A terminal.", [])])  # a new turn looks again
     check("look-next-turn", looks[0] == 2, f"{looks[0]} looks")
 
+    # Handing the task to the second model (ask_server)
+    hand = {"id": "", "name": "ask_server", "arguments": json.dumps({"task": "find why the printer service fails"})}
+    messages, out, used = run([("", [hand]), ("I could not hand it over.", [])])
+    tools = [json.loads(m["content"]) for m in messages if m["role"] == "tool"]
+    check("handover-no-server", tools[0].get("code") == "NO_SERVER" and "ask_server" not in
+          [t["function"]["name"] for t in chat.tools_now()], str(tools)[:300])
+
+    os.makedirs(os.path.join(HOME, ".config", "osyr"), exist_ok=True)
+    with open(chat.aiconf.CONFIG, "w") as f:
+        json.dump({"active": "local", "providers": {"home-server": {"url": "https://server.example/v1",
+                                                                    "context": 32768}}}, f)
+    check("handover-tool-offered", [t["function"]["name"] for t in chat.tools_now()][-1] == "ask_server"
+          and "ask_server" not in [t["function"]["name"] for t in chat.tools_now(local=False)])
+    chat.aiconf.reachable = lambda p: (True, None)
+    asked = []
+
+    def answer(reply):
+        def ask(question, always=None):
+            asked.append((question, always))
+            if reply == "always":
+                chat.oshell.add(always)
+            return reply, ""
+        return ask
+
+    seen_by = []
+
+    def run_watching(model):
+        """As run(), noting which provider each reply was asked from."""
+        def complete(messages, sess):
+            seen_by.append(sess.provider["name"])
+            return model[min(len(seen_by), len(model)) - 1]
+        chat.complete = complete
+        sess = types.SimpleNamespace(
+            cwd=HOME, provider={"local": True, "name": "local"}, tools=True, speak_always=False,
+            ctx=types.SimpleNamespace(trim=lambda messages, force=False: False), wait_warm=lambda: None)
+        messages = [{"role": "system", "content": "test"}]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            chat.turn(messages, sess, "question")
+        return messages, out.getvalue(), sess
+
+    chat.ask = answer("no")
+    messages, out, sess = run_watching([("", [hand]), ("It was not handed over.", [])])
+    tools = [json.loads(m["content"]) for m in messages if m["role"] == "tool"]
+    check("handover-declined", tools[0].get("code") == "USER_DECLINED" and seen_by == ["local", "local"]
+          and "leaves this computer" in asked[0][0], f"{tools} {seen_by}")
+
+    del seen_by[:], asked[:]
+    chat.ask = answer("always")
+    messages, out, sess = run_watching([("", [hand]), ("", [shell("ls")]), ("The cause is X.", [])])
+    tools = [json.loads(m["content"]) for m in messages if m["role"] == "tool"]
+    check("handover-goes-on-there", tools[0].get("code") == "HANDED_OVER" and seen_by == ["local", "home-server", "home-server"]
+          and messages[-1]["content"] == "The cause is X." and "home-server goes on with it" in out, f"{tools} {seen_by} {out}")
+    check("handover-back-to-local", sess.provider["name"] == "local" and sess.handover is None)
+
+    del seen_by[:], asked[:]
+    messages, out, sess = run_watching([("", [hand]), ("Done.", [])])
+    check("handover-always-not-asked-again", asked == [] and seen_by == ["local", "home-server"], f"{asked} {seen_by}")
+    check("handover-rule-listed", "handing tasks to home-server" in [chat.oshell.describe(r) for r in chat.oshell.load()])
+    os.remove(chat.aiconf.CONFIG)
+
     # Throttling: a core's counter is the same on its two threads and counts once
     sysfs = os.path.join(HOME, "sys")
     for cpu, core, n in ((0, 0, 5), (1, 1, 7), (2, 0, 5), (3, 1, 7)):

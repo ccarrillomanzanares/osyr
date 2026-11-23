@@ -255,6 +255,23 @@ TOOLS = [
             "question": {"type": "string"}}, "required": ["question"]}}},
 ]
 TOOLS[1:1] = ([SHELL_TOOL] if SHELL else []) + (WRITE_TOOLS if WRITE else [])
+# Only offered to the local model, and only when there is a second model to hand the task to
+ASK_SERVER_TOOL = {"type": "function", "function": {
+    "name": "ask_server",
+    "description": ("Hand the whole task to the larger model on the user's server, which goes on with your "
+                    "tools. Only when the task is beyond you: a fault whose cause must be found across "
+                    "several logs or steps, or something you tried and could not solve. Never for simple "
+                    "requests: it sends the conversation off this computer and takes longer."),
+    "parameters": {"type": "object", "properties": {
+        "task": {"type": "string", "description": "what has to be done, in a sentence or two"}},
+        "required": ["task"]}}}
+
+
+def tools_now(local=True):
+    """The tools the model is given now."""
+    if local and aiconf.second():
+        return TOOLS + [ASK_SERVER_TOOL]
+    return TOOLS
 # Queries the agent can run without asking (they change nothing)
 READ_ONLY = [("net", "status"), ("net", "wifi", "scan"), ("audio", "status"), ("audio", "voice", "status"),
              ("ai", "status"), ("ai", "list"), ("ai", "models"), ("ai", "advise"), ("ai", "local", "list"), ("ai", "gpu", "status"),
@@ -373,7 +390,7 @@ def warm_prefix():
         pr = local_post("/apply-template", {
             "messages": [{"role": "system", "content": system_prompt()},
                          {"role": "user", "content": "@@Q@@"}],
-            "tools": TOOLS, "chat_template_kwargs": {"enable_thinking": False}})["prompt"]
+            "tools": tools_now(), "chat_template_kwargs": {"enable_thinking": False}})["prompt"]
         prefix = pr[:pr.index("@@Q@@")]
         prefix = prefix[:prefix.rindex("<|im_start|>user")] if "<|im_start|>user" in prefix else ""
         if len(prefix) < 200:
@@ -486,7 +503,7 @@ def request(messages, sess, stream=True):
     if stream:
         body["stream_options"] = {"include_usage": True}
     if sess.tools:
-        body["tools"] = TOOLS
+        body["tools"] = tools_now(sess.provider["local"])
     if TEMPERATURE is not None:
         body["temperature"] = TEMPERATURE
     p = sess.provider
@@ -935,6 +952,34 @@ def _run_clipboard(args, sess):
     return {"ok": True, "data": {"text": text[:CLIP_MAX], "truncated": cut, "characters": len(text)}}
 
 
+def run_ask_server(task, sess):
+    """The local model hands the task to the second model, which goes on with this turn.
+    The conversation leaves the computer, so the person is asked: yes, always for that
+    provider, or no."""
+    p = aiconf.second() if sess.provider["local"] else None
+    if p is None:
+        return {"ok": False, "code": "NO_SERVER", "data": {},
+                "hint": "There is no larger model to hand this to. Do what you can yourself, or tell the "
+                        "user they can add one by typing /pair."}
+    host = urllib.parse.urlparse(p.get("url") or "").netloc
+    rule = {"handover": p["name"]}
+    print(f"{DIM}[ask_server: {task[:200]}]{RESET}")
+    if rule not in oshell.load():
+        answer, said = ask(f"Hand this task to {p['name']} ({host})? The conversation leaves this computer.",
+                           always=rule)
+        if answer == "no":
+            return declined("handing the task to the larger model", said)
+    ok, err = aiconf.reachable(p)
+    if not ok:
+        dbg("unreachable", **pinfo(p), error=str(err)[:300])
+        return {"ok": False, "code": "SERVER_UNREACHABLE", "data": {"provider": p["name"]},
+                "hint": "The larger model does not answer. Do what you can yourself and tell the user."}
+    sess.handover = p
+    return {"ok": True, "code": "HANDED_OVER", "data": {"task": task[:1000]},
+            "hint": "You are the larger model and the task is yours now: carry it out with the tools and "
+                    "answer the user."}
+
+
 def run_tool(call, sess):
     """One tool call. A "no" is final for the rest of the turn: the same call is not
     asked again (an untrained model tends to insist), it goes back refused at once."""
@@ -1003,6 +1048,8 @@ def _run_tool(call, args, sess):
                {"ok": False, "code": "USAGE", "data": {"error": "remember needs the text"}})
     elif call["name"] == "look":
         res = run_look(str(args.get("question") or "Describe the screen."), sess)
+    elif call["name"] == "ask_server":
+        res = run_ask_server(str(args.get("task") or ""), sess)
     else:
         res = {"ok": False, "code": "UNKNOWN_TOOL", "data": {"name": call["name"]}}
     words = [w for w in str(args.get("command", "")).split() if not w.startswith("-") and w != "osyr"][:2]
@@ -1024,6 +1071,17 @@ def turn(messages, sess, text, spoken_lang=None):
     sess.refused = set()  # what the person said no to in this turn
     sess.seen, sess.repeats = {}, 0  # result of each call of this turn, and how many came back the same
     sess.looked = False  # the screen is looked at once per turn
+    sess.handover = None  # the second model, once the local one hands the task to it (ask_server)
+    home = (sess.provider, sess.ctx, sess.tools)
+    try:
+        _turn(messages, sess, spoken_lang)
+    finally:
+        if sess.handover is not None:
+            sess.provider, sess.ctx, sess.tools = home  # the next turn is the local model's again
+            sess.handover = None
+
+
+def _turn(messages, sess, spoken_lang):
     start = len(messages) - 1
     if sess.ctx.trim(messages):
         print(f"{DIM}[older messages forgotten to make room]{RESET}")
@@ -1067,6 +1125,11 @@ def turn(messages, sess, text, spoken_lang=None):
             break
         for c, tc in zip(calls, msg["tool_calls"]):
             messages.append({"role": "tool", "tool_call_id": tc["id"], "content": run_tool(c, sess)})
+        if sess.handover is not None and sess.provider["local"]:
+            p = sess.handover
+            sess.provider, sess.ctx, sess.tools = p, Context(p), True
+            dbg("handover", **pinfo(p))
+            print(f'{DIM}[{p["name"]} goes on with it]{RESET}')
         if sess.repeats >= MAX_REPEATS:
             print(f"{DIM}[stopped: the assistant kept repeating the same step]{RESET}")
             dbg("stopped", why="repeats")

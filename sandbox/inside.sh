@@ -10,8 +10,12 @@ mkdir -p "$HOME/.config/osyr" "$HOME/.local/state/osyr" "$HOME/.local/share/osyr
 if [ -S /run/osyr/model.sock ]; then
     # The model is outside: a relay gives the chat a local address for it
     python3 /run/osyr/relay.py 127.0.0.1 8090 /run/osyr/model.sock &
+    # With the model server itself there too (the benchmark), the chat uses that one and
+    # this is its second model, the one it hands hard tasks to
+    active=sandbox
+    [ -S /run/osyr/llama.sock ] && active=local
     (umask 077; cat > "$HOME/.config/osyr/ai.json" <<JSON
-{"active": "sandbox", "providers": {"sandbox": {"url": "http://127.0.0.1:8090/v1", "model": "",
+{"active": "$active", "providers": {"sandbox": {"url": "http://127.0.0.1:8090/v1", "model": "",
  "context": ${OSYR_SANDBOX_CONTEXT:-16384}}}}
 JSON
     )

@@ -181,6 +181,8 @@ def describe(rule):
     short = lambda d: "~" + d[len(home):] if d == home or d.startswith(home + "/") else d  # noqa: E731
     if rule.get("osyr"):
         return f"'osyr {rule['osyr']}'"
+    if rule.get("handover"):
+        return f"handing tasks to {rule['handover']}"
     if rule.get("send"):
         return f"sending files in {short(rule['send'])} to {rule.get('provider')}"
     if rule.get("write"):

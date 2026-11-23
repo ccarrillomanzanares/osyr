@@ -63,6 +63,34 @@ def provider(name=None):
     return dict(p, name=name, local=False)
 
 
+def second(cfg=None):
+    """The second model: the provider the local model hands a task to when the task is
+    beyond it (the ask_server tool of the chat). The one chosen with 'osyr ai second';
+    otherwise, the only provider there is. None if there is none, or it is 'off'."""
+    cfg = cfg or load()
+    name, remote = cfg.get("second"), cfg["providers"]
+    if name == "off":
+        return None
+    if name not in remote:
+        name = next(iter(remote)) if len(remote) == 1 else None
+    return dict(remote[name], name=name, local=False) if name else None
+
+
+def second_cmd(args):
+    cfg = load()
+    if args.name:
+        if args.name != "off" and args.name not in cfg["providers"]:
+            return fail("AI_UNKNOWN_PROVIDER", "Run: osyr ai list", {"name": args.name})
+        cfg["second"] = args.name
+        save(cfg)
+    p = second(cfg)
+    data = {"second": p["name"] if p else None, "url": p["url"] if p else None}
+    return Result(True, "OK", data, text=(f'Tasks beyond the local model can be handed to {p["name"]} ({p["url"]}); '
+                                           "the assistant asks first." if p else
+                                           "No second model: the local model does everything itself. "
+                                           "Add one with /pair in the chat."))
+
+
 # Cloudflare (in front of ccmai.org and many providers) answers 403 to
 # Python's default user agent ("Python-urllib"): identify as OSYR
 USER_AGENT = "OSYR/1.0"
@@ -391,6 +419,9 @@ def register(sub):
     ad.set_defaults(func=_advise)
     from . import models as local_models  # "models" is the command above
     local_models.register(s)
+    sc = s.add_parser("second", help="the provider the local model hands hard tasks to (a name, or 'off')")
+    sc.add_argument("name", nargs="?")
+    sc.set_defaults(func=second_cmd)
     r = s.add_parser("remove", help="delete a provider and its API key")
     r.add_argument("name")
     r.set_defaults(func=remove)
