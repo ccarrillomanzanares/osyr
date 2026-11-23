@@ -91,7 +91,8 @@ set -- bwrap \
     --die-with-parent --clearenv --seccomp 5 \
     --ro-bind "$ROOT" / \
     --proc /proc --dev /dev \
-    --tmpfs /tmp --tmpfs /run --dir /run/user/1000 --dir /run/osyr/hw \
+    --size 134217728 --tmpfs /tmp --size 33554432 --tmpfs /run --size 67108864 --tmpfs /dev/shm \
+    --dir /run/user/1000 --dir /run/osyr/hw \
     --size 268435456 --tmpfs /home/osyr \
     --tmpfs /sys \
     --ro-bind-data 3 /etc/passwd --ro-bind-data 4 /etc/group \
