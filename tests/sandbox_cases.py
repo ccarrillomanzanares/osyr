@@ -155,12 +155,120 @@ def gate(tmp):
         mock.kill()
 
 
+class Browser:
+    """What the page does: a WebSocket to the service."""
+
+    def __init__(self, port, headers=""):
+        import base64
+        self.s = socket.create_connection(("127.0.0.1", port))
+        self.buf = b""
+        key = base64.b64encode(os.urandom(16)).decode()
+        self.s.sendall((f"GET /osyr/try/ws HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\n"
+                        f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n"
+                        f"{headers}\r\n").encode())
+        self.s.settimeout(30)
+        while b"\r\n\r\n" not in self.buf:
+            self.buf += self.s.recv(4096)
+        head, self.buf = self.buf.split(b"\r\n\r\n", 1)
+        self.status = int(head.split()[1])
+
+    def send(self, obj):
+        d, m = json.dumps(obj).encode(), os.urandom(4)
+        self.s.sendall(bytes([0x81, 0x80 | len(d)]) + m + bytes(c ^ m[i % 4] for i, c in enumerate(d)))
+
+    def _read(self, n):
+        while len(self.buf) < n:
+            chunk = self.s.recv(65536)
+            if not chunk:
+                raise OSError("closed")
+            self.buf += chunk
+        out, self.buf = self.buf[:n], self.buf[n:]
+        return out
+
+    def until(self, kind, seconds=60):
+        """Reads until a JSON message of that kind; returns (message, screen output so far)."""
+        import struct
+        out, end = b"", time.time() + seconds
+        try:
+            while time.time() < end:
+                b1, b2 = self._read(2)
+                n = b2 & 0x7F
+                if n == 126:
+                    n = struct.unpack(">H", self._read(2))[0]
+                data = self._read(n)
+                if b1 & 0x0F == 2:
+                    out += data
+                elif b1 & 0x0F == 1 and json.loads(data).get("t") == kind:
+                    return json.loads(data), out
+                elif b1 & 0x0F == 8:
+                    break
+        except OSError:
+            pass
+        return None, out
+
+
+def service(tmp):
+    port, mport = 19000 + os.getpid() % 1000, 20000 + os.getpid() % 1000
+    work = tempfile.mkdtemp(prefix="osb-", dir="/tmp")  # short: a socket's path has a length limit
+    conf = os.path.join(tmp, "sandbox.json")
+    keyf = os.path.join(tmp, "key")
+    with open(keyf, "w") as f:
+        f.write("secret123\n")
+    with open(conf, "w") as f:
+        json.dump({"port": port, "upstream": f"http://127.0.0.1:{mport}/v1", "key_file": keyf,
+                   "key_header": "X-API-Key", "model": "mock-35b", "context": 1500, "sessions": 1, "code": "letmein",
+                   "off_file": os.path.join(tmp, "off"), "log": os.path.join(tmp, "log"), "work": work}, f)
+    mock = subprocess.Popen([sys.executable, f"{ROOT}/tests/mock_openai.py", str(mport)])
+    srv = subprocess.Popen([sys.executable, f"{ROOT}/sandbox/server.py", conf],
+                           env=dict(os.environ, OSYR_SANDBOX_LIMITS="0"))
+    try:
+        time.sleep(1.5)
+        w = Browser(port)
+        w.send({"t": "start", "code": "nope"})
+        check("service-wrong-code", (w.until("end", 10)[0] or {}).get("why") == "code")
+        check("service-foreign-origin", Browser(port, "Origin: https://elsewhere.example\r\n").status == 403)
+        a = Browser(port)
+        a.send({"t": "start", "code": "letmein", "cols": 100, "rows": 30})
+        check("service-started", a.until("started", 20)[0] is not None)
+        b = Browser(port, "X-Forwarded-For: 203.0.113.9\r\n")
+        b.send({"t": "start", "code": "letmein"})
+        check("service-queue", (b.until("queue", 10)[0] or {}).get("position") == 1)
+        c = Browser(port)
+        c.send({"t": "start", "code": "letmein"})
+        check("service-one-per-address", (c.until("end", 10)[0] or {}).get("why") == "limit")
+        time.sleep(6)  # the chat's greeting
+        a.send({"t": "in", "d": "hello there\r"})
+        time.sleep(6)
+        a.send({"t": "in", "d": "/exit\r"})
+        end, out = a.until("end", 60)
+        # The chat inside reached the fake provider through the relay and the gate, which put the key
+        # in (two requests: the provider refuses tools, and the chat goes on without them)
+        check("service-chat", b"Remote answer (mock-35b)" in out and b"END OF LINE" in out, out[-500:])
+        check("service-exit", (end or {}).get("why") == "exit", end)
+        check("service-next-in-queue", b.until("started", 30)[0] is not None)
+        open(os.path.join(tmp, "off"), "w").close()
+        check("service-switch-ends", (b.until("end", 20)[0] or {}).get("why") == "off")
+        d = Browser(port, "X-Forwarded-For: 203.0.113.10\r\n")
+        d.send({"t": "start", "code": "letmein"})
+        check("service-switch-refuses", (d.until("end", 10)[0] or {}).get("why") == "off")
+        time.sleep(3)
+        check("service-cleans-up", os.listdir(work) == [], os.listdir(work))
+        log = open(os.path.join(tmp, "log")).read()
+        check("service-log", '"why": "exit", "requests": 2' in log and "hello there" not in log, log)
+    finally:
+        srv.kill()
+        mock.kill()
+        import shutil
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="osyr-sandbox-") as tmp:
         gate(tmp)
         if os.path.exists(f"{ROOT}/build/output/target/usr/bin/python3"):
             doubles(tmp)
             isolation(tmp)
+            service(tmp)
         else:
             print("sandbox cases: no built image root, session cases skipped")
     for b in bad:

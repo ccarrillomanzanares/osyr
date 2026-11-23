@@ -242,7 +242,14 @@ class Gate:
             if r.status != 200:
                 detail = r.read(2000).decode(errors="replace")
                 self.log(event="upstream-error", status=r.status, detail=detail[:300])
-                # The server's own text may name it: the visitor only gets the status
+                if r.status == 400:
+                    # About the request itself (too long, a field the server does not take):
+                    # the chat reads it to trim or to go on without tools
+                    try:
+                        return self.answer(conn, 400, {"error": json.loads(detail)["error"]})
+                    except (ValueError, KeyError, TypeError):
+                        pass
+                # Any other text of the server may name it: the visitor only gets the status
                 return self.answer(conn, 502 if r.status in (401, 403) else r.status,
                                    {"error": {"message": f"the model server answered {r.status}"}})
             ctype = "text/event-stream" if req["stream"] else "application/json"

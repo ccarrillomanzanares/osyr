@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Try OSYR in the browser · CCMAI</title>
+<meta name="description" content="Try the OSYR assistant in your browser: a pretend laptop, erased when you leave.">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="vendor/xterm.css">
+<style>
+:root{
+  --bg:#000000; --ink:#33ff33; --bright:#00ff00; --dim:#008800; --dim2:#006600;
+  --line:#006400; --panel:#001100; --mono:"Consolas","Menlo","DejaVu Sans Mono",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:var(--mono);background:var(--bg);color:var(--ink);display:flex;
+  align-items:center;justify-content:center;min-height:100vh}
+.screen{width:min(980px,97vw);height:min(96vh,720px);background:var(--panel);border:1px solid var(--line);
+  border-radius:6px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 0 30px rgba(0,255,0,.05)}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:9px 14px;
+  border-bottom:1px solid var(--line);flex-shrink:0;color:var(--dim);font-size:.72rem;letter-spacing:.05em}
+.bar a{color:var(--bright);text-decoration:none}
+.bar a:hover{text-decoration:underline}
+#clock{color:var(--bright)}
+.body{flex:1;position:relative;min-height:0}
+#term{position:absolute;inset:.6rem .4rem .6rem .8rem;display:none}
+#intro{position:absolute;inset:0;overflow-y:auto;padding:1.6rem 2rem;font-size:.86rem;line-height:1.6}
+#intro h1{color:var(--bright);letter-spacing:.18em;text-shadow:0 0 14px rgba(0,255,0,.45);
+  font-size:1.5rem;margin-bottom:1rem}
+#intro p,#intro ul{margin-bottom:.9rem;max-width:44rem}
+#intro ul{list-style:none}
+#intro li::before{content:"> ";color:var(--dim)}
+#intro .dim{color:var(--dim)}
+#intro input{background:#000;color:var(--bright);border:1px solid var(--line);border-radius:4px;
+  font-family:inherit;font-size:.86rem;padding:.5rem .7rem;width:14rem;margin-right:.6rem}
+.btn{display:inline-block;background:#003300;color:var(--bright);padding:.6rem 1.4rem;border-radius:4px;
+  border:1px solid var(--bright);font-family:inherit;font-size:.86rem;cursor:pointer;margin:.3rem 0}
+.btn:hover{background:#004400;box-shadow:0 0 14px rgba(0,255,0,.25)}
+.btn[disabled]{opacity:.45;cursor:default;box-shadow:none}
+#state{color:var(--bright);min-height:1.6em}
+.xterm .xterm-viewport{background-color:transparent !important}
+.xterm .xterm-viewport{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.xterm .xterm-viewport::-webkit-scrollbar{width:8px}
+.xterm .xterm-viewport::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+.xterm .xterm-viewport::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="bar">
+    <span>osyr@ccmai — /osyr/try</span>
+    <span id="clock"></span>
+    <span><a href="../">OSYR</a> · <a href="../about.html">about</a></span>
+  </div>
+  <div class="body">
+    <div id="intro">
+      <h1>TRY OSYR</h1>
+      <p>This opens the OSYR assistant on a pretend laptop, in your browser. Ask it things in your own
+      language: what wifi networks are around, to lower the volume, to find a document, how much disk is left.</p>
+      <ul>
+        <li>The laptop is not real: its wifi, sound, displays and Bluetooth are simulated, and nothing reaches the Internet.</li>
+        <li>What you get here is the assistant's console. The desktop, the voice and looking at the screen need the <a href="../" style="color:var(--bright)">real system</a>.</li>
+        <li>The model runs on our server, not on your computer, and it is shared: answers take a while, and there may be a queue.</li>
+        <li>A session lasts <span id="mins">15</span> minutes. Everything is erased when it ends.</li>
+        <li>OSYR is in development and its AI makes mistakes. Do not type personal data.</li>
+      </ul>
+      <p id="codeline" style="display:none"><input id="code" type="password" placeholder="access code" autocomplete="off"></p>
+      <p><button class="btn" id="go">Start a session</button></p>
+      <p id="state"></p>
+      <noscript><p>This page needs JavaScript.</p></noscript>
+    </div>
+    <div id="term"></div>
+  </div>
+</div>
+<script src="vendor/xterm.js"></script>
+<script src="vendor/addon-fit.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var WHY = {
+    time: "The session's time is up.", idle: "The session was closed because nobody was typing.",
+    exit: "The session has ended.", off: "The sandbox is closed for now. Come back later.",
+    code: "That access code is not right.", busy: "Too many people are waiting. Try again in a few minutes.",
+    limit: "You have a session open already, or have started too many this hour.",
+    lost: "The connection was lost."
+  };
+  var term, fit, ws, timer, ended;
+
+  fetch("status").then(function (r) { return r.json(); }).then(function (s) {
+    if (s.code) { $("codeline").style.display = ""; }
+    if (!s.open) { $("state").textContent = WHY.off; $("go").disabled = true; }
+    else if (s.running >= s.places) { $("state").textContent = "All places are taken: you will wait in a queue."; }
+  }).catch(function () { $("state").textContent = WHY.off; $("go").disabled = true; });
+
+  function finish(why) {
+    if (ended) { return; }
+    ended = true;
+    clearInterval(timer);
+    $("clock").textContent = "";
+    var text = WHY[why] || WHY.exit;
+    if (term && $("term").style.display === "block") {
+      term.write("\r\n\x1b[1;32m" + text + " Reload the page to start again.\x1b[0m\r\n");
+      term.options.disableStdin = true;
+    } else {
+      $("state").textContent = text;
+      $("go").disabled = false;
+    }
+  }
+
+  function countdown(minutes) {
+    var end = Date.now() + minutes * 60000;
+    timer = setInterval(function () {
+      var s = Math.max(0, Math.round((end - Date.now()) / 1000));
+      $("clock").textContent = Math.floor(s / 60) + ":" + ("0" + s % 60).slice(-2) + " left";
+    }, 1000);
+  }
+
+  function send(obj) { if (ws && ws.readyState === 1) { ws.send(JSON.stringify(obj)); } }
+
+  $("go").onclick = function () {
+    $("go").disabled = true;
+    ended = false;
+    $("state").textContent = "Connecting...";
+    term = term || new Terminal({
+      cursorBlink: true, fontFamily: '"Consolas","Menlo","DejaVu Sans Mono",monospace', fontSize: 15,
+      scrollback: 5000,
+      theme: { background: "#001100", foreground: "#33ff33", cursor: "#00ff00", selectionBackground: "#006400",
+               green: "#33ff33", brightGreen: "#00ff00", brightBlack: "#008800" }
+    });
+    if (!fit) {
+      fit = new FitAddon.FitAddon();
+      term.loadAddon(fit);
+      term.onData(function (d) { send({ t: "in", d: d }); });
+      term.onResize(function (e) { send({ t: "size", cols: e.cols, rows: e.rows }); });
+      window.addEventListener("resize", function () { if ($("term").style.display === "block") { fit.fit(); } });
+    }
+    // The size the terminal will have, worked out before it is shown
+    $("term").style.display = "block";
+    $("term").style.visibility = "hidden";
+    if (!term.element) { term.open($("term")); }
+    fit.fit();
+    $("term").style.display = "none";
+    $("term").style.visibility = "";
+
+    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host +
+                       location.pathname.replace(/[^/]*$/, "") + "ws");
+    ws.binaryType = "arraybuffer";
+    ws.onopen = function () { send({ t: "start", code: $("code").value, cols: term.cols, rows: term.rows }); };
+    ws.onmessage = function (e) {
+      if (typeof e.data !== "string") { term.write(new Uint8Array(e.data)); return; }
+      var m = JSON.parse(e.data);
+      if (m.t === "queue") {
+        $("state").textContent = m.position === 1 ? "You are next. Waiting for a free place..."
+          : "Waiting in the queue: " + (m.position - 1) + " ahead of you.";
+      } else if (m.t === "started") {
+        $("intro").style.display = "none";
+        $("term").style.display = "block";
+        fit.fit();
+        term.focus();
+        countdown(m.minutes);
+      } else if (m.t === "end") { finish(m.why); }
+    };
+    ws.onclose = function () { finish("lost"); };
+  };
+})();
+</script>
+</body>
+</html>
