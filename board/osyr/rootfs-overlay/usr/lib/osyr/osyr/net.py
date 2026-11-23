@@ -120,7 +120,11 @@ def no_wifi():
 # --- status ------------------------------------------------------------------------
 
 def internet_check():
-    """DNS and Internet access, with short timeouts (it must not hang the bar)."""
+    """DNS and Internet access, with short timeouts (it must not hang the bar).
+    OSYR_INTERNET (1 or 0) gives the answer in the tests, where the network is a double."""
+    fake = os.environ.get("OSYR_INTERNET")
+    if fake in ("0", "1"):
+        return fake == "1", fake == "1"
     dns = inet = False
     try:
         socket.setdefaulttimeout(3)

@@ -1,0 +1,6 @@
+Electricity bill, March 2026
+Customer: 4471-0098
+Period: 1 March to 31 March
+Consumption: 212 kWh
+Total: 48.20 euros
+Due date: 15 April 2026

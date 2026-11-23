@@ -1,0 +1,72 @@
+#!/bin/sh
+# One disposable OSYR session: the image's root as a container with no
+# privileges and no network, a pretend laptop (tests/doubles) and the real
+# osyr-chat. Everything the session writes lives in memory and is gone when
+# it ends. Used by the web sandbox and by the benchmark.
+#
+#   sandbox/session DIR [command...]
+#
+# DIR is an empty folder for this session (the pretend /sys goes there). If
+# DIR/model.sock exists (the socket of sandbox/model-filter.py), the chat
+# inside reaches the model through it; it is the only way out of the container.
+# Without a command it starts the chat.
+#
+#   OSYR_SANDBOX_ROOT    the image root (default: build/output/target)
+#   OSYR_SANDBOX_CODE    overlay whose osyr code replaces the root's (default:
+#                        this repository's; empty: the root's own)
+#   OSYR_SANDBOX_MINUTES session length (default 15)
+#   OSYR_SANDBOX_LIMITS  0: no memory, CPU and process limits (default: on,
+#                        through systemd-run --user)
+set -eu
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+REPO=$(dirname "$HERE")
+ROOT=${OSYR_SANDBOX_ROOT:-$REPO/build/output/target}
+CODE=${OSYR_SANDBOX_CODE-$REPO/board/osyr/rootfs-overlay}
+MINUTES=${OSYR_SANDBOX_MINUTES:-15}
+
+[ $# -ge 1 ] || { echo "usage: session DIR [command...]" >&2; exit 2; }
+DIR=$(cd "$1" && pwd)
+shift
+[ -x "$ROOT/usr/bin/python3" ] || { echo "session: no image root in $ROOT" >&2; exit 2; }
+
+rm -rf "$DIR/sys"
+mkdir -p "$DIR/sys"
+python3 "$REPO/tests/doubles/hw.py" --sysfs "$DIR/sys"
+# The image's users are added when the disk image is made, not in the root folder
+{ grep -v '^osyr:' "$ROOT/etc/passwd"; echo 'osyr:x:1000:1000:OSYR:/home/osyr:/bin/bash'; } > "$DIR/passwd"
+{ grep -v '^osyr:' "$ROOT/etc/group"; echo 'osyr:x:1000:'; } > "$DIR/group"
+
+set -- bwrap \
+    --unshare-all --die-with-parent --clearenv \
+    --ro-bind "$ROOT" / \
+    --proc /proc --dev /dev \
+    --tmpfs /tmp --tmpfs /run --dir /run/user/1000 --dir /run/osyr/hw \
+    --size 268435456 --tmpfs /home/osyr \
+    --bind "$DIR/sys" /sys \
+    --ro-bind "$DIR/passwd" /etc/passwd --ro-bind "$DIR/group" /etc/group \
+    --ro-bind /dev/null /etc/osyr/diag.token \
+    --ro-bind "$REPO/tests/doubles" /run/osyr/doubles \
+    --ro-bind "$HERE/skel" /run/osyr/skel \
+    --ro-bind "$HERE/inside.sh" /run/osyr/inside.sh \
+    --ro-bind "$HERE/relay.py" /run/osyr/relay.py \
+    --setenv HOME /home/osyr --setenv USER osyr --setenv LOGNAME osyr --setenv SHELL /bin/bash \
+    --setenv PATH /run/osyr/doubles:/usr/bin:/bin:/usr/sbin:/sbin \
+    --setenv LANG "${OSYR_SANDBOX_LANG:-en_US.UTF-8}" --setenv TERM "${TERM:-xterm-256color}" \
+    --setenv XDG_RUNTIME_DIR /run/user/1000 \
+    --setenv OSYR_DOUBLES_STATE /run/osyr/hw/state.json --setenv OSYR_INTERNET 1 \
+    --setenv OSYR_SANDBOX 1 \
+    --chdir /home/osyr \
+    ${CODE:+--ro-bind "$CODE/usr/lib/osyr" /usr/lib/osyr} \
+    ${CODE:+--ro-bind "$CODE/usr/bin/osyr-chat" /usr/bin/osyr-chat} \
+    ${CODE:+--ro-bind "$CODE/usr/share/osyr/help.md" /usr/share/osyr/help.md} \
+    $( [ -S "$DIR/model.sock" ] && printf '%s' "--bind $DIR/model.sock /run/osyr/model.sock" ) \
+    /bin/sh /run/osyr/inside.sh "$@"
+
+set -- timeout --foreground --kill-after=10 "$((MINUTES * 60))" "$@"
+if [ "${OSYR_SANDBOX_LIMITS:-1}" != 0 ]; then
+    set -- systemd-run --user --scope --quiet --collect \
+        -p MemoryMax=1G -p MemorySwapMax=0 -p OOMPolicy=continue \
+        -p TasksMax=256 -p CPUQuota=200% -- "$@"
+fi
+exec "$@"

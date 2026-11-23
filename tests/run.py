@@ -265,6 +265,8 @@ def native():
         report("advise-cases", p.returncode == 0, p.stdout.strip()[-300:])
         p = subprocess.run(["python3", "-B", f"{ROOT}/tests/models_cases.py"], capture_output=True, text=True)
         report("models-cases", p.returncode == 0, p.stdout.strip()[-300:])
+        p = subprocess.run(["python3", "-B", f"{ROOT}/tests/sandbox_cases.py"], capture_output=True, text=True)
+        report("sandbox-cases", p.returncode == 0, p.stdout.strip()[-300:])
         os.makedirs(f"{tmp}/work")
         ok, out = pty_run(chat, chat_env, [
             (rb"> $", "How much free space is left on the disk? Use the shell tool."),

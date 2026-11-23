@@ -68,6 +68,7 @@ The system and the agent exist (v0.31.0). The administration features, the bench
 | Shell, writing files, installing software (`osyr ext`, `osyr box`), applications and services | Do not exist. They are in the design in `ARCHITECTURE.md` |
 | Tests (`tests/run.py`, `make test`) | System tests. Only a few measure the agent: `agent-reads-with-tool`, `agent-asks-before-change`, `agent-change-applied`, `memory-saved`, `memory-recalled`, `look-sees-screen` |
 | Simulated hardware for tests | Partial: `OSYR_SYSFS` gives a fake `/sys` used by `ui`, `power`, `thermal` and `sys`. `audio`, `net`, `display` and `bt` call real programs |
+| Since then (23 Nov) | Doubles for `audio`, `net`, `display` and `bt` (`tests/doubles`) and a disposable container session with a model gate (`sandbox/`), built ahead for the web sandbox; see `MILESTONE-0.md` |
 | Real conversations | Saved in `~/.local/share/osyr/chats/*.json`; `osyr-diag` can send them (`SEND_CHATS`) |
 | Benchmark, sandbox and training scripts | Do not exist |
 | 35B server | Runs on the VPS on CPU (the llama-hardened project); its speed is to be measured |
