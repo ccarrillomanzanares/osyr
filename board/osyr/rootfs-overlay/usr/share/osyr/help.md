@@ -106,7 +106,7 @@ Ask the assistant: "install VLC", "is there a program to edit photos?", "open VL
 | Hold Super+Space | talk to the assistant |
 | Hold Super+Ctrl+Space | dictate into the window you are using |
 | Super+Ctrl+L | lock the screen |
-| Print Screen | screenshot (saved in Pictures/Screenshots) |
+| Print Screen | screenshot (saved in Pictures/Screenshots); the assistant takes one too if you ask ("take a screenshot"), and `osyr ui screenshot` does the same |
 | Super+Shift+Q | close the window |
 | Super+F | full screen on or off |
 | Super+Arrows (or H J K L) | move between windows |

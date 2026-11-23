@@ -163,6 +163,21 @@ def relaunch_idle():
     return subprocess.run(["swaymsg", "exec", "osyr-idle"], capture_output=True).returncode == 0
 
 
+def screenshot(args):
+    """A picture of the screen as a file (the Print Screen key does the same)."""
+    try:
+        p = subprocess.run(["osyr-screenshot"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return fail("UI_NO_SCREENSHOT", "The screen could not be captured.", {"error": str(e)})
+    path = p.stdout.strip().splitlines()[-1] if p.stdout.strip() else ""
+    if p.returncode != 0 or not os.path.isfile(path):
+        return fail("UI_NO_SCREENSHOT", "The screen could not be captured (is the desktop running?).",
+                    {"error": p.stderr.strip()[-300:]})
+    home = os.path.expanduser("~")
+    shown = "~" + path[len(home):] if path.startswith(home + "/") else path
+    return Result(True, "OK", {"path": shown}, text=f"Screenshot saved in {shown}")
+
+
 def register(sub):
     p = sub.add_parser("ui", help="interface: brightness, screen lock and displays")
     s = p.add_subparsers(dest="action", required=True)
@@ -172,5 +187,6 @@ def register(sub):
     lk = s.add_parser("lock", help="show or set when the screen locks by itself")
     lk.add_argument("minutes", nargs="?", type=lock_arg, help=f"minutes without use (1-{LOCK_MAX}) or off")
     lk.set_defaults(func=lock)
+    s.add_parser("screenshot", help="save a picture of the screen in Pictures/Screenshots").set_defaults(func=screenshot)
     from . import display  # displays: osyr ui display ...
     display.register(s)

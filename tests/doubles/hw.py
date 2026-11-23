@@ -484,6 +484,25 @@ def wl_mirror(argv):
     time.sleep(3600)
 
 
+def grim(argv):
+    """A capture of the screen: a small real PNG (one grey pixel), to the file named or to '-'."""
+    import struct
+    import zlib
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 0, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(b"\x00\x80")) + chunk(b"IEND", b""))
+    target = [a for a in argv if not a.startswith("-") or a == "-"]
+    target = target[-1] if target else "-"
+    if target == "-":
+        sys.stdout.buffer.write(png)
+    else:
+        with open(target, "wb") as f:
+            f.write(png)
+    return 0
+
+
 def make_sysfs(root):
     """Writes the scenario's pretend /sys under 'root' (a name ending in / is a folder)."""
     with open(SCENARIO) as f:
@@ -499,7 +518,7 @@ def make_sysfs(root):
 
 
 DOUBLES = {"busctl": busctl, "iwctl": iwctl, "ip": ip, "wpctl": wpctl, "pw-dump": pw_dump,
-           "pw-play": pw_play, "swaymsg": swaymsg, "wl-mirror": wl_mirror}
+           "pw-play": pw_play, "swaymsg": swaymsg, "wl-mirror": wl_mirror, "grim": grim}
 
 
 def main():

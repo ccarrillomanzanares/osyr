@@ -47,7 +47,8 @@ def doubles(tmp):
              ("mode", "ui display mode HDMI-A-1 1280x720"), ("off", "ui display off eDP-1"),
              ("last", "ui display off HDMI-A-1"), ("btscan", "bt scan --seconds 1"),
              ("btconn", "bt connect sony"), ("btpin", "bt connect keychron"), ("bt", "bt status"),
-             ("thermal", "sys thermal"), ("power", "sys power"), ("loose", "files read shopping_list.txt")]
+             ("thermal", "sys thermal"), ("power", "sys power"), ("loose", "files read shopping_list.txt"),
+             ("shot", "ui screenshot")]
     script = "\n".join(f'echo "== {m}"; osyr --json {c}' for m, c in steps)
     script = script.replace('echo "== status1"', 'echo "== wrong"; echo wrongpass1 | osyr --json net wifi connect '
                             'casa-lopez --password-stdin\necho "== right"; echo girasol2026 | osyr --json net wifi '
@@ -78,6 +79,7 @@ def doubles(tmp):
     check("thermal", r("thermal").get("data", {}).get("temp_c") == 47, r("thermal"))
     check("battery", r("power").get("data", {}).get("battery") == {"percent": 76, "status": "Charging"}, r("power"))
     check("file-name-loosely", r("loose").get("ok") is True, r("loose"))
+    check("screenshot", r("shot").get("data", {}).get("path", "").startswith("~/Pictures/Screenshots/osyr-"), r("shot"))
 
 
 def isolation(tmp):
