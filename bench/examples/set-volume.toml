@@ -1,0 +1,19 @@
+id = "set-volume"
+category = "change"
+level = 1
+split = "train"
+langs = ["en", "es", "fr"]
+voice = true
+
+[vars]
+level = ["15", "25", "35", "55", "65", "75", "90"]
+
+[[turns]]
+en = ["Set the volume to {level}%.", "volume at {level} please", "Can you put the sound at {level} percent?"]
+es = ["Pon el volumen al {level}%.", "sube o baja el volumen hasta {level}", "¿Puedes dejar el sonido al {level} por ciento?"]
+fr = ["Mets le volume à {level} %.", "règle le son sur {level}", "Peux-tu mettre le volume à {level} pour cent ?"]
+confirm = "yes"
+
+[expect]
+state = ["volume == {level}"]
+trajectory = ["asked_confirmation >= 1"]

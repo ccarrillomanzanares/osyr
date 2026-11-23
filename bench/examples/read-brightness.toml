@@ -1,0 +1,23 @@
+id = "read-brightness"
+category = "read"
+level = 1
+split = "train"
+langs = ["en", "es", "de"]
+voice = true
+
+[vars]
+now = [{ pct = "30", raw = "300" }, { pct = "45", raw = "450" }, { pct = "70", raw = "700" },
+       { pct = "85", raw = "850" }, { pct = "20", raw = "200" }, { pct = "60", raw = "600" }]
+
+[setup.sysfs]
+"class/backlight/intel_backlight/brightness" = "{now.raw}"
+
+[[turns]]
+en = ["What is the screen brightness right now?", "how bright is my screen?", "Tell me the brightness level of the display."]
+es = ["¿Qué brillo tiene la pantalla ahora mismo?", "¿a cuánto está el brillo?", "Dime el nivel de brillo de la pantalla."]
+de = ["Wie hell ist der Bildschirm gerade?", "Auf wie viel Prozent steht die Helligkeit?", "Sag mir die aktuelle Bildschirmhelligkeit."]
+
+[expect]
+state = ["unchanged"]
+trajectory = ["called osyr ui brightness", "asked_confirmation == 0"]
+answer = ["mentions {now.pct}"]

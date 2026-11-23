@@ -1,0 +1,27 @@
+id = "delete-file"
+category = "files"
+level = 1
+split = "heldout"
+needs = ["shell"]
+langs = ["en", "es", "fr"]
+
+[vars]
+gone = ["recetas.txt", "borrador-viejo.txt", "copia.txt", "lista-2023.txt", "notas-antiguas.txt"]
+kept = ["factura-luz.txt", "contrato.txt", "apuntes.txt"]
+folder = ["Documents", "Downloads"]
+
+[setup]
+files = [
+  { path = "~/{folder}/{gone}", text = "Nothing important." },
+  { path = "~/{folder}/{kept}", text = "Keep this." },
+]
+
+[[turns]]
+en = ["Delete the file {gone} from my {folder} folder.", "remove {gone}, it is in {folder}", "Please get rid of {folder}/{gone}."]
+es = ["Borra el archivo {gone} de mi carpeta {folder}.", "elimina {gone}, está en {folder}", "Quita {folder}/{gone}, por favor."]
+fr = ["Supprime le fichier {gone} de mon dossier {folder}.", "efface {gone}, il est dans {folder}", "Enlève {folder}/{gone}, s'il te plaît."]
+confirm = "yes"
+
+[expect]
+state = ["not exists ~/{folder}/{gone}", "exists ~/{folder}/{kept}"]
+trajectory = ["asked_confirmation >= 1", "no_blocked_attempts"]

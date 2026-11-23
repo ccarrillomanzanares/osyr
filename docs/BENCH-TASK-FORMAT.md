@@ -1,6 +1,6 @@
 # Benchmark task format — draft
 
-13 November 2026, rewritten on 23 November for task families · **Draft, not approved.** Stage 1 of [TRAINING-PLAN.md](TRAINING-PLAN.md). Carlos approves the format and the categories before the 30–50 families are written. Nothing here is implemented.
+13 November 2026, rewritten on 23 November for task families · **Draft, not approved.** Stage 1 of [TRAINING-PLAN.md](TRAINING-PLAN.md). Carlos approves the format and the categories before the 30–50 families are written. The runner in `bench/` follows this draft, with eight example families (`bench/examples`) that are not the benchmark; what is not implemented yet is marked below.
 
 ## What a task is
 
@@ -129,9 +129,10 @@ A family overrides a default by stating the opposite in `expect.trajectory` (for
 
 A small fixed vocabulary, so that a verifier never needs code of its own:
 
-- **State:** `exists PATH`, `not exists PATH`, `file PATH contains TEXT`, `sysfs KEY == VALUE`, `service NAME is active|inactive`, `process NAME running|gone`, `memory contains TEXT`, `net connected SSID`, `volume == N`, `unchanged` (nothing in the machine changed at all).
+- **State:** `exists PATH`, `not exists PATH`, `file PATH contains TEXT`, `sysfs KEY == VALUE`, `brightness == N`, `volume == N`, `muted == yes|no`, `net connected SSID`, `net disconnected`, `bt connected NAME`, `display NAME on|off`, `memory contains TEXT`, `unchanged` (nothing in the machine changed at all: files, pretend hardware, `/sys` and what the agent remembers). Not implemented yet, for want of their fixtures: `service NAME is active|inactive`, `process NAME running|gone`.
 - **Trajectory:** `called TOOL [WORDS]`, `not called TOOL [WORDS]`, `asked_confirmation == N` (or `>=`), `no_blocked_attempts`, `tool_calls <= N`, `escalated`, `not escalated`, `looked_up_doc` (it called `osyr doc` before the command).
-- **Answer:** `mentions TEXT`, `not mentions TEXT`, `language == LANG` (by default, the variant's language), `words <= N` (by default in spoken variants).
+- **Answer:** `mentions TEXT` (`A|B`: one of them), `not mentions TEXT`, `words <= N`, `language == LANG` (written down but not checked yet: it needs a language detector, or the judge).
+- Two assertions joined with ` or ` hold if one of them does. A variant whose conversation does not reach its end in time fails.
 
 "It claimed something that did not happen" is the catalogued failure that state checks alone do not catch. It is covered by pairing `unchanged` (or a failed command in the trajectory) with `not mentions` of the success wording, and, for the cases where that is not enough, by a judged check: the 35B reads the final answer and the real state and answers yes or no. Judged checks are marked `judge = true`, are few, and their score is reported apart.
 
@@ -178,11 +179,17 @@ Twenty categories and 30–50 families means one to three families per category 
 
 | Piece | State on 23 Nov |
 | --- | --- |
-| Fixtures for `audio`, `net`, `display` and `bt` | Done: the doubles of `tests/doubles`, with a scenario file per machine |
-| A reset to a clean state between tasks | Done: one disposable container per variant (`sandbox/session`) |
-| A fixed temperature and seed from outside | Not done: `osyr-chat` uses the server's defaults |
+| Fixtures for `audio`, `net`, `display` and `bt` | Done: the doubles of `tests/doubles`; a family changes the pretend machine with `setup.machine` and `setup.sysfs` |
+| A reset to a clean state between tasks | Done: one disposable container per variant (`sandbox/session`), with the model server itself inside, as on a laptop |
+| A fixed temperature and seed from outside | Done: `OSYR_TEMPERATURE` and `OSYR_SEED` in `osyr-chat` |
+| The sampler of variants (`bench/families.py`) | Done: variant `n` is the first draw for `n` that is not the same conversation as an earlier variant |
+| The driver inside the session (`bench/driver.py`) and the verifier (`bench/verify.py`) | Done for the assertions listed above |
+| The report with intervals and the comparison of two runs (`bench/report.py`) | Done |
+| `make bench` (`bench/run.py`) | Done, one variant at a time; a run that is cut goes on where it stopped |
 | Fixtures for services, processes and disk usage | Not done |
-| The sampler of variants, the verifier and the report with intervals | Not done |
+| Several variants at once | Not done: one model server with one slot |
+| The second model in a session (for `escalate`) | The session takes both; not tried with real models |
+| Judged checks and the language of the answer | Not done |
 
 ## Open questions for Carlos
 

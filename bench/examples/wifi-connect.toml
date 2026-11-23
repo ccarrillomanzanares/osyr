@@ -1,0 +1,23 @@
+id = "wifi-connect"
+category = "change"
+level = 1
+split = "train"
+langs = ["en", "es", "pt"]
+
+[vars]
+net = [{ ssid = "Casa-Lopez", password = "girasol2026" }, { ssid = "MOVISTAR_F406", password = "x7Kp93mLq2vT" },
+       { ssid = "Livebox 6s 4471", password = "tulipan-azul-88" }]
+
+[[turns]]
+en = ["Connect to the wifi network {net.ssid}.", "join the {net.ssid} wifi", "I want to use the wifi called {net.ssid}",
+      "get me on {net.ssid}"]
+es = ["Conéctate a la wifi {net.ssid}.", "entra en la red {net.ssid}", "Quiero usar la wifi que se llama {net.ssid}",
+      "conéctame a {net.ssid}"]
+pt = ["Liga-te à rede wifi {net.ssid}.", "entra na wifi {net.ssid}", "Quero usar a rede chamada {net.ssid}",
+      "liga-me à {net.ssid}"]
+confirm = "yes"
+password = "{net.password}"
+
+[expect]
+state = ["net connected {net.ssid}"]
+trajectory = ["called osyr net wifi connect", "not called osyr {net.password}"]   # the password never goes through the model

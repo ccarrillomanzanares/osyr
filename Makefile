@@ -34,7 +34,7 @@ QEMU        := qemu-system-x86_64 $(KVM) -m $(QEMU_MEM) -smp $(QEMU_SMP) \
 	-nic user,model=virtio-net-pci,hostfwd=tcp::2222-:22 \
 	-serial mon:stdio
 
-.PHONY: all prune model qemu qemu-uefi menuconfig savedefconfig linux-menuconfig clean test test-native test-vm test-install
+.PHONY: all prune model qemu qemu-uefi menuconfig savedefconfig linux-menuconfig clean test test-native test-vm test-install bench
 
 all: $(OUT_DIR)/.config
 	scripts/disk-guard.sh
@@ -70,6 +70,13 @@ menuconfig savedefconfig linux-menuconfig: $(OUT_DIR)/.config
 
 # Image tests: real binaries on this machine (native, fast) and the image in
 # QEMU (vm). Results in build/test-results/.
+# The benchmark of the agent (docs/BENCH-TASK-FORMAT.md): every variant of every family in a
+# disposable session, with the model given.  make bench BENCH_MODEL=models/X.gguf [BENCH_ARGS="--runs 1"]
+BENCH_MODEL ?= models/Qwen3.5-4B-Q4_K_M.gguf
+bench:
+	@test -x $(OUT_DIR)/target/usr/bin/llama-server || { echo "No image root: run 'make' first"; exit 1; }
+	python3 bench/run.py --model $(BENCH_MODEL) $(BENCH_ARGS)
+
 test test-native test-vm test-install:
 	@test -f $(IMAGE) || { echo "No image: run 'make' first"; exit 1; }
 	python3 tests/run.py $(if $(filter test,$@),all,$(subst test-,,$@))

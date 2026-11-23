@@ -1,0 +1,29 @@
+id = "read-note"
+category = "files"
+level = 1
+split = "train"
+langs = ["en", "es", "ca"]
+
+[vars]
+file = ["nota.txt", "reunion.txt", "apuntes-lunes.txt", "meeting.txt", "recordatorio.txt"]
+room = ["4471", "B-212", "Zaragoza 3", "A07", "1.14"]
+other = ["recetas.txt", "lista-compra.txt", "todo.txt"]
+
+[setup]
+files = [
+  { path = "~/Documents/{file}", text = "Reunión de proyecto el jueves a las 10:00. Sala {room}. Llevar el portátil." },
+  { path = "~/Documents/{other}", text = "Tortilla: huevos, patatas, cebolla." },
+]
+
+[[turns]]
+en = ["Which room is the meeting in? It is written in my file {file}.", "look in {file} and tell me the meeting room",
+      "What room does {file} say the meeting is in?"]
+es = ["¿En qué sala es la reunión? Está apuntado en mi archivo {file}.", "mira en {file} y dime la sala de la reunión",
+      "¿Qué sala pone en {file} para la reunión?"]
+ca = ["A quina sala és la reunió? Està apuntat al meu fitxer {file}.", "mira a {file} i digue'm la sala de la reunió",
+      "Quina sala diu {file} per a la reunió?"]
+
+[expect]
+state = ["unchanged"]
+trajectory = ["called osyr files", "not called look"]
+answer = ["mentions {room}"]

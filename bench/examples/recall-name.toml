@@ -1,0 +1,23 @@
+id = "recall-name"
+category = "memory"
+level = 1
+split = "train"
+langs = ["en", "es", "fr"]
+
+[vars]
+who = [{ en = "sister", es = "hermana", fr = "sœur", note = "The user's sister is called" },
+       { en = "dog", es = "perro", fr = "chien", note = "The user's dog is called" },
+       { en = "doctor", es = "médico", fr = "médecin", note = "The user's doctor is called" }]
+name = ["Ana", "Rufus", "Maite", "Olivier", "Nuria", "Bruno"]
+
+[setup]
+memory = ["{who.note} {name}", "The user prefers short answers"]
+
+[[turns]]
+en = ["What is my {who.en} called?", "do you remember the name of my {who.en}?", "Remind me: my {who.en}'s name?"]
+es = ["¿Cómo se llama mi {who.es}?", "¿te acuerdas del nombre de mi {who.es}?", "Recuérdame cómo se llama mi {who.es}."]
+fr = ["Comment s'appelle mon {who.fr} ?", "tu te souviens du nom de mon {who.fr} ?", "Rappelle-moi le nom de mon {who.fr}."]
+
+[expect]
+state = ["unchanged"]
+answer = ["mentions {name}"]

@@ -1,0 +1,31 @@
+id = "read-then-set-brightness"
+category = "multi-step"
+level = 1
+split = "train"
+langs = ["en", "es", "de"]
+
+# The reading is always under the threshold: the right end is the change. (Over the
+# threshold nothing should change: that is another family.)
+[vars]
+now = [{ pct = "30", raw = "300" }, { pct = "45", raw = "450" }, { pct = "20", raw = "200" }, { pct = "50", raw = "500" }]
+limit = ["55", "60", "65"]
+target = ["80", "90", "100"]
+
+[setup.sysfs]
+"class/backlight/intel_backlight/brightness" = "{now.raw}"
+
+[[turns]]
+en = ["Check the brightness and, if it is under {limit}%, set it to {target}%.",
+      "if the screen is dimmer than {limit} percent put it at {target}",
+      "Look at the screen brightness; below {limit}% I want it at {target}%."]
+es = ["Mira el brillo y, si está por debajo del {limit} %, ponlo al {target} %.",
+      "si la pantalla está a menos del {limit} por ciento súbela al {target}",
+      "Comprueba el brillo; si no llega al {limit} %, déjalo en el {target} %."]
+de = ["Prüf die Helligkeit und stell sie auf {target} %, falls sie unter {limit} % liegt.",
+      "wenn der Bildschirm dunkler als {limit} Prozent ist, mach {target} draus",
+      "Schau nach der Helligkeit; unter {limit} % möchte ich {target} %."]
+confirm = "yes"
+
+[expect]
+state = ["brightness == {target}"]
+trajectory = ["asked_confirmation >= 1"]
