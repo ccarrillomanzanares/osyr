@@ -52,6 +52,9 @@ SHELL = os.environ.get("OSYR_SHELL", "1") != "0"  # the shell tool (the benchmar
 # The write and edit tools are off unless asked for: the untrained 4B model misuses them (it
 # "answers" a question about a file by writing a new one). See docs/TRAINING-LOG.md, 13 Nov 2026.
 WRITE = os.environ.get("OSYR_WRITE", "0") == "1"
+# The benchmark fixes the sampling (temperature 0 and a seed); nobody else sets these
+TEMPERATURE = float(os.environ["OSYR_TEMPERATURE"]) if os.environ.get("OSYR_TEMPERATURE") else None
+SEED = int(os.environ["OSYR_SEED"]) if os.environ.get("OSYR_SEED") else None
 SANDBOX = os.environ.get("OSYR_SANDBOX") == "1"  # the web sandbox (sandbox/ in the repository): a pretend laptop
 TOOL_OUTPUT = 4000   # characters of tool output the model sees (~1,000 tokens)
 CHATS = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
@@ -484,12 +487,16 @@ def request(messages, sess, stream=True):
         body["stream_options"] = {"include_usage": True}
     if sess.tools:
         body["tools"] = TOOLS
+    if TEMPERATURE is not None:
+        body["temperature"] = TEMPERATURE
     p = sess.provider
     if p["local"]:
         # No reasoning in milestone 0: on a CPU every token counts. Only for the
         # local one: a strict API rejects parameters it does not know.
         body["chat_template_kwargs"] = {"enable_thinking": False}
         body["id_slot"] = SLOT
+        if SEED is not None:
+            body["seed"] = SEED
     elif p.get("model"):
         body["model"] = p["model"]
     req = urllib.request.Request(p["url"].rstrip("/") + "/chat/completions",

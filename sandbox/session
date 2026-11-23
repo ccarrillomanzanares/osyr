@@ -14,7 +14,12 @@
 #   --minutes N   session length (default 15)
 #   --context N   context size the chat is told the model has (default 16384)
 #   --lang L      locale inside (default en_US.UTF-8)
+#   --env OSYR_NAME=VALUE   one more variable inside (several allowed); the benchmark's
+#   --share DIR   a folder of the caller's, writable inside as /run/osyr/share (the benchmark's)
 # (options rather than environment: the web service starts it through sudo)
+#
+# If DIR/llama.sock exists instead (sandbox/relay.py --from-socket), the chat inside
+# has the model server itself on its usual local port, as on a laptop.
 #
 #   OSYR_SANDBOX_ROOT    the image root (default: ../root if it exists, as
 #                        installed by 'publish.sh sandbox'; else build/output/target)
@@ -36,8 +41,19 @@ fi
 MINUTES=${OSYR_SANDBOX_MINUTES:-15}
 CONTEXT=${OSYR_SANDBOX_CONTEXT:-16384}
 LANG_IN=${OSYR_SANDBOX_LANG:-en_US.UTF-8}
+ENVS=
+SHARE=
 while [ $# -ge 2 ]; do
     case "$1" in
+        --env)
+            case "$2" in
+                OSYR_*=*) ;;
+                *) echo "session: --env takes OSYR_NAME=VALUE" >&2; exit 2 ;;
+            esac
+            case "${2%%=*}" in *[!A-Z0-9_]*) echo "session: bad name in --env" >&2; exit 2 ;; esac
+            ENVS="$ENVS
+$2" ;;
+        --share) SHARE=$(cd "$2" && pwd) ;;
         --minutes) MINUTES=$2 ;;
         --context) CONTEXT=$2 ;;
         --lang) LANG_IN=$2 ;;
@@ -97,7 +113,20 @@ set -- bwrap \
     ${CODE:+--ro-bind "$CODE/usr/bin/osyr-chat" /usr/bin/osyr-chat} \
     ${CODE:+--ro-bind "$CODE/usr/share/osyr/help.md" /usr/share/osyr/help.md} \
     $( [ -S "$DIR/model.sock" ] && printf '%s' "--bind $DIR/model.sock /run/osyr/model.sock" ) \
+    $( [ -S "$DIR/llama.sock" ] && printf '%s' "--bind $DIR/llama.sock /run/osyr/llama.sock" ) \
+    --args 6 \
     /bin/sh /run/osyr/inside.sh "$@"
+
+# The caller's variables and folder, as bwrap arguments through a descriptor (values may hold spaces)
+more=$(mktemp)
+{
+    if [ -n "$SHARE" ]; then printf -- '--bind\0%s\0/run/osyr/share\0' "$SHARE"; fi
+    printf '%s\n' "$ENVS" | while IFS= read -r line; do
+        if [ -n "$line" ]; then printf -- '--setenv\0%s\0%s\0' "${line%%=*}" "${line#*=}"; fi
+    done
+} > "$more"
+exec 6<"$more"
+rm -f "$more"
 
 set -- timeout --foreground --kill-after=10 "$((MINUTES * 60))" "$@"
 if [ "${OSYR_SANDBOX_LIMITS:-1}" != 0 ]; then

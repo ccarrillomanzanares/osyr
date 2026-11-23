@@ -3,7 +3,8 @@
 # a machine that has already been through its first start, and starts the chat.
 set -eu
 python3 /run/osyr/doubles/hw.py --sysfs /sys
-cp -r /run/osyr/skel/. "$HOME"/
+# (the benchmark starts from an empty home folder and puts its own files in)
+[ "${OSYR_SANDBOX_SKEL:-1}" = 0 ] || cp -r /run/osyr/skel/. "$HOME"/
 mkdir -p "$HOME/.config/osyr" "$HOME/.local/state/osyr" "$HOME/.local/share/osyr"
 : > "$HOME/.local/state/osyr/firstboot-done"
 if [ -S /run/osyr/model.sock ]; then
@@ -14,6 +15,10 @@ if [ -S /run/osyr/model.sock ]; then
  "context": ${OSYR_SANDBOX_CONTEXT:-16384}}}}
 JSON
     )
+fi
+if [ -S /run/osyr/llama.sock ]; then
+    # The benchmark: the model server itself, where the chat expects the local one
+    python3 /run/osyr/relay.py 127.0.0.1 "${OSYR_LLAMA_PORT:-8083}" /run/osyr/llama.sock &
 fi
 [ $# -gt 0 ] && exec "$@"
 exec osyr-chat
