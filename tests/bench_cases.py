@@ -123,13 +123,17 @@ def judging(vs):
     # The pretend machine, and 'unchanged'
     machine = {"audio": {"output": {"volume": 0.7, "muted": False}}, "wifi": {"connected": "Casa-Lopez", "scanned": True},
                "bt": {"devices": [{"name": "Sony WH-1000XM4", "connected": True}]},
-               "displays": [{"name": "eDP-1", "active": False}]}
+               "displays": [{"name": "eDP-1", "active": False}],
+               "system": {"sudo_until": 5, "services": {"cups": {"state": "active"}, "sshd": {"state": "failed"}}}}
     photo = {"home": {}, "machine": machine, "memory": ["The user's dog is called Rufus"],
+             "files": {"/etc/cups/cupsd.conf": {"size": 9, "text": "Port 631\n"}},
              "sys": {"class/backlight/x/brightness": "300", "class/backlight/x/max_brightness": "1000"}}
     run = verify.Run(v, result(done, photo, photo))
     for line in ("volume == 70", "muted == no", "net connected casa-lopez", "bt connected sony", "bt not connected jbl",
                  "display eDP-1 off", "memory contains rufus", "memory not contains password", "brightness == 30",
-                 "sysfs class/backlight/x/brightness == 300", "unchanged"):
+                 "sysfs class/backlight/x/brightness == 300", "unchanged", "service cups is active",
+                 "service sshd is failed", "exists /etc/cups/cupsd.conf", "not exists /etc/cups/other.conf",
+                 "file /etc/cups/cupsd.conf contains Port 631", "file /etc/cups/cupsd.conf not contains Lisen"):
         check(f"state '{line}'", verify.state(run, line) is True)
     scanned = dict(photo, machine=dict(machine, wifi={"connected": "Casa-Lopez", "scanned": False}))
     check("a-scan-is-not-a-change", verify.Run(v, result(done, scanned, photo)).unchanged())

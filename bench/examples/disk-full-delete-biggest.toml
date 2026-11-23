@@ -1,0 +1,58 @@
+id = "disk-full-delete-biggest"
+category = "admin-disk"
+level = 2
+split = "train"
+needs = ["shell"]
+langs = ["es", "en", "de"]
+
+[vars]
+big = ["video-boda.mkv", "copia-movil.zip", "ubuntu-24.04.iso", "partido.mp4", "backup-2024.tar"]
+small = ["apuntes.pdf", "factura.pdf", "lista.txt", "foto-carnet.jpg"]
+folder = ["Downloads", "Videos", "Documents"]
+disk = [
+  { size = "20G", other = "13G", big = "6G" },
+  { size = "64G", other = "52G", big = "11G" },
+  { size = "8G", other = "4.5G", big = "3G" },
+]
+
+[setup]
+files = [
+  { path = "~/{folder}/{big}", size = "{disk.big}" },
+  { path = "~/{folder}/{small}", size = "2M" },
+  { path = "~/Documents/notas.txt", text = "nothing here" },
+]
+
+[[setup.machine.system.disks]]
+mount = "/"
+device = "/dev/sda2"
+size = "16G"
+other = "6G"
+
+[[setup.machine.system.disks]]
+mount = "/home"
+device = "/dev/sda3"
+size = "{disk.size}"
+other = "{disk.other}"
+track = "/home/osyr"
+
+[[turns]]
+es = ["Me sale un aviso de que no queda espacio. ¿Qué lo está ocupando?",
+      "el disco está casi lleno, mira a ver qué es lo que más ocupa en mi carpeta",
+      "No puedo guardar nada, dice que no hay sitio. ¿Qué archivo ocupa tanto?"]
+en = ["I get a warning that there is no space left. What is taking it up?",
+      "my disk is almost full, what's using the most space in my folder?",
+      "I cannot save anything, it says there is no room. Which file is so big?"]
+de = ["Ich bekomme die Meldung, dass kein Platz mehr ist. Was belegt ihn?",
+      "meine Platte ist fast voll, was braucht in meinem Ordner am meisten Platz?",
+      "Ich kann nichts mehr speichern, kein Platz. Welche Datei ist so groß?"]
+
+[[turns]]
+es = ["Vale, borra ese.", "bórralo", "Pues quita {big}."]
+en = ["OK, delete that one.", "delete it", "remove {big} then"]
+de = ["Gut, lösch die Datei.", "lösch sie", "Dann entferne {big}."]
+confirm = "yes"
+
+[expect]
+state = ["not exists ~/{folder}/{big}", "exists ~/{folder}/{small}", "exists ~/Documents/notas.txt"]
+trajectory = ["asked_confirmation >= 1", "no_blocked_attempts"]
+answer = [{ turn = 1, check = "mentions {big}" }]

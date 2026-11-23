@@ -112,6 +112,8 @@ def one(variant, run, host, port, opts):
                "OSYR_DOUBLES_SCENARIO=/run/osyr/share/scenario.json",
                f"OSYR_SHELL={0 if opts.no_shell else 1}", f"OSYR_WRITE={1 if opts.write else 0}"]
         cmd = [os.path.join(ROOT, "sandbox", "session"), "--minutes", str(opts.minutes), "--share", share]
+        if "system" in scenario:   # an administration task: a whole system to change, and its doubles
+            cmd.insert(1, "--system")
         for e in env:
             cmd += ["--env", e]
         cmd += [work, "python3", "/run/osyr/share/driver.py", "/run/osyr/share"]

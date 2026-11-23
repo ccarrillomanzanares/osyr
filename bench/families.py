@@ -84,7 +84,7 @@ def fill(value, slots):
     if isinstance(value, list):
         return [fill(v, slots) for v in value]
     if isinstance(value, dict):
-        return {k: fill(v, slots) for k, v in value.items()}
+        return {fill(k, slots): fill(v, slots) for k, v in value.items()}
     return value
 
 

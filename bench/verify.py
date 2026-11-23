@@ -11,7 +11,7 @@ from families import fold
 
 MAX_CALLS = 12            # the chat ends a turn there: reaching it is a loop
 ESCALATE_TOOL = "ask_server"
-VOLATILE = {"scanned", "seen", "scan_until"}   # a scan is not a change of the machine
+VOLATILE = {"scanned", "seen", "scan_until", "sudo_until"}   # a scan, or a typed password, is not a change
 
 
 class BadAssertion(ValueError):
@@ -56,8 +56,14 @@ class Run:
     # --- the machine ----------------------------------------------------------------------
 
     def home(self, path, when="after"):
-        rel = re.sub(r"^~/?", "", path.strip()).rstrip("/")
-        return (self.after if when == "after" else self.before).get("home", {}).get(rel)
+        """A file or folder as photographed: under the home folder ('~/x'), or a system file
+        the variant names by its whole path ('/etc/x')."""
+        photo = self.after if when == "after" else self.before
+        path = path.strip()
+        if path.startswith("/"):
+            return photo.get("files", {}).get(path)
+        rel = re.sub(r"^~/?", "", path).rstrip("/")
+        return photo.get("home", {}).get(rel)
 
     def brightness(self):
         sysfs = self.after.get("sys", {})
@@ -75,7 +81,8 @@ class Run:
             if isinstance(x, list):
                 return [steady(v) for v in x]
             return x
-        return all(steady(self.before.get(k)) == steady(self.after.get(k)) for k in ("home", "sys", "machine", "memory"))
+        return all(steady(self.before.get(k)) == steady(self.after.get(k))
+                   for k in ("home", "sys", "machine", "memory", "files"))
 
     def called(self, tool, words):
         return any(t == tool and all(fold(w) in fold(a) for w in words) for t, a, _, _ in self.calls)
@@ -119,6 +126,9 @@ def state(run, line):
     if w[0] == "display" and len(w) == 3:
         d = next((x for x in m.get("displays", []) if x.get("name") == w[1]), None)
         return d is not None and bool(d.get("active")) == (w[2] == "on")
+    if w[0] == "service" and len(w) == 4 and w[2] == "is":
+        svc = m.get("system", {}).get("services", {}).get(w[1])
+        return svc is not None and svc.get("state", "inactive") == w[3]
     if w[0] == "memory":
         neg = w[1] == "not"
         text = fold(line.split("contains", 1)[1].strip())

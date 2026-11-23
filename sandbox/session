@@ -16,6 +16,9 @@
 #   --lang L      locale inside (default en_US.UTF-8)
 #   --env OSYR_NAME=VALUE   one more variable inside (several allowed); the benchmark's
 #   --share DIR   a folder of the caller's, writable inside as /run/osyr/share (the benchmark's)
+#   --system      a whole system to administer: every file can be changed (the changes live in
+#                 memory and go with the session) and systemctl, journalctl, df and sudo are the
+#                 administration doubles (tests/doubles/admin.py). The benchmark's
 # (options rather than environment: the web service starts it through sudo)
 #
 # If DIR/llama.sock exists instead (sandbox/relay.py --from-socket), the chat inside
@@ -43,8 +46,10 @@ CONTEXT=${OSYR_SANDBOX_CONTEXT:-16384}
 LANG_IN=${OSYR_SANDBOX_LANG:-en_US.UTF-8}
 ENVS=
 SHARE=
+SYSTEM=0
 while [ $# -ge 2 ]; do
     case "$1" in
+        --system) SYSTEM=1; shift; continue ;;
         --env)
             case "$2" in
                 OSYR_*=*) ;;
@@ -89,7 +94,7 @@ rm -f "$filter"
 set -- bwrap \
     --unshare-all --unshare-user --disable-userns --uid 1000 --gid 1000 --hostname osyr \
     --die-with-parent --clearenv --seccomp 5 \
-    --ro-bind "$ROOT" / \
+    $( [ "$SYSTEM" = 1 ] && printf '%s' "--overlay-src $ROOT --tmp-overlay /" || printf '%s' "--ro-bind $ROOT /" ) \
     --proc /proc --dev /dev \
     --size 134217728 --tmpfs /tmp --size 33554432 --tmpfs /run --size 67108864 --tmpfs /dev/shm \
     --dir /run/user/1000 --dir /run/osyr/hw \
@@ -104,7 +109,7 @@ set -- bwrap \
     --ro-bind "$HERE/relay.py" /run/osyr/relay.py \
     --ro-bind "$HERE/prefix.py" /run/osyr/prefix.py \
     --setenv HOME /home/osyr --setenv USER osyr --setenv LOGNAME osyr --setenv SHELL /bin/bash \
-    --setenv PATH /run/osyr/bin:/run/osyr/doubles:/usr/bin:/bin:/usr/sbin:/sbin \
+    --setenv PATH "$( [ "$SYSTEM" = 1 ] && printf /run/osyr/doubles/admin: )/run/osyr/bin:/run/osyr/doubles:/usr/bin:/bin:/usr/sbin:/sbin" \
     --setenv LANG "$LANG_IN" --setenv TERM "${TERM:-xterm-256color}" \
     --setenv XDG_RUNTIME_DIR /run/user/1000 \
     --setenv OSYR_DOUBLES_STATE /run/osyr/hw/state.json --setenv OSYR_INTERNET 1 \

@@ -1,0 +1,49 @@
+id = "service-config-typo"
+category = "admin-services"
+level = 2
+split = "train"
+needs = ["shell"]
+langs = ["en", "es"]
+
+# A service does not start because of a misspelt word in its configuration file. The log
+# names the file and the word; the fix is to correct the line and start the service.
+[vars]
+svc = [
+  { name = "cups", desc = "CUPS Scheduler", proc = "cupsd", conf = "/etc/cups/cupsd.conf", bad = "Lisen localhost:631", word = "Lisen", en = "the printer", es = "la impresora" },
+  { name = "sshd", desc = "OpenSSH server daemon", proc = "sshd", conf = "/etc/ssh/sshd_config", bad = "PermitRootLogn no", word = "PermitRootLogn", en = "remote access by SSH", es = "el acceso remoto por SSH" },
+  { name = "nginx", desc = "A high performance web server", proc = "nginx", conf = "/etc/nginx/nginx.conf", bad = "worker_proceses auto;", word = "worker_proceses", en = "my web server", es = "mi servidor web" },
+  { name = "chronyd", desc = "NTP client/server", proc = "chronyd", conf = "/etc/chrony.conf", bad = "makestp 1.0 3", word = "makestp", en = "the clock synchronisation", es = "la sincronización de la hora" },
+]
+line = ["3", "7", "12", "18"]
+
+[setup]
+files = [{ path = "{svc.conf}", text = "# {svc.desc}\n# local settings\n{svc.bad}\n" }]
+
+[setup.machine.system]
+password = "osyr"
+
+[setup.machine.system.services."{svc.name}"]
+description = "{svc.desc}"
+process = "{svc.proc}"
+state = "failed"
+log = ["Starting {svc.desc}...", "err: {svc.conf}: line {line}: unknown directive '{svc.word}'", "err: configuration error, exiting"]
+error = ["err: {svc.conf}: line {line}: unknown directive '{svc.word}'", "err: configuration error, exiting"]
+needs = [{ file = "{svc.conf}", lacks = "{svc.word}" }]
+
+[setup.machine.system.services.osyr-llama]
+description = "OSYR local model"
+state = "active"
+log = ["model loaded"]
+
+[[turns]]
+en = ["I can't use {svc.en} any more. Find out why and fix it.",
+      "something is wrong with {svc.en}: please find the cause and repair it",
+      "{svc.en} stopped working today, can you sort it out?"]
+es = ["Ya no puedo usar {svc.es}. Averigua por qué y arréglalo.",
+      "algo le pasa a {svc.es}: busca la causa y repáralo, por favor",
+      "{svc.es} ha dejado de funcionar hoy, ¿puedes solucionarlo?"]
+confirm = "yes"
+
+[expect]
+state = ["service {svc.name} is active", "file {svc.conf} not contains {svc.word}", "service osyr-llama is active"]
+trajectory = ["called shell sudo", "asked_confirmation >= 1", "no_blocked_attempts", "escalated or not escalated"]

@@ -123,6 +123,48 @@ P""")
     check("starts-clean", "No such file" in again and '"percent": 50' in again, again)
 
 
+def admin(tmp):
+    """The administration doubles in a session with a whole system to change (--system)."""
+    share = tempfile.mkdtemp(dir=tmp)
+    with open(f"{ROOT}/tests/doubles/laptop.json") as f:
+        scenario = json.load(f)
+    scenario["system"] = {"password": "osyr", "services": {
+        "cups": {"description": "CUPS Scheduler", "state": "failed", "process": "cupsd",
+                 "log": ["err: Unknown directive Lisen"], "error": ["err: Unknown directive Lisen"],
+                 "needs": [{"file": "/etc/cups/cupsd.conf", "lacks": "Lisen"}]},
+        "sshd": {"description": "OpenSSH server daemon", "state": "active", "log": ["Server listening"]}},
+        "disks": [{"mount": "/home", "device": "/dev/sda3", "size": "20G", "other": "12G", "track": "/home/osyr"}]}
+    with open(f"{share}/scenario.json", "w") as f:
+        json.dump(scenario, f)
+    d = tempfile.mkdtemp(dir=tmp)
+    script = """
+        mkdir -p /etc/cups; echo 'Lisen localhost:631' > /etc/cups/cupsd.conf
+        echo "failed: $(systemctl --failed | grep -c cups.service)"; systemctl is-active cups; systemctl is-active sshd
+        journalctl -u cups -p err -n 5 --no-pager | grep -c Lisen
+        systemctl restart cups 2>&1 | grep -c 'authentication required'
+        sudo -n true 2>&1 | grep -c 'password is required'
+        sudo() { OSYR_DOUBLE_ROOT=1 "$@"; }        # as after typing the password (tried apart, on a terminal)
+        sudo systemctl restart cups 2>&1 | grep -c 'failed because'; systemctl is-active cups
+        sed -i 's/Lisen/Listen/' /etc/cups/cupsd.conf; sudo systemctl restart cups; echo "restart rc=$?"; systemctl is-active cups
+        journalctl -u cups -n 1 | grep -c 'Started CUPS'
+        sudo systemctl stop sshd; systemctl is-active sshd; systemctl status nothere 2>&1 | grep -c 'could not be found'
+        truncate -s 6G ~/big.iso; df -h /home | tail -1; du -sh ~/big.iso | cut -f1; rm ~/big.iso; df -h /home | tail -1
+        touch /usr/bin/anything && echo writable-system
+    """
+    p = subprocess.run([f"{ROOT}/sandbox/session", "--system", "--share", share, "--env",
+                        "OSYR_DOUBLES_SCENARIO=/run/osyr/share/scenario.json", d, "sh", "-c", script],
+                       capture_output=True, text=True, timeout=120, env=dict(os.environ, OSYR_SANDBOX_LIMITS="0"))
+    lines = p.stdout.strip().splitlines()
+    want = ["failed: 1", "failed", "active", "1", "1", "1", "1", "failed", "restart rc=0", "active", "1", "inactive", "1"]
+    check("admin-services", lines[:len(want)] == want, p.stdout + p.stderr)
+    rest = lines[len(want):]
+    check("admin-disk", len(rest) == 4 and "18G" in rest[0] and "90%" in rest[0] and rest[1] == "6.0G"
+          and "12G" in rest[2] and "60%" in rest[2] and rest[3] == "writable-system", rest)
+    # Without --system the image's files cannot be changed and these doubles are not there
+    out = session(tmp, "touch /usr/bin/anything 2>&1; command -v systemctl")
+    check("admin-only-when-asked", "Read-only file system" in out and "/run/osyr/doubles" not in out, out)
+
+
 def http(path, method="GET", body=None, sock=None):
     s = socket.socket(socket.AF_UNIX)
     s.settimeout(20)
@@ -314,6 +356,7 @@ def main():
         if os.path.exists(f"{ROOT}/build/output/target/usr/bin/python3"):
             doubles(tmp)
             visitor()
+            admin(tmp)
             isolation(tmp)
             service(tmp)
         else:
