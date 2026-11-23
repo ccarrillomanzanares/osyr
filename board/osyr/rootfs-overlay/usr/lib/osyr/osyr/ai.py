@@ -170,6 +170,18 @@ def detect_context(p):
     return None, "unknown"
 
 
+def is_llama_cpp(p):
+    """Whether the provider is a llama.cpp server (OSYR's own kind, e.g. the user's 35B):
+    it takes the chat's request not to reason, which a strict API would reject."""
+    if p.get("local"):
+        return True
+    try:
+        models = get_json(p["url"].rstrip("/") + "/models", p, timeout=5).get("data", [])
+        return any(isinstance(m.get("meta"), dict) and "n_ctx_train" in m["meta"] for m in models)
+    except (urllib.error.URLError, OSError, ValueError, AttributeError):
+        return False
+
+
 def context_of(p):
     """The provider's context in tokens (for the local one, the server is asked)."""
     if p.get("context") not in (None, "auto"):
