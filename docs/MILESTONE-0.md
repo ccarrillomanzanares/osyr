@@ -589,3 +589,23 @@ Two pieces of the plan built ahead of their stage because the web sandbox (`ccma
 - **The chat inside** greets with what can be tried there instead of the commands that make no sense (`/install`, `/pair`, `/voice`), and ends with a plain sentence if the model does not answer (`OSYR_SANDBOX=1`).
 - **Two gaps of the product found by the 35B in the sandbox, fixed:** no command told the agent the battery's charge (`osyr sys power` now gives it), and `files read shopping_list.txt` did not find `shopping-list.txt` (a bare name now matches with `-`, `_` and spaces taken as the same when nothing matches exactly).
 - **Not done yet:** the user's own try of the private test; the button on the front page; the two decisions before opening it (whether anything of a conversation is kept: nothing is today; whether the sessions move to another machine). Known limits that stay: `/proc` shows the VPS's processor count and memory; the system files look owned by `nobody` inside; `remember` is not fed back to the model.
+
+## Handing a task to the second model: `ask_server` (23 Nov) — for the next image
+
+The last of the "first priority" features of stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md).
+
+- **What:** a fifth tool of the chat, `ask_server(task)`, offered only to the local model and only when there is a second model: the provider chosen with `osyr ai second <name>`, or the only provider there is (`osyr ai second off` turns it off; `osyr ai second` shows it). With no provider the tool is not in the prompt, so machines without a server pay nothing for it.
+- **It asks first,** as decided on 13 Nov, because the conversation leaves the computer: yes, always for that provider (a saved permission, listed and removed with `/permissions`), or no. A "no" goes back to the local model, which is told not to insist.
+- **Then the second model goes on with the same turn:** it gets the conversation so far and the same tools (without `ask_server`), runs its commands under the same questions and protections, and answers. The next message is the local model's again. What the user asked to remember is not sent, as with any remote provider.
+- If the server does not answer, the local model is told to do what it can and say so.
+- **Tried:** seven cases with a scripted model in `tests/turn_cases.py` (no server, declined, accepted and going on there, back to the local model, "always" not asked again). **Not tried with real models**, and not built into an image. The description costs about 100 tokens of the fixed prompt when a second model exists: to be measured against the 2,000 limit.
+
+## The benchmark's runner (23 Nov)
+
+Built ahead of stage 1 on top of the disposable session and the doubles, following the draft of [BENCH-TASK-FORMAT.md](BENCH-TASK-FORMAT.md) (families with sampled variants); the format is still to be approved and the 30–50 families are not written.
+
+- `bench/families.py` draws the variants of a family file (TOML): variant `n` is always the same conversation. `bench/driver.py` runs inside the session: it puts the variant's files and notes in place, photographs the machine (home folder, pretend hardware, `/sys`, memory), types the turns into the real `osyr-chat` on a terminal, answers its questions as the variant says, and photographs the machine again. `bench/verify.py` judges outside, with the format's fixed vocabulary and its defaults (no hand-over outside the `escalate` category, no more than 12 calls in a turn). `bench/report.py` gives every score with its 95 % interval, by resampling families and their variants, and compares two runs variant by variant.
+- `make bench BENCH_MODEL=file.gguf` (`bench/run.py`): starts the image's `llama-server` with that model, gives each session the server itself on the chat's usual local port (`sandbox/relay.py --from-socket`), so the chat runs as on a laptop, at temperature 0 with one seed per run (`OSYR_TEMPERATURE`, `OSYR_SEED`, new in `osyr-chat`). One variant at a time; a cut run goes on where it stopped. Results in `build/bench/<label>/`.
+- The session gained what this needs: `--env OSYR_NAME=VALUE`, `--share DIR`, an empty home folder (`OSYR_SANDBOX_SKEL=0`) and the model server's socket (`llama.sock`), alone or with a second model's gate.
+- Eight example families in `bench/examples` (brightness, volume, wifi with a password, a note to read, a name to recall, read-then-set, a "no", deleting a file), in several languages and with spoken variants. They are there to try the machinery.
+- **Tried:** `tests/bench_cases.py` (native phase): the draws, the verdicts on made-up conversations and the intervals. The first whole run of the examples with the 4B is in [TRAINING-LOG.md](TRAINING-LOG.md).
