@@ -68,10 +68,14 @@ def start_server(model, threads, log):
     s.close()
     flags = open("/proc/cpuinfo").read()
     variant = "haswell" if " avx2" in flags else "sandybridge" if " avx" in flags else "x64"
+    slots = os.path.join(os.path.dirname(log), "slots")
+    os.makedirs(slots, exist_ok=True)
     env = dict(os.environ, GGML_BACKEND_PATH=f"{TARGET}/usr/lib/ggml/libggml-cpu-{variant}.so")
     cmd = [f"{TARGET}/lib/ld-linux-x86-64.so.2", "--library-path", f"{TARGET}/usr/lib:{TARGET}/lib",
            f"{TARGET}/usr/bin/llama-server", "-m", model, "--host", "127.0.0.1", "--port", str(port),
-           "-c", "8192", "-t", str(threads), "-np", "1", "--jinja"]
+           "-c", "8192", "-t", str(threads), "-np", "1", "--jinja",
+           # the chat saves the fixed prompt it has read and restores it in the next session
+           "--slot-save-path", slots]
     proc = subprocess.Popen(cmd, env=env, stdout=open(log, "w"), stderr=subprocess.STDOUT)
     end = time.time() + 600
     while time.time() < end:
