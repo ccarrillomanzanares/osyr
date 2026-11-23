@@ -2,6 +2,7 @@
 # Runs inside the container (see sandbox/session): sets up the home folder of
 # a machine that has already been through its first start, and starts the chat.
 set -eu
+python3 /run/osyr/doubles/hw.py --sysfs /sys
 cp -r /run/osyr/skel/. "$HOME"/
 mkdir -p "$HOME/.config/osyr" "$HOME/.local/state/osyr" "$HOME/.local/share/osyr"
 : > "$HOME/.local/state/osyr/firstboot-done"

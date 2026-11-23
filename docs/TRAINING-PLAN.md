@@ -39,6 +39,10 @@ This document is meant to be read by the agent working on the `osyr` repository 
 | The 35B on the VPS (llama-hardened) | May be queried for tests, without touching its configuration |
 | Training | Two rounds with real use in between |
 | Local GPU | Built on 14 Nov for AMD and Intel cards through Vulkan (`osyr ai gpu on`), untested on a discrete card; NVIDIA with the proprietary driver stays for later, with no date. It blocks nothing in this plan |
+| Lambda storage (23 Nov) | Not used, at any stage. The credits do not cover it: a persistent filesystem would be charged to the card. Everything stays on the instance's own disk and is copied out before the instance is terminated |
+| Task families (23 Nov) | A benchmark task is a family: one situation with several sampled variants (names, values, wording). Whole families are held out, and a gate is read with its interval over the variants. With 30–50 single tasks the held-out group would be 6 to 10 tasks, and the pilot's 10 points would be one task |
+| What the pilot covers (23 Nov) | Every mechanism of the first round gets a minimal run in the pilot, the 35B's fine-tuning, the on-policy distillation and the RL included, and the pilot measures how busy the rented GPU is. Their real cost must not be seen for the first time inside the 50 % round |
+| Handing over, measured both ways (23 Nov) | Handing a task over when the small model could have done it counts as a failure too: it sends data off the machine and adds a wait. The examples of "this is beyond me" come from what the fine-tuned small model is measured to fail, not from a guess |
 
 ## Levels and profiles
 
@@ -54,7 +58,7 @@ This document is meant to be read by the agent working on the `osyr` repository 
 | Minimum | 16 to 31 GB with AVX2 | Fine-tuned small model | 1 and 2; 3 with a server |
 | Higher | 32 GB or more, or a server | Fine-tuned 35B | 3 |
 
-The small model has to learn to recognise that a task is beyond it and hand it to the 35B. That is a central part of the training, not an extra.
+The small model has to learn to recognise that a task is beyond it and hand it to the 35B. That is a central part of the training, not an extra. The examples for it are the tasks that the fine-tuned small model fails and the teacher solves, taken from the on-policy runs of phase 4.3; and the benchmark checks the other side too, that it does not hand over what it can do (23 Nov).
 
 ## Starting point
 
@@ -89,6 +93,7 @@ These rules hold in every session and weigh more than the urge to move forward.
 7. **Leave the state written down** when each piece is finished, in the same session: system features in `docs/MILESTONE-0.md`, training in `docs/TRAINING-LOG.md`.
 8. **Carlos's decisions are not taken for him.** The ones in the last section are asked.
 9. **The 35B on the VPS belongs to another project.** It is queried for tests; its configuration is not touched and its server is not stopped.
+10. **No Lambda storage.** The credits do not cover it and it would be charged to Carlos's card. Never create a persistent filesystem and never start an instance with one attached. Models, data and checkpoints live on the instance's own disk, which is erased when the instance is terminated: copy out what must be kept (to the VPS or to Hugging Face) before shutting down, and download it again on the next instance. When checking that an instance is off, check too that the account has no filesystem.
 
 ## Stage 0: build what is missing (no spending, November to February)
 
@@ -136,35 +141,38 @@ After the freeze a change is possible, but it forces the baseline to be measured
 
 Result: 30 to 50 tasks with a final-state verifier, run with a single command, and a list of what Carlos misses when using the system.
 
-1. **Define the task format.** One file per task with: initial state, user request, language, mode (text or voice), level (1, 2 or 3), verifier and expected behaviour (for example, asking for confirmation before changing something).
+1. **Define the task format.** One file per task with: initial state, user request, language, mode (text or voice), level (1, 2 or 3), verifier and expected behaviour (for example, asking for confirmation before changing something). A task is a family: besides the language and voice variants, the same situation is sampled into several variants (file names, values, the wording of the request), so that a score has an interval and the training data is not the same thirty conversations repeated (23 Nov; [BENCH-TASK-FORMAT.md](BENCH-TASK-FORMAT.md) is still to be updated with this).
 2. **Write the runner.** It starts from the native phase of `tests/run.py`. It saves the full trajectory (messages and tool calls) as JSON. The verifier looks at the final state and the trajectory, never at the terminal text. The runner sets the temperature to 0.
 3. **Write the tasks** by category:
     - Reading without changes and changes with confirmation (what exists today).
     - Administration: services, logs, disk, users, network, processes.
     - Files, applications and installation.
     - Safety: the user says no, the request is ambiguous, the request asks for something dangerous, the command is blocked.
-    - Escalating: tasks the small model must hand to the 35B.
+    - Escalating: tasks the small model must hand to the 35B. Measured both ways: every task outside this category expects no hand-over.
     - Commands never seen, solved by looking up `osyr doc`.
     - Real failures already catalogued: loops, `sudo`, repeated polling, claiming something that did not happen.
     - Several steps, languages (several of the seven) and voice mode (text with transcription noise).
-4. **Hold out 20 % of the tasks** from day one. They are not used for training or for writing variants, at any stage.
+4. **Hold out 20 % of the tasks** from day one. They are not used for training or for writing variants, at any stage. Whole families are held out: no variant of a held-out family is ever seen in training.
 5. **Measure untrained** the small model and the 35B on the VPS: first baseline, with a score per category and per level.
 6. **Use OSYR for real** (March): Carlos uses it from USB with the VPS 35B as the agent and notes what is missing. The saved conversations serve as examples of how people talk.
 
-**Gate:** `make bench` (or equivalent) runs every task and gives a score per category and level, with the mean and spread of three runs.
+**Gate:** `make bench` (or equivalent) runs every task and gives a score per category and level, with the mean and spread of three runs. The uncertainty of a score comes from the variants, not from repeating a run: at temperature 0 the three runs of a task come out almost the same. The report gives each score with its interval over the families.
 
 ## Stage 2: pilot on Lambda (7 % of the budget, April)
 
 Result: the whole plan in miniature, to learn early how far each model gets and what each step really costs.
 
-1. **GPU baseline** of the small model and the 35B. The task environment runs on the VPS and calls the model served on Lambda.
+**First, an infrastructure rehearsal** of about two hours, charged to this stage's share and with the usual go-ahead: start an instance, serve the 35B, run a few tasks from the VPS against it, copy the results out, terminate and check. On-demand capacity is first come, first served and most of the budget is spent in two bursts, so a capacity or setup problem should show here and not in the middle of a measurement. It may be run earlier, once the runner exists, if Carlos decides so.
+
+1. **GPU baseline** of the small model and the 35B. The task environment runs on the VPS and calls the model served on Lambda. Measure how busy the instance is: the share of its time in which the model is generating. Lambda bills by the minute whether or not the model has work, so this number decides how many environments run in parallel and whether a cheaper instance would do.
 2. **Teacher trajectories.** The untrained 35B solves the tasks several times; only those the verifier approves are kept.
 3. **Short fine-tune of the small model** (LoRA) with those trajectories, without the held-out tasks.
 4. **Measure again**, with and without the shell, above all on the held-out tasks.
 5. **Close the loop:** export to GGUF Q4_K_M, load it into the OSYR image and run the benchmark. The comparison that counts is base model against fine-tuned model, both in Q4_K_M.
-6. **Pilot report:** numbers before and after, real hours and cost, the level each model reaches and what changes in the budget.
+6. **A minimal run of what is left of the first round:** fine-tuning the 35B (phase 4.1), the on-policy distillation (4.3) and the RL (4.4). Minutes each, not to improve anything: to measure memory, speed and that the plumbing works, so that their shares of the budget are set from measurements. This also fixes the instance type of each phase: the 35B is about 70 GB of weights at 16 bits, so on an 80 GB card it only fits quantized, and the 180 GB card costs about twice as much per hour.
+7. **Pilot report:** numbers before and after, real hours and cost, how busy the GPU was, the instance type each phase needs, the level each model reaches and what changes in the budget.
 
-**Gate:** the fine-tuned small model beats its baseline by at least 10 points on the held-out tasks (mean of three runs) and the exported model works on the 16 GB profile. If it does not improve, work stops and the next step is decided with Carlos before spending more.
+**Gate:** the fine-tuned small model beats its baseline by at least 10 points on the held-out families (mean of three runs), the interval of that difference over the held-out variants leaves zero out, and the exported model works on the 16 GB profile. If it does not improve, work stops and the next step is decided with Carlos before spending more.
 
 ## Stage 3: full benchmark and sandbox (2 %, May)
 
@@ -225,7 +233,7 @@ The Lambda credits expire in November 2027. All spending ends in September and O
 | Sep 2027 | 6. Second round | 33 % |
 | Oct 2027 | Margin and reserve | 8 % |
 
-To be confirmed in the Lambda account: the exact expiry day and what the credits cover (instances, storage).
+Confirmed in the Lambda account on 23 Nov 2026: the credits expire around 4 November 2027 (the account showed 346 days left; the hour and the time zone are not known) and they pay for on-demand instances. **Storage is not covered and would be charged to the card**, so it is not used (working rule 10). Lambda's terms also let it withdraw credits at any time, one more reason to keep October as margin and not to leave the important work for the end.
 
 ## Carlos's pending decisions
 
@@ -238,3 +246,5 @@ To be confirmed in the Lambda account: the exact expiry day and what the credits
 - [ ] Whether to use the Nemotron tokens to generate requests, once the licence is checked.
 - [ ] After the first round: what goes into the second.
 - [ ] Whether to apply for the GPU-hours offer for European startups, which would extend the RL without touching Lambda.
+- [ ] With the task format: how many variants a family has and how many families are held out (proposed: about ten variants per family, so that the held-out group holds about a hundred).
+- [ ] When the infrastructure rehearsal runs: at the start of the pilot, or earlier once the runner exists.

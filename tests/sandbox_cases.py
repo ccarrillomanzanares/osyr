@@ -83,7 +83,7 @@ def isolation(tmp):
         id -un; ls /home; cat /proc/1/comm
         python3 -c 'import socket; socket.create_connection(("1.1.1.1", 443), 3)' 2>&1 | tail -1
         touch /usr/bin/x 2>&1; cat /etc/osyr/diag.token 2>/dev/null | wc -c
-        sudo -n true 2>&1; ls ~/Documents | wc -l
+        sudo -n true 2>&1; /usr/bin/sudo -n true 2>&1 | grep -c -i -e privileges -e owned; ls ~/Documents | wc -l
         dd if=/dev/zero of=$HOME/big bs=1M count=300 2>&1 | tail -1
     """)
     lines = out.strip().splitlines()
@@ -91,7 +91,7 @@ def isolation(tmp):
     check("no-network", "Network is unreachable" in out, out)
     check("read-only-system", "Read-only file system" in out, out)
     check("no-upload-token", "\n0\n" in out, out)
-    check("no-sudo", "no new privileges" in out, out)
+    check("no-sudo", "administrator commands are not available" in out, out)
     check("sample-files", "\n4\n" in out, out)
     check("home-capped", "256 MiB" in out, out)
     # Each session starts from scratch
@@ -146,8 +146,12 @@ def gate(tmp):
         check("gate-bad-body", http("/v1/chat/completions", "POST", {"messages": "x"}, sock)[0] == 400)
         http("/v1/chat/completions", "POST", msg, sock)
         check("gate-session-cap", http("/v1/chat/completions", "POST", msg, sock)[0] == 429)
-        up.key = "wrong"
         g.left = 5
+        http("/v1/chat/completions", "POST", {"messages": [{"role": "system", "content": "FIXED"},
+                                                           {"role": "user", "content": "hi"}]}, sock)
+        check("gate-keeps-fixed-prompt", up.prefix == ("FIXED", None), up.prefix)
+        check("gate-warm", modelgate.warm(up) is not None)
+        up.key = "wrong"
         st, body = http("/v1/chat/completions", "POST", msg, sock)
         check("gate-hides-upstream", st == 502 and "bad key" not in body, (st, body))
     finally:
@@ -205,6 +209,18 @@ class Browser:
         except OSError:
             pass
         return None, out
+
+
+def visitor():
+    import ipaddress
+    import types
+    import server
+    me = types.SimpleNamespace(proxies=[ipaddress.ip_network("172.64.0.0/13")])
+    who = lambda peer, fwd: server.Service.visitor(me, peer, fwd)  # noqa: E731
+    check("visitor-direct", who("198.51.100.7", "1.2.3.4") == "198.51.100.7")       # the header is not believed
+    check("visitor-web-server", who("127.0.0.1", "203.0.113.9") == "203.0.113.9")
+    check("visitor-behind-cdn", who("127.0.0.1", "9.9.9.9, 203.0.113.9, 172.68.1.1") == "203.0.113.9")
+    check("visitor-forged", who("127.0.0.1", "not an address") == "not an address")  # one bucket for them all
 
 
 def service(tmp):
@@ -267,6 +283,7 @@ def main():
         gate(tmp)
         if os.path.exists(f"{ROOT}/build/output/target/usr/bin/python3"):
             doubles(tmp)
+            visitor()
             isolation(tmp)
             service(tmp)
         else:

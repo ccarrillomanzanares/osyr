@@ -11,6 +11,8 @@
 #   scripts/publish.sh web    the website (ccmai.org/osyr) from the web/ templates with
 #                             what is published in releases/; "img" and "vbox" regenerate it at the end
 #   scripts/publish.sh web preview   the same, but only into build/web-preview
+#   scripts/publish.sh sandbox   installs or refreshes the web sandbox on this machine
+#                             (sandbox/install.sh): the image root, the service and the page
 #
 # The two phases are separate: after "img" the user is told (and downloads the
 # image to try it) and then "vbox" is done. Both start from
@@ -52,6 +54,11 @@ web() {
         { echo "ERROR: the website does not show the new version" >&2; exit 1; }
     echo "WEBSITE UPDATED https://ccmai.org/osyr/ (previous in $prev)"
 }
+
+# sandbox: the web sandbox (ccmai.org/osyr/try/) from the built image root and this tree
+if [ "$1" = sandbox ]; then
+    exec sh "$ROOT/sandbox/install.sh"
+fi
 
 if [ "$1" = web ]; then
     web "$2"

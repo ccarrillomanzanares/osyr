@@ -1,0 +1,5 @@
+#!/bin/sh
+# Inside the web sandbox nobody can become root: say so plainly instead of
+# sudo's own complaint about the container.
+echo "sudo: this is the OSYR sandbox: administrator commands are not available here" >&2
+exit 1

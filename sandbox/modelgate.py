@@ -37,8 +37,16 @@ UPSTREAM_SECONDS = 600
 class Upstream:
     """The model server, and how many requests it takes at once."""
 
-    def __init__(self, url, key=None, key_header="Authorization", model="", parallel=1):
+    def __init__(self, url, key=None, key_header="Authorization", model="", parallel=1, name=None,
+                 extra=None):
+        """'name': the server's own host name when 'url' reaches it by a loopback address
+        (a server on this machine behind its own TLS front): sent as Host and SNI. Its
+        certificate is then not checked: the connection never leaves the machine."""
         self.url = urllib.parse.urlsplit(url.rstrip("/"))
+        self.name = name
+        self.extra = extra or {}   # fields added to every request (the operator's, e.g. no reasoning)
+        self.prefix = None         # (system text, tools) of the last request: the same for every session
+        self.used = 0.0            # when the server last answered a request
         self.key, self.key_header, self.model = key, key_header, model
         self.turns = threading.BoundedSemaphore(parallel)
         self.waiting = 0
@@ -46,16 +54,37 @@ class Upstream:
 
     def headers(self):
         h = {"Content-Type": "application/json", "User-Agent": "OSYR-sandbox/1.0", "Accept": "*/*"}
+        if self.name:
+            h["Host"] = self.name
         if self.key:
             h[self.key_header] = ("Bearer " + self.key) if self.key_header.lower() == "authorization" else self.key
         return h
 
     def connect(self):
         port = self.url.port or (443 if self.url.scheme == "https" else 80)
+        if self.url.scheme == "https" and self.name:
+            if self.url.hostname not in ("127.0.0.1", "::1", "localhost"):
+                raise OSError("a server name is only for a loopback address")
+            return LocalTLS(self.url.hostname, port, self.name)
         if self.url.scheme == "https":
             return http.client.HTTPSConnection(self.url.hostname, port, timeout=UPSTREAM_SECONDS,
                                                context=ssl.create_default_context())
         return http.client.HTTPConnection(self.url.hostname, port, timeout=UPSTREAM_SECONDS)
+
+
+class LocalTLS(http.client.HTTPSConnection):
+    """TLS to a server on this machine that answers to another name."""
+
+    def __init__(self, host, port, name):
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        super().__init__(host, port, timeout=UPSTREAM_SECONDS, context=ctx)
+        self.tls_name, self.ctx = name, ctx
+
+    def connect(self):
+        sock = socket.create_connection((self.host, self.port), self.timeout)
+        self.sock = self.ctx.wrap_socket(sock, server_hostname=self.tls_name)
 
 
 def clean_message(m):
@@ -234,9 +263,12 @@ class Gate:
             return self.answer(conn, 503, {"error": {"message": "the sandbox is busy; try again in a moment"}})
         t0 = time.time()
         usage = {}
+        first = req["messages"][0]
+        if first["role"] == "system" and isinstance(first.get("content"), str):
+            up.prefix = (first["content"], req.get("tools"))
         try:
             c = up.connect()
-            c.request("POST", up.url.path + "/chat/completions", body=json.dumps(req).encode(),
+            c.request("POST", up.url.path + "/chat/completions", body=json.dumps({**req, **up.extra}).encode(),
                       headers=up.headers())
             r = c.getresponse()
             if r.status != 200:
@@ -263,6 +295,7 @@ class Gate:
                 conn.sendall(chunk)
                 tail = (tail + chunk)[-4096:]
             usage = last_usage(tail)
+            up.used = time.time()
         finally:
             up.turns.release()
             try:
@@ -274,6 +307,39 @@ class Gate:
             self.tokens_out += usage.get("completion_tokens") or 0
             self.log(event="request", seconds=round(time.time() - t0, 1), messages=len(req["messages"]),
                      prompt_tokens=usage.get("prompt_tokens"), completion_tokens=usage.get("completion_tokens"))
+
+
+def warm(up, log=None):
+    """Has the server read the sessions' common start (the chat's fixed prompt and tools)
+    so that the next visitor does not wait for it: on a CPU that is minutes. One token is
+    asked for. Returns the seconds it took, or None."""
+    if not up.prefix or not up.turns.acquire(timeout=1):
+        return None
+    t0 = time.time()
+    try:
+        system, tools = up.prefix
+        req = {"messages": [{"role": "system", "content": system}, {"role": "user", "content": "hello"}],
+               "max_tokens": 1, "stream": False, **({"tools": tools} if tools else {}),
+               **({"model": up.model} if up.model else {}), **up.extra}
+        c = up.connect()
+        try:
+            c.request("POST", up.url.path + "/chat/completions", body=json.dumps(req).encode(),
+                      headers=up.headers())
+            r = c.getresponse()
+            r.read()
+            if r.status == 200:
+                up.used = time.time()
+            if log:
+                log(event="warm", status=r.status, seconds=round(time.time() - t0, 1))
+            return time.time() - t0 if r.status == 200 else None
+        finally:
+            c.close()
+    except (OSError, http.client.HTTPException) as e:
+        if log:
+            log(event="warm", error=str(e)[:200])
+        return None
+    finally:
+        up.turns.release()
 
 
 def last_usage(tail):

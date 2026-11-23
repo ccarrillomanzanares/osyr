@@ -24,6 +24,7 @@ import base64
 import collections
 import fcntl
 import hashlib
+import ipaddress
 import json
 import os
 import pty
@@ -46,7 +47,13 @@ import modelgate  # noqa: E402
 DEFAULTS = {
     "listen": "127.0.0.1", "port": 8095,
     "upstream": "http://127.0.0.1:8083/v1",   # OpenAI-compatible base of the model server
+    "upstream_name": None,    # the server's host name, when "upstream" is a loopback address with TLS
     "key_file": None, "key_header": "Authorization", "model": "", "context": 16384,
+    "extra": {},              # fields added to every model request, e.g. {"chat_template_kwargs":
+                              # {"enable_thinking": false}} for a llama-server
+    "warm_minutes": 0,        # keep the model server's copy of the chat's fixed prompt fresh: after
+                              # this long without a request, ask for it again (0: never)
+    "state": None,            # file where that fixed prompt is kept between restarts
     "parallel": 1,            # requests the model server takes at once
     "sessions": 3,            # sessions at once; the rest wait in a queue
     "queue": 20,              # visitors waiting; beyond that, "busy"
@@ -58,10 +65,13 @@ DEFAULTS = {
     "log": None,              # one JSON line per event; None: standard output
     "work": None,             # folder for the sessions' folders (default: a temporary one)
     "session": os.path.join(HERE, "session"),
+    "trusted_proxies": [],    # networks of the proxies before the web server (a CDN): skipped when
+                              # looking for the visitor's address
     "session_prefix": [],     # e.g. ["sudo", "-n", "-u", "osyr-sandbox"] to run it as another user
 }
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_FRAME = 64 * 1024
+PING_SECONDS = 25             # a proxy on the way may close a connection that says nothing
 
 
 class Service:
@@ -71,7 +81,8 @@ class Service:
         if cfg["key_file"]:
             with open(cfg["key_file"]) as f:
                 key = f.read().strip()
-        self.up = modelgate.Upstream(cfg["upstream"], key, cfg["key_header"], cfg["model"], cfg["parallel"])
+        self.up = modelgate.Upstream(cfg["upstream"], key, cfg["key_header"], cfg["model"], cfg["parallel"],
+                                     cfg["upstream_name"], cfg["extra"])
         self.lock = threading.Condition()
         self.running = 0
         self.waiting = collections.deque()   # tickets, in order of arrival
@@ -80,6 +91,49 @@ class Service:
         self.work = cfg["work"] or tempfile.mkdtemp(prefix="osyr-sandbox-")
         os.makedirs(self.work, exist_ok=True)
         self.log_file = open(cfg["log"], "a") if cfg["log"] else sys.stdout
+        self.proxies = [ipaddress.ip_network(n) for n in cfg["trusted_proxies"]]
+        if cfg["state"] and os.path.exists(cfg["state"]):
+            try:
+                with open(cfg["state"]) as f:
+                    saved = json.load(f)
+                self.up.prefix = (saved["system"], saved.get("tools"))
+            except (OSError, ValueError, KeyError):
+                pass
+        if cfg["warm_minutes"]:
+            threading.Thread(target=self.keep_warm, daemon=True).start()
+
+    def keep_warm(self):
+        """The chat's fixed prompt (never a visitor's words) is the same in every session:
+        the model server keeps it read, and here it is asked again before it forgets."""
+        saved = self.up.prefix
+        while True:
+            up = self.up
+            if up.prefix and not self.off() and time.time() - up.used > self.cfg["warm_minutes"] * 60:
+                modelgate.warm(up, self.log)
+            if up.prefix != saved and self.cfg["state"]:
+                saved = up.prefix
+                try:
+                    with open(self.cfg["state"] + ".new", "w") as f:
+                        json.dump({"system": saved[0], "tools": saved[1]}, f)
+                    os.replace(self.cfg["state"] + ".new", self.cfg["state"])
+                except OSError as e:
+                    self.log(event="error", error=f"state: {e}")
+            time.sleep(30)
+
+    def visitor(self, peer, forwarded):
+        """The visitor's address: the peer, or, behind the web server on this machine, the
+        last address of X-Forwarded-For that is not one of the trusted proxies."""
+        if peer not in ("127.0.0.1", "::1") or not forwarded:
+            return peer
+        hops = [h.strip() for h in forwarded.split(",") if h.strip()]
+        for hop in reversed(hops):
+            try:
+                ip = ipaddress.ip_address(hop)
+            except ValueError:
+                return hops[-1]
+            if not any(ip in n for n in self.proxies):
+                return hop
+        return hops[-1] if hops else peer
 
     def log(self, **kw):
         kw = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), **kw}
@@ -114,7 +168,12 @@ class Service:
         last = None
         with self.lock:
             while True:
-                if not alive():
+                self.lock.release()   # reading the visitor's socket must not hold everybody up
+                try:
+                    here = alive()
+                finally:
+                    self.lock.acquire()
+                if not here:
                     self.waiting.remove(ticket)
                     self.lock.notify_all()
                     return False
@@ -156,7 +215,6 @@ class Service:
         if cfg["session_prefix"]:
             os.chmod(os.path.join(d, "model.sock"), 0o666)  # the session's user must reach it; the folder is ours
         env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "TERM": "xterm-256color", "HOME": d,
-               "OSYR_SANDBOX_MINUTES": str(cfg["minutes"]), "OSYR_SANDBOX_CONTEXT": str(cfg["context"]),
                "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", ""),
                "DBUS_SESSION_BUS_ADDRESS": os.environ.get("DBUS_SESSION_BUS_ADDRESS", "")}
         t0, why = time.time(), "exit"
@@ -164,12 +222,13 @@ class Service:
         if pid == 0:
             try:
                 os.execvpe(cfg["session_prefix"][0] if cfg["session_prefix"] else cfg["session"],
-                           [*cfg["session_prefix"], cfg["session"], d], env)
+                           [*cfg["session_prefix"], cfg["session"], "--minutes", str(cfg["minutes"]),
+                            "--context", str(cfg["context"]), d], env)
             finally:
                 os._exit(127)
         resize(fd, cols, rows)
         ws.send_json({"t": "started", "minutes": cfg["minutes"]})
-        last_input = time.time()
+        last_input = time.time()   # or output: waiting for a slow answer is not being away
         try:
             while True:
                 now = time.time()
@@ -182,6 +241,7 @@ class Service:
                 if self.off():
                     why = "off"
                     break
+                ws.keepalive()
                 r, _, _ = select.select([fd, ws.sock], [], [], 5)
                 if fd in r:
                     try:
@@ -190,6 +250,7 @@ class Service:
                         data = b""
                     if not data:
                         break
+                    last_input = time.time()
                     ws.send(data, binary=True)
                 while ws.open and (ws.sock in r or ws.buf):
                     r = []
@@ -250,6 +311,15 @@ class WebSocket:
         self.buf = b""
         self.wlock = threading.Lock()
         self.open = True
+        self.pinged = time.time()
+
+    def keepalive(self):
+        if time.time() - self.pinged > PING_SECONDS:
+            self.pinged = time.time()
+            try:
+                self.send(b"", opcode=9)
+            except OSError:
+                self.open = False
 
     def send(self, data, binary=False, opcode=None):
         op = opcode if opcode is not None else (2 if binary else 1)
@@ -296,6 +366,8 @@ class WebSocket:
                 if op == 9:
                     self.send(data, opcode=10)
                     continue
+                if op == 10:
+                    return {"t": "pong"}
                 if op == 1:
                     msg = json.loads(data)
                     if isinstance(msg, dict):
@@ -325,11 +397,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def address(self):
-        # Apache in front, on this machine: the visitor is the last address it adds
-        fwd = self.headers.get("X-Forwarded-For", "")
-        if self.client_address[0] in ("127.0.0.1", "::1") and fwd:
-            return fwd.split(",")[-1].strip()
-        return self.client_address[0]
+        return self.service.visitor(self.client_address[0], self.headers.get("X-Forwarded-For", ""))
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
@@ -375,8 +443,7 @@ class Handler(BaseHTTPRequestHandler):
         ws = WebSocket(self.connection)
         address = self.address()
         self.connection.settimeout(30)
-        first = ws.receive()
-        self.connection.settimeout(None)
+        first = ws.receive()   # the 30 s stay: a visitor who stops mid-message is let go
         if not first or first.get("t") != "start":
             return ws.close()
         if s.off():
@@ -396,6 +463,7 @@ class Handler(BaseHTTPRequestHandler):
                 # In the queue the browser only sends a close (or sizes, ignored)
                 while ws.open and ws.pending():
                     ws.receive()
+                ws.keepalive()
                 return ws.open
             ran = s.wait_turn(ticket, lambda pos: ws.send_json({"t": "queue", "position": pos}), alive)
             if ran:

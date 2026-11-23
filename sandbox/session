@@ -6,56 +6,84 @@
 #
 #   sandbox/session DIR [command...]
 #
-# DIR is an empty folder for this session (the pretend /sys goes there). If
-# DIR/model.sock exists (the socket of sandbox/model-filter.py), the chat
+# DIR is this session's folder; it is only read. If DIR/model.sock exists
+# (the socket of sandbox/modelgate.py), the chat
 # inside reaches the model through it; it is the only way out of the container.
 # Without a command it starts the chat.
 #
-#   OSYR_SANDBOX_ROOT    the image root (default: build/output/target)
+#   --minutes N   session length (default 15)
+#   --context N   context size the chat is told the model has (default 16384)
+#   --lang L      locale inside (default en_US.UTF-8)
+# (options rather than environment: the web service starts it through sudo)
+#
+#   OSYR_SANDBOX_ROOT    the image root (default: ../root if it exists, as
+#                        installed by 'publish.sh sandbox'; else build/output/target)
 #   OSYR_SANDBOX_CODE    overlay whose osyr code replaces the root's (default:
-#                        this repository's; empty: the root's own)
-#   OSYR_SANDBOX_MINUTES session length (default 15)
+#                        this repository's; empty, or with ../root: the root's own)
 #   OSYR_SANDBOX_LIMITS  0: no memory, CPU and process limits (default: on,
 #                        through systemd-run --user)
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(dirname "$HERE")
-ROOT=${OSYR_SANDBOX_ROOT:-$REPO/build/output/target}
-CODE=${OSYR_SANDBOX_CODE-$REPO/board/osyr/rootfs-overlay}
+if [ -d "$REPO/root" ]; then
+    ROOT=${OSYR_SANDBOX_ROOT:-$REPO/root}
+    CODE=${OSYR_SANDBOX_CODE-}
+else
+    ROOT=${OSYR_SANDBOX_ROOT:-$REPO/build/output/target}
+    CODE=${OSYR_SANDBOX_CODE-$REPO/board/osyr/rootfs-overlay}
+fi
 MINUTES=${OSYR_SANDBOX_MINUTES:-15}
+CONTEXT=${OSYR_SANDBOX_CONTEXT:-16384}
+LANG_IN=${OSYR_SANDBOX_LANG:-en_US.UTF-8}
+while [ $# -ge 2 ]; do
+    case "$1" in
+        --minutes) MINUTES=$2 ;;
+        --context) CONTEXT=$2 ;;
+        --lang) LANG_IN=$2 ;;
+        *) break ;;
+    esac
+    shift 2
+done
+case "$MINUTES$CONTEXT" in *[!0-9]*|'') echo "session: --minutes and --context take numbers" >&2; exit 2 ;; esac
+case "$LANG_IN" in *[!A-Za-z0-9_.@-]*|'') echo "session: bad --lang" >&2; exit 2 ;; esac
 
-[ $# -ge 1 ] || { echo "usage: session DIR [command...]" >&2; exit 2; }
+[ $# -ge 1 ] || { echo "usage: session [--minutes N] [--context N] [--lang L] DIR [command...]" >&2; exit 2; }
 DIR=$(cd "$1" && pwd)
 shift
 [ -x "$ROOT/usr/bin/python3" ] || { echo "session: no image root in $ROOT" >&2; exit 2; }
 
-rm -rf "$DIR/sys"
-mkdir -p "$DIR/sys"
-python3 "$REPO/tests/doubles/hw.py" --sysfs "$DIR/sys"
-# The image's users are added when the disk image is made, not in the root folder
-{ grep -v '^osyr:' "$ROOT/etc/passwd"; echo 'osyr:x:1000:1000:OSYR:/home/osyr:/bin/bash'; } > "$DIR/passwd"
-{ grep -v '^osyr:' "$ROOT/etc/group"; echo 'osyr:x:1000:'; } > "$DIR/group"
+# The image's users are added when the disk image is made, not in the root folder.
+# The two files go in through descriptors: the session writes nothing outside itself
+exec 3<<EOF
+$(grep -v '^osyr:' "$ROOT/etc/passwd")
+osyr:x:1000:1000:OSYR:/home/osyr:/bin/bash
+EOF
+exec 4<<EOF
+$(grep -v '^osyr:' "$ROOT/etc/group")
+osyr:x:1000:
+EOF
 
 set -- bwrap \
-    --unshare-all --die-with-parent --clearenv \
+    --unshare-all --uid 1000 --gid 1000 --die-with-parent --clearenv \
     --ro-bind "$ROOT" / \
     --proc /proc --dev /dev \
     --tmpfs /tmp --tmpfs /run --dir /run/user/1000 --dir /run/osyr/hw \
     --size 268435456 --tmpfs /home/osyr \
-    --bind "$DIR/sys" /sys \
-    --ro-bind "$DIR/passwd" /etc/passwd --ro-bind "$DIR/group" /etc/group \
+    --tmpfs /sys \
+    --ro-bind-data 3 /etc/passwd --ro-bind-data 4 /etc/group \
     --ro-bind /dev/null /etc/osyr/diag.token \
     --ro-bind "$REPO/tests/doubles" /run/osyr/doubles \
     --ro-bind "$HERE/skel" /run/osyr/skel \
+    --ro-bind "$HERE/bin" /run/osyr/bin \
     --ro-bind "$HERE/inside.sh" /run/osyr/inside.sh \
     --ro-bind "$HERE/relay.py" /run/osyr/relay.py \
     --setenv HOME /home/osyr --setenv USER osyr --setenv LOGNAME osyr --setenv SHELL /bin/bash \
-    --setenv PATH /run/osyr/doubles:/usr/bin:/bin:/usr/sbin:/sbin \
-    --setenv LANG "${OSYR_SANDBOX_LANG:-en_US.UTF-8}" --setenv TERM "${TERM:-xterm-256color}" \
+    --setenv PATH /run/osyr/bin:/run/osyr/doubles:/usr/bin:/bin:/usr/sbin:/sbin \
+    --setenv LANG "$LANG_IN" --setenv TERM "${TERM:-xterm-256color}" \
     --setenv XDG_RUNTIME_DIR /run/user/1000 \
     --setenv OSYR_DOUBLES_STATE /run/osyr/hw/state.json --setenv OSYR_INTERNET 1 \
-    --setenv OSYR_SANDBOX 1 \
+    --setenv OSYR_SANDBOX 1 --setenv OSYR_SANDBOX_CONTEXT "$CONTEXT" \
     --chdir /home/osyr \
     ${CODE:+--ro-bind "$CODE/usr/lib/osyr" /usr/lib/osyr} \
     ${CODE:+--ro-bind "$CODE/usr/bin/osyr-chat" /usr/bin/osyr-chat} \
@@ -65,6 +93,9 @@ set -- bwrap \
 
 set -- timeout --foreground --kill-after=10 "$((MINUTES * 60))" "$@"
 if [ "${OSYR_SANDBOX_LIMITS:-1}" != 0 ]; then
+    # Started by a service through sudo there is no session: the user's own manager is asked
+    # (it needs 'loginctl enable-linger' for that user)
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
     set -- systemd-run --user --scope --quiet --collect \
         -p MemoryMax=1G -p MemorySwapMax=0 -p OOMPolicy=continue \
         -p TasksMax=256 -p CPUQuota=200% -- "$@"
