@@ -142,3 +142,25 @@ The untrained 4B is not usable on the reference 16 GB laptop (HP 15s: 25.9 tok/s
 - The 2B's speed on the HP 15s, from `osyr ai advise --measure` with that model loaded.
 - In the pilot, fine-tune the 2B alongside the 4B and compare on the held-out tasks.
 - The benchmark needs tasks for the 2B's three kinds of failure: a wrong path reported as done, an answer from the wrong command, a file written somewhere else.
+
+## 23 November 2026 — the 35B on the VPS's processor, measured through the web sandbox
+
+**Spent: 0 %.** The plan's starting point said "its speed is to be measured". Measured while connecting the web sandbox (`ccmai.org/osyr/try/`, see [MILESTONE-0.md](MILESTONE-0.md)) to it: the real `osyr-chat` in a disposable session, the base Qwen3.6-35B-A3B in Q4_K_M served by `llama-server` with 14 threads on the VPS (16 virtual cores, no graphics card). Nothing of that server was changed. Not a benchmark: a handful of conversations.
+
+| What | Measured |
+| --- | --- |
+| Reading the prompt | 15 to 36 tokens per second |
+| Writing, with an empty context | 7 to 8.5 tokens per second |
+| Writing, inside a conversation of 2,000 to 3,000 tokens | 3 to 8 tokens per second |
+| The fixed prompt (2,160 tokens), read for the first time | 150 s |
+| A turn with one command, the prompt already read, one conversation at a time | 23 to 56 s |
+| The same with two conversations at once | 40 to 80 s |
+| A turn with reasoning left on and the prompt unread (the first try) | about four minutes |
+
+### What it says
+
+1. **The earlier figure of about 15 tokens per second for this server (13 Nov, from VirtualBox) does not hold** for writing: it is 3 to 8. It may have been the reading speed.
+2. **Reasoning must be off** (`enable_thinking: false` in every request): with it on, the 35B spent most of each answer's tokens thinking. `osyr-chat` only sends that field to the local model, on purpose (a strict provider rejects fields it does not know), so a 35B added with `/pair` reasons on every answer. For OSYR's own server model this has to be settled before the real use of March: either the server turns it off by default or the chat is told that this provider takes the field.
+3. **The prompt has to be read ahead.** The server keeps what it has read and reuses it when the next conversation starts the same way; the sandbox asks for the fixed prompt every 20 minutes so that no visitor waits the 150 s.
+4. On this processor the 35B serves two conversations at once at the edge of what is bearable. As a teacher for trajectories or as the benchmark's reference it is slow on the VPS: about a minute per turn means hours for a few hundred tasks. That is what the Lambda instances of the pilot are for.
+5. What it did in those conversations, all simple requests (wifi, volume, brightness, Bluetooth, displays, files): the right command in every one. Three slips worth a task each: it invented an address (`192.168.x.x`) the result did not give; it asked for `shopping_list.txt` when the file is `shopping-list.txt`; it wrote `Sony WH-1000XM5` for the `XM4` the scan had just listed. The last two were also the product's (fixed: a loosely matching file name is found, a name of several words needs no quotes).
