@@ -49,6 +49,8 @@ def setup(variant):
             # A file of that size that takes no memory: the home folder lives in RAM
             with open(path, "wb") as out:
                 out.truncate(size(f.get("size", "1K")))
+        if "mode" in f:
+            os.chmod(path, int(str(f["mode"]), 8))
         if "age_days" in f:
             t = time.time() - float(f["age_days"]) * 86400
             os.utime(path, (t, t))

@@ -16,8 +16,18 @@ svc = [
 ]
 line = ["3", "7", "12", "18"]
 
+# The machine is otherwise in order: the service's program and unit are there and the wifi is
+# connected, so that the only fault to find is the one in the file. (In the first runs the
+# models went after the missing program and the disconnected wifi: faults of the scenario.)
 [setup]
-files = [{ path = "{svc.conf}", text = "# {svc.desc}\n# local settings\n{svc.bad}\n" }]
+files = [
+  { path = "{svc.conf}", text = "# {svc.desc}\n# local settings\n{svc.bad}\n" },
+  { path = "/usr/sbin/{svc.proc}", text = "#!/bin/sh\nexec sleep infinity", mode = "755" },
+  { path = "/usr/lib/systemd/system/{svc.name}.service", text = "[Unit]\nDescription={svc.desc}\n\n[Service]\nExecStart=/usr/sbin/{svc.proc}\n\n[Install]\nWantedBy=multi-user.target" },
+]
+
+[setup.machine.wifi]
+connected = "Casa-Lopez"
 
 [setup.machine.system]
 password = "osyr"

@@ -22,6 +22,9 @@ files = [
   { path = "~/Documents/notas.txt", text = "nothing here" },
 ]
 
+[setup.machine.wifi]
+connected = "Casa-Lopez"
+
 [[setup.machine.system.disks]]
 mount = "/"
 device = "/dev/sda2"
