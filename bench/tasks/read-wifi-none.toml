@@ -20,4 +20,4 @@ it = ["A quale rete wifi sono collegato?", "su che wifi è questo portatile?", "
 [expect]
 state = ["unchanged"]
 trajectory = ["called osyr net", "asked_confirmation == 0"]
-answer = ["mentions not connected|no wifi|any network|any wifi|isn't connected|is not connected|disconnected|no est|ninguna|sin conexi|desconectad|non è colleg|non sei colleg|nessuna|scolleg|non risulta"]
+answer = ["mentions not connected|not currently connected|any wi-fi|no wi-fi|no wifi|any network|any wifi|isn't connected|is not connected|disconnected|no est|ninguna|sin conexi|desconectad|non è colleg|non sei colleg|nessuna|scolleg|non risulta"]

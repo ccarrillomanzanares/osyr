@@ -40,6 +40,10 @@ def setup(variant):
     for f in s.get("files", []):
         path = os.path.expanduser(f["path"])
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.islink(path):
+            # never through a link: /usr/sbin/crond is one to busybox, and a family's own 'crond'
+            # written there replaced every command of the session (24 Nov)
+            os.unlink(path)
         if f.get("folder"):
             os.makedirs(path, exist_ok=True)
         elif "text" in f:

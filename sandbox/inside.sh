@@ -3,6 +3,9 @@
 # a machine that has already been through its first start, and starts the chat.
 set -eu
 python3 /run/osyr/doubles/hw.py --sysfs /sys
+# Buildroot's note in the build tree's root is not on a laptop: a model that lists / saw it
+# (only where the root can be written, --system; elsewhere it stays)
+[ "${OSYR_SYSTEM_LOCKED:-0}" != 1 ] || rm -f /THIS_IS_NOT_YOUR_ROOT_FILESYSTEM 2>/dev/null || true
 # (the benchmark starts from an empty home folder and puts its own files in)
 [ "${OSYR_SANDBOX_SKEL:-1}" = 0 ] || cp -r /run/osyr/skel/. "$HOME"/
 mkdir -p "$HOME/.config/osyr" "$HOME/.local/state/osyr" "$HOME/.local/share/osyr"

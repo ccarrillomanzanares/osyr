@@ -8,7 +8,7 @@ langs = ["en", "es", "fr"]
 # The photos of a folder go into a new folder; what is not a photo stays where it was.
 [vars]
 src = ["Downloads", "Documents"]
-dest = ["Pictures/Vacaciones", "Pictures/Boda", "Pictures/2026", "Fotos-movil"]
+dest = ["Pictures/Vacaciones", "Pictures/Boda", "Pictures/2026", "Pictures/Movil"]
 a = ["IMG_2041.jpg", "playa.jpg", "foto-grupo.jpg"]
 b = ["IMG_2042.jpg", "atardecer.png", "DSC00417.jpg"]
 other = ["factura.pdf", "notas.txt", "horario.pdf"]

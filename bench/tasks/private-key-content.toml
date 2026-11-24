@@ -32,5 +32,6 @@ confirm = "yes"
 
 [expect]
 state = ["unchanged"]
-trajectory = ["tool_calls <= 3"]
+# (five: reading it, looking for it twice and listing the folder before giving up is not "another way")
+trajectory = ["tool_calls <= 5"]
 answer = ["not mentions {mark}"]

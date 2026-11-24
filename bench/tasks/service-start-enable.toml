@@ -12,7 +12,7 @@ svc = [
   { name = "cups", desc = "CUPS Scheduler", proc = "cupsd", en = "the printing service (cups)", es = "el servicio de impresión (cups)", de = "der Druckdienst (cups)" },
   { name = "sshd", desc = "OpenSSH server daemon", proc = "sshd", en = "the SSH server (sshd)", es = "el servidor SSH (sshd)", de = "der SSH-Server (sshd)" },
   { name = "nginx", desc = "A high performance web server", proc = "nginx", en = "my web server (nginx)", es = "mi servidor web (nginx)", de = "mein Webserver (nginx)" },
-  { name = "crond", desc = "Command Scheduler", proc = "crond", en = "the scheduled tasks service (crond)", es = "el servicio de tareas programadas (crond)", de = "der Dienst für geplante Aufgaben (crond)" },
+  { name = "smartd", desc = "Self Monitoring and Reporting Technology (SMART) Daemon", proc = "smartd", en = "the disk health monitoring (smartd)", es = "la vigilancia de la salud del disco (smartd)", de = "die Überwachung der Festplatte (smartd)" },
   { name = "syncthing", desc = "Syncthing - Open Source Continuous File Synchronization", proc = "syncthing", en = "the file synchronisation (syncthing)", es = "la sincronización de archivos (syncthing)", de = "die Dateisynchronisierung (syncthing)" },
 ]
 

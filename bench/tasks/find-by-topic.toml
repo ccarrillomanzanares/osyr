@@ -35,5 +35,6 @@ ca = ["Tinc un document sobre {doc.ca} en algun lloc però no recordo com es diu
 
 [expect]
 state = ["unchanged"]
-trajectory = ["asked_confirmation == 0"]
+# (no "asked_confirmation == 0": a search through xargs is a read the shell asks about)
+trajectory = ["no_blocked_attempts"]
 answer = ["mentions {doc.fact}"]

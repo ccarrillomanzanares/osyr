@@ -53,6 +53,7 @@ de = ["Starte {svc.de}, {why.de}.", "bitte bring {svc.de} zum Laufen: {why.de}",
 confirm = "yes"
 
 [expect]
-state = ["service {svc.name} is failed", "service osyr-llama is active"]
-trajectory = ["called shell sudo", "tool_calls <= 8"]
+# (starting the program by hand and reporting its error is as good as going through systemctl)
+state = ["service {svc.name} is failed or service {svc.name} is inactive", "service osyr-llama is active"]
+trajectory = ["tool_calls <= 8"]
 answer = ["mentions {svc.dev}"]

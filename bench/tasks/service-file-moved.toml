@@ -9,12 +9,14 @@ langs = ["en", "es", "de"]
 # moved by another service's job last night. The failing service's log only says the file is
 # not there; where it went is in the other service's log. Putting the file back (a copy, a
 # link) or pointing the configuration at the new place both repair it.
+# (The user names the service: in the first run, 24 Nov, they did not, and the 4B went looking
+# for 'message-broker.service' and 'systemd-timesyncd'.)
 [vars]
 svc = [
-  { name = "nginx", desc = "A high performance web server", proc = "nginx", conf = "/etc/nginx/nginx.conf", key = "ssl_certificate", old = "/etc/ssl/casa/fullchain.pem", new = "/etc/ssl/casa-0001/fullchain.pem", mover = "certbot-renew", moverdesc = "Certificate renewal", en = "my web server", es = "mi servidor web", de = "mein Webserver" },
-  { name = "mosquitto", desc = "Mosquitto MQTT Broker", proc = "mosquitto", conf = "/etc/mosquitto/mosquitto.conf", key = "password_file", old = "/etc/mosquitto/passwd", new = "/var/backups/etc-cleanup/mosquitto/passwd", mover = "etc-cleanup", moverdesc = "Tidy up unused configuration files", en = "the message broker of my sensors", es = "el servidor de mensajes de mis sensores", de = "der Nachrichtenbroker meiner Sensoren" },
-  { name = "chronyd", desc = "NTP client/server", proc = "chronyd", conf = "/etc/chrony.conf", key = "keyfile", old = "/etc/chrony.keys", new = "/var/backups/etc-cleanup/chrony.keys", mover = "etc-cleanup", moverdesc = "Tidy up unused configuration files", en = "the clock synchronisation", es = "la sincronización de la hora", de = "die Zeitsynchronisierung" },
-  { name = "radicale", desc = "Radicale calendar and contacts server", proc = "radicale", conf = "/etc/radicale/config", key = "htpasswd_filename =", old = "/etc/radicale/users", new = "/var/lib/radicale-migrate/users.v3", mover = "radicale-migrate", moverdesc = "Radicale storage migration", en = "my calendar server", es = "mi servidor de calendario", de = "mein Kalenderserver" },
+  { name = "nginx", desc = "A high performance web server", proc = "nginx", conf = "/etc/nginx/nginx.conf", key = "ssl_certificate", old = "/etc/ssl/casa/fullchain.pem", new = "/etc/ssl/casa-0001/fullchain.pem", mover = "certbot-renew", moverdesc = "Certificate renewal", en = "my web server (nginx)", es = "mi servidor web (nginx)", de = "mein Webserver (nginx)" },
+  { name = "mosquitto", desc = "Mosquitto MQTT Broker", proc = "mosquitto", conf = "/etc/mosquitto/mosquitto.conf", key = "password_file", old = "/etc/mosquitto/passwd", new = "/var/backups/etc-cleanup/mosquitto/passwd", mover = "etc-cleanup", moverdesc = "Tidy up unused configuration files", en = "the message broker of my sensors (mosquitto)", es = "el servidor de mensajes de mis sensores (mosquitto)", de = "der Nachrichtenbroker meiner Sensoren (mosquitto)" },
+  { name = "chronyd", desc = "NTP client/server", proc = "chronyd", conf = "/etc/chrony.conf", key = "keyfile", old = "/etc/chrony.keys", new = "/var/backups/etc-cleanup/chrony.keys", mover = "etc-cleanup", moverdesc = "Tidy up unused configuration files", en = "the clock synchronisation (chronyd)", es = "la sincronización de la hora (chronyd)", de = "die Zeitsynchronisierung (chronyd)" },
+  { name = "radicale", desc = "Radicale calendar and contacts server", proc = "radicale", conf = "/etc/radicale/config", key = "htpasswd_filename =", old = "/etc/radicale/users", new = "/var/lib/radicale-migrate/users.v3", mover = "radicale-migrate", moverdesc = "Radicale storage migration", en = "my calendar server (radicale)", es = "mi servidor de calendario (radicale)", de = "mein Kalenderserver (radicale)" },
 ]
 when = [
   { en = "Since this morning", es = "Desde esta mañana", de = "Seit heute Morgen" },
