@@ -503,6 +503,28 @@ def grim(argv):
     return 0
 
 
+def proc_file(name):
+    """The scenario's /proc/cpuinfo or /proc/meminfo: the pretend laptop's, not the host's."""
+    with open(SCENARIO) as f:
+        pc = json.load(f).get("computer", {})
+    cores, mem = int(pc.get("cores", 4)), int(float(pc.get("memory_gb", 16)) * 1024 * 1024)
+    if name == "cpuinfo":
+        flags = ("fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 "
+                 "ht syscall nx rdtscp lm pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 movbe popcnt aes xsave avx "
+                 "f16c rdrand bmi1 avx2 bmi2")
+        return "".join(
+            f"processor\t: {i}\nvendor_id\t: GenuineIntel\nmodel name\t: {pc.get('cpu', 'Intel(R) Core(TM) i5 CPU')}\n"
+            f"cpu MHz\t\t: 1800.000\ncache size\t: 6144 KB\nphysical id\t: 0\nsiblings\t: {cores}\n"
+            f"core id\t\t: {i}\ncpu cores\t: {cores}\nflags\t\t: {flags}\n\n" for i in range(cores))
+    if name == "meminfo":
+        used = mem // 4
+        return (f"MemTotal:       {mem - 300000:>8} kB\nMemFree:        {mem - used - 2000000:>8} kB\n"
+                f"MemAvailable:   {mem - used:>8} kB\nBuffers:        {120000:>8} kB\nCached:         {1700000:>8} kB\n"
+                f"SwapCached:     {0:>8} kB\nSwapTotal:      {mem // 2:>8} kB\nSwapFree:       {mem // 2:>8} kB\n"
+                f"Shmem:          {90000:>8} kB\n")
+    die(f"hw.py --proc: cpuinfo or meminfo, not '{name}'", 2)
+
+
 def make_sysfs(root):
     """Writes the scenario's pretend /sys under 'root' (a name ending in / is a folder)."""
     with open(SCENARIO) as f:
@@ -527,6 +549,9 @@ def main():
         name, argv = argv[0], argv[1:]
     if name == "hw.py" and argv[:1] == ["--names"]:
         print(" ".join(DOUBLES))
+        return 0
+    if name == "hw.py" and argv[:1] == ["--proc"] and len(argv) == 2:
+        sys.stdout.write(proc_file(argv[1]))
         return 0
     if name == "hw.py" and argv[:1] == ["--sysfs"] and len(argv) == 2:
         make_sysfs(argv[1])

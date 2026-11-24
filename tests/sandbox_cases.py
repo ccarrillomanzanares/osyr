@@ -118,6 +118,10 @@ P""")
     check("calls-refused", out.count("call -1 1") == 6 and "clone-newuser -1 1" in out, out)
     check("sockets-refused", out.count("socket 97") == 3, out)
     check("threads-and-forks", "thread ok" in out and "fork 0" in out, out)
+    out = session(tmp, "grep -c ^processor /proc/cpuinfo; grep MemTotal /proc/meminfo; "
+                       "python3 -c 'import os; print(os.cpu_count())'")
+    check("pretend-computer", out.split()[0] == "4" and " 16" in out.splitlines()[1][:20] + " 16"
+          and 15000000 < int(out.split()[2]) < 17000000 and out.split()[-1] == "4", out)
     # Each session starts from scratch
     again = session(tmp, "ls $HOME/big 2>&1; osyr --json ui brightness")
     check("starts-clean", "No such file" in again and '"percent": 50' in again, again)

@@ -1,4 +1,9 @@
 {
+ "computer": {
+  "cpu": "Intel(R) Core(TM) i5-1035G1 CPU @ 1.00GHz",
+  "cores": 4,
+  "memory_gb": 16
+ },
  "wifi": {
   "present": true,
   "device": "wlan0",
@@ -224,6 +229,9 @@
   "devices/system/cpu/cpu3/topology/physical_package_id": "0",
   "devices/system/cpu/cpu3/topology/core_id": "3",
   "devices/system/cpu/cpu3/cpufreq/scaling_cur_freq": "1800000",
-  "devices/system/cpu/cpu3/cpufreq/cpuinfo_max_freq": "3600000"
+  "devices/system/cpu/cpu3/cpufreq/cpuinfo_max_freq": "3600000",
+  "devices/system/cpu/online": "0-3",
+  "devices/system/cpu/possible": "0-3",
+  "devices/system/cpu/present": "0-3"
  }
 }
