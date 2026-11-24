@@ -619,7 +619,7 @@ Built ahead of stage 1 on top of the disposable session and the doubles, followi
 - **`osyr ui screenshot`**: a picture of the screen on request, saved where the Print Screen key saves them; in the agent's list, without a question. One of the "then" features of the plan.
 - **`osyr sys power`** gives the battery's charge; **`osyr files read`** finds a file whose name is given with `_` for `-` or the other way; **`osyr bt connect`** and **`net wifi connect`** take a name of several words without quotes. All three came from watching the 35B use the system in the web sandbox.
 - **`osyr ai second [name|off]`**: which provider hard tasks are handed to.
-- Tests: the case files of the native phase pass (shell guard 251, edits 33, box 34, turns 18, advise, models, image, sandbox, bench). The native phase as a whole was run on 24 Nov: see below. Nothing of this is built into an image or tried in QEMU.
+- Tests: **`make test-native` on 24 Nov: 37 of 37** (the image's binaries of v0.33.0 with this code). The first run gave 36: `prefix-warm` compared the saved prompt with a list of tools that was no longer the one the chat sends (earlier tests leave a provider behind, so `ask_server` was in it); the test now sends what the chat sends. Nothing of this is built into an image or tried in QEMU.
 
 ## Administration tasks without a real system: a prototype (24 Nov)
 

@@ -432,7 +432,7 @@ def native():
                  # another request in between (like /look or the diag): it goes to slot 1 and does not clear the chat's
                  f"m.local_post('/completion', {{'prompt': 'An unrelated request. ' * 40, 'n_predict': 1, 'id_slot': 1}})\n"
                  f"r=m.local_post('/v1/chat/completions', {{'messages': [{{'role':'system','content':m.system_prompt()}}, {{'role':'user','content':'Hello'}}], "
-                 f"'tools': m.TOOLS, 'max_tokens': 8, 'chat_template_kwargs': {{'enable_thinking': False}}, 'id_slot': m.SLOT}})\n"
+                 f"'tools': m.tools_now(), 'max_tokens': 8, 'chat_template_kwargs': {{'enable_thinking': False}}, 'id_slot': m.SLOT}})\n"
                  f"print(json.dumps(r['timings']))")
         r = subprocess.run(["python3", "-B", "-c", probe], capture_output=True, text=True, timeout=600,
                            env=dict(chat_env, OSYR_LLAMA_PORT=str(port)))
