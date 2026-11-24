@@ -127,17 +127,27 @@ def plan_write(path, content, cwd=None):
 
 
 def plan_edit(path, old, new, cwd=None):
-    """One piece of text replaced by another; `old` must appear exactly once."""
+    """One piece of text replaced by another; `old` must appear exactly once. An empty `old`
+    adds `new` at the end, on a line of its own: adding a line to a list is the commonest
+    change, and without this the model wrote the new line alone over the whole file."""
     p, root, e = _locate(path, cwd)
     if e:
         return e
     if not os.path.exists(p):
         return err("FILES_NOT_FOUND", "There is no such file. To create it, use write.", path=short(p))
-    if not isinstance(old, str) or not isinstance(new, str) or not old:
-        return err("USAGE", "edit needs old (the text there now) and new (the text that replaces it).")
+    if not isinstance(old, str) or not isinstance(new, str) or not (old or new.strip()):
+        return err("USAGE", "edit needs old (the text there now) and new (the text that replaces it); "
+                   "with an empty old, new is added at the end.")
     text, e = _read(p)
     if e:
         return e
+    if not old:
+        changed = text + ("\n" if text and not text.endswith("\n") else "") + new + ("" if new.endswith("\n") else "\n")
+        if len(changed) > MAX_CHARS:
+            return err("FILES_TOO_BIG", f"The file would pass {MAX_CHARS} characters.", path=short(p))
+        return {"ok": True, "path": p, "root": root, "exists": True, "old": text, "new": changed,
+                "show": _diff(text, changed, p),
+                "summary": {"path": short(p), "created": False, "added": True, "lines": len(changed.splitlines())}}
     n = text.count(old)
     if n == 0:
         return err("EDIT_NOT_FOUND", "The old text is not in the file, character for character. Read the file "

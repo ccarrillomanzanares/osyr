@@ -47,6 +47,17 @@ def main():
     check("edit-not-found", edits.plan_edit("proj/notes.txt", "three", "3")["code"] == "EDIT_NOT_FOUND")
     open(f"{HOME}/proj/twice.txt", "w").write("a\na\n")
     check("edit-ambiguous", edits.plan_edit("proj/twice.txt", "a", "b")["code"] == "EDIT_AMBIGUOUS")
+    # an empty old adds at the end, on its own line, whether the file ended in a new line or not
+    with open(f"{HOME}/proj/list.txt", "w") as f:
+        f.write("milk\nbread")
+    p = edits.plan_edit("proj/list.txt", "", "tomatoes")
+    check("edit-append", p["ok"] and "+tomatoes" in p["show"] and edits.apply(p)["ok"]
+          and text("proj/list.txt") == "milk\nbread\ntomatoes\n", text("proj/list.txt"))
+    check("edit-append-again", edits.apply(edits.plan_edit("proj/list.txt", "", "eggs\n"))["ok"]
+          and text("proj/list.txt") == "milk\nbread\ntomatoes\neggs\n")
+    edits.undo(); edits.undo()
+    check("edit-append-undone", text("proj/list.txt") == "milk\nbread")
+    check("edit-append-nothing", edits.plan_edit("proj/list.txt", "", " ")["code"] == "USAGE")
     check("edit-missing-file", edits.plan_edit("proj/none.txt", "a", "b")["code"] == "FILES_NOT_FOUND")
     # undo, newest first: the edit, then the creation
     r = edits.undo()

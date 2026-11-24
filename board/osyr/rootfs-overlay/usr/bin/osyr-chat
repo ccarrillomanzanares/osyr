@@ -159,7 +159,8 @@ WRITE_TOOLS = [
     {"type": "function", "function": {
         "name": "edit",
         "description": ("Change part of a text file: replace old with new. old must be copied exactly from "
-                        "the file (read it first) and appear only once. The user is asked first."),
+                        "the file (read it first) and appear only once; an empty old adds new at the end. "
+                        "The user is asked first."),
         "parameters": {"type": "object", "properties": {
             "path": {"type": "string", "description": "starting at ~, e.g. '~/Documents/list.txt'"},
             "old": {"type": "string", "description": "the exact text there now"},
