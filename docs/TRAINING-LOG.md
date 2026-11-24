@@ -249,3 +249,28 @@ When it works it is the real procedure: `systemctl status`, `journalctl -u`, `se
 - **The fix:** the second model gets the conversation without that call, and a note in its system prompt: the small model could not do this, the task is yours, carry it out with the tools.
 - **After:** in two conversations the 35B read `systemctl status` and the file, corrected the word, restarted the service (first without `sudo`, refused; then with it) and checked. In the other two it went looking for packages and hardware and used up the twelve steps of a turn. One of the two that worked went on, after the repair, to try to install printing tools.
 - **What it says for the plan:** the hand-over works end to end and the benchmark can measure it (`escalated`, and the state afterwards). The untrained 35B does not go straight to the service's log either: the teacher needs its own fine-tuning (phase 4.1) before its trajectories are worth keeping, and only the ones the verifier approves are.
+
+## 24 November 2026 — the 2B against the 4B on the example families
+
+**Spent: 0 %.** Same ten example families and the same hundred variants as the entry of the shorter prompt (level 1 and two families of level 2), same conditions, one run each. **Not a benchmark**; the first time the two candidates are compared variant by variant and with an interval.
+
+| | Qwen3.5-4B Q4_K_M | Qwen3.5-2B Q4_K_M |
+| --- | --- | --- |
+| All ten families | 81.0 % (66.0 to 93.0) | 58.0 % (36.0 to 79.0) |
+| Reading a setting, a "no" | 100 %, 100 % | 100 %, 100 % |
+| A change (volume, wifi) | 95 % | 55 % |
+| Files | 80 % | 75 % |
+| Recalling a name | 80 % | 50 % |
+| Read, then set | 90 % | 50 % |
+| A full disk (level 2) | 60 % | 20 % |
+| A service that does not start (level 2) | 30 % | 0 % |
+| Median time per variant | 24 s | 16 s |
+
+**Difference: −23 points for the 2B, 95 % interval −40 to −7.** It leaves zero out.
+
+### What it says
+
+1. **The untrained 2B is clearly behind the untrained 4B**, and now with an interval that says so; on 14 Nov it was 58 against 76 of 81 without one.
+2. **It falls where there is more than one step:** joining a wifi (2 of 10: it does not get from the scan to the connect command), read-then-set, the two administration families. Where one command does it, it matches the 4B.
+3. **It is not the 4B at two thirds of the wait any more:** with the prompt saved between sessions the difference is 16 s against 24 s per variant on the VPS, because most of the wait is now writing, not reading.
+4. This does not settle the choice: the question was never whether the untrained 2B is as good, but whether a fine-tuned 2B reaches a useful level on a laptop where the 4B is too slow. The pilot fine-tunes both. What this adds is the size of the gap to close: 23 points, most of it on tasks of several steps.
