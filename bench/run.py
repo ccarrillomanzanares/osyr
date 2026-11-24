@@ -17,6 +17,10 @@ writes the trajectories, the verdicts and the report.
     --write          with the write and edit tools (OSYR_WRITE=1)
     --threads N      llama-server threads with --model (default 4)
     --minutes N      time limit of one variant (default 12)
+    --second URL     a second model for ask_server: an OpenAI-compatible base address, reached
+                     from the session through a model gate (sandbox/modelgate.py)
+    --second-key-file F, --second-key-header H, --second-name HOST   its key, the header the key
+                     goes in, and its host name when URL is a loopback address with TLS
 
 Results: OUT/LABEL/results.jsonl (one line per variant and run), OUT/LABEL/runs/
 (the full trajectory of each) and OUT/LABEL/report.md. A run that is repeated
@@ -41,6 +45,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "sandbox"))
 import families  # noqa: E402
+import modelgate  # noqa: E402
 import relay  # noqa: E402
 import report  # noqa: E402
 import verify  # noqa: E402
@@ -106,6 +111,9 @@ def one(variant, run, host, port, opts):
         with open(os.path.join(share, "variant.json"), "w") as f:
             json.dump(dict(variant, timeout=opts.minutes * 60 - 60), f, ensure_ascii=False)
         shutil.copy(os.path.join(HERE, "driver.py"), share)
+        gate = None
+        if opts.upstream is not None:   # the second model, behind its gate: the chat's ask_server
+            gate = modelgate.Gate(os.path.join(work, "model.sock"), opts.upstream, 100).start()
         srv = relay.listen_socket(os.path.join(work, "llama.sock"), host, port)
         threading.Thread(target=relay.serve_forever, args=(srv, (host, port)), daemon=True).start()
         env = ["OSYR_SANDBOX=0", "OSYR_SANDBOX_SKEL=0", "OSYR_TEMPERATURE=0", f"OSYR_SEED={run + 1}",
@@ -119,6 +127,8 @@ def one(variant, run, host, port, opts):
         cmd += [work, "python3", "/run/osyr/share/driver.py", "/run/osyr/share"]
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=opts.minutes * 60 + 60)
         srv.close()
+        if gate is not None:
+            gate.close()
         try:
             with open(os.path.join(share, "result.json")) as f:
                 return json.load(f)
@@ -144,14 +154,24 @@ def main():
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--minutes", type=int, default=12)
+    ap.add_argument("--second")
+    ap.add_argument("--second-key-file")
+    ap.add_argument("--second-key-header", default="Authorization")
+    ap.add_argument("--second-name")
     opts = ap.parse_args()
     if bool(opts.model) == bool(opts.server):
         ap.error("give --model FILE or --server HOST:PORT")
 
+    opts.upstream = None
+    if opts.second:
+        key = open(opts.second_key_file).read().strip() if opts.second_key_file else None
+        opts.upstream = modelgate.Upstream(opts.second, key, opts.second_key_header, "", 1, opts.second_name,
+                                           {"chat_template_kwargs": {"enable_thinking": False}})
     fams = [f for f in families.load_all(opts.tasks)
             if opts.only in f["id"] and opts.split in ("all", f["split"])]
     have = {"shell"} if not opts.no_shell else set()
     have |= {"write"} if opts.write else set()
+    have |= {"server"} if opts.second else set()
     skipped = [f["id"] for f in fams if not set(f["needs"]) <= have]
     fams = [f for f in fams if set(f["needs"]) <= have]
     todo = [(r, v) for r in range(opts.runs) for f in fams for v in families.variants(f, opts.variants)]
