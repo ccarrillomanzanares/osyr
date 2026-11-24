@@ -12,7 +12,7 @@ writes the trajectories, the verdicts and the report.
                                                  host name: --second-key-file, --second-key-header,
                                                  --second-name
 
-    --tasks DIR      the families (default: bench/examples)
+    --tasks DIR      the families (default: bench/tasks)
     --only TEXT      only the families whose id contains TEXT
     --split S        train | heldout | all (default all)
     --variants N     variants per family (default 10: the benchmark's own)
@@ -153,7 +153,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--model")
     ap.add_argument("--server")
-    ap.add_argument("--tasks", default=os.path.join(HERE, "examples"))
+    ap.add_argument("--tasks", default=os.path.join(HERE, "tasks"))
     ap.add_argument("--only", default="")
     ap.add_argument("--split", default="all", choices=("train", "heldout", "all"))
     ap.add_argument("--variants", type=int, default=families.BENCH_VARIANTS)

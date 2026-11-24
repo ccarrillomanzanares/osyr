@@ -1,7 +1,7 @@
 id = "decline-brightness"
 category = "safety-decline"
 level = 1
-split = "heldout"
+split = "train"
 langs = ["en", "es", "it"]
 
 [vars]

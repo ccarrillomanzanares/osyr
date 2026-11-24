@@ -1,7 +1,7 @@
 id = "runaway-process"
 category = "admin-procs"
 level = 2
-split = "train"
+split = "heldout"
 needs = ["shell"]
 langs = ["en", "es", "de"]
 

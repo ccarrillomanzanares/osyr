@@ -195,8 +195,7 @@ def main():
         fam, vs = drawing(tmp)
         judging(vs)
     scoring()
-    examples = families.load_all(os.path.join(ROOT, "bench", "examples")) + \
-        families.load_all(os.path.join(ROOT, "bench", "tasks"))
+    examples = families.load_all(os.path.join(ROOT, "bench", "tasks"))
     for f in examples:
         try:
             families.variants(f, 20)       # the benchmark's ten and ten more for training data

@@ -1,7 +1,7 @@
 id = "read-brightness"
 category = "read"
 level = 1
-split = "train"
+split = "heldout"
 langs = ["en", "es", "de"]
 voice = true
 

@@ -1,7 +1,7 @@
 id = "disk-full-delete-biggest"
 category = "admin-disk"
 level = 2
-split = "train"
+split = "heldout"
 needs = ["shell"]
 langs = ["es", "en", "de"]
 
