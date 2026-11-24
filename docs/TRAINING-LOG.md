@@ -164,3 +164,43 @@ The untrained 4B is not usable on the reference 16 GB laptop (HP 15s: 25.9 tok/s
 3. **The prompt has to be read ahead.** The server keeps what it has read and reuses it when the next conversation starts the same way; the sandbox asks for the fixed prompt every 20 minutes so that no visitor waits the 150 s.
 4. On this processor the 35B serves two conversations at once at the edge of what is bearable. As a teacher for trajectories or as the benchmark's reference it is slow on the VPS: about a minute per turn means hours for a few hundred tasks. That is what the Lambda instances of the pilot are for.
 5. What it did in those conversations, all simple requests (wifi, volume, brightness, Bluetooth, displays, files): the right command in every one. Three slips worth a task each: it invented an address (`192.168.x.x`) the result did not give; it asked for `shopping_list.txt` when the file is `shopping-list.txt`; it wrote `Sony WH-1000XM5` for the `XM4` the scan had just listed. The last two were also the product's (fixed: a loosely matching file name is found, a name of several words needs no quotes).
+
+## 23 November 2026 — first whole run of the benchmark's runner (example families, the 4B)
+
+**Spent: 0 %.** **Not a benchmark:** eight example families written to try the runner ([BENCH-TASK-FORMAT.md](BENCH-TASK-FORMAT.md), still a draft), all of level 1. What this entry measures is the machinery.
+
+### How
+
+- `make bench`: Qwen3.5-4B Q4_K_M on the image's `llama-server`, 4 threads on the VPS, context 8,192, temperature 0, one run.
+- Eight families, ten variants each, in seven languages, four of the eighty spoken. Each variant in its own disposable session, with the pretend hardware; judged on the machine's state before and after and on the saved conversation.
+- The agent as it stood that evening: shell on, write tools off, the fixed prompt at 2,150 tokens.
+
+### Result
+
+| | Score | 95 % interval | Families | Variants |
+| --- | --- | --- | --- | --- |
+| All | 92.5 % | 83.7 to 98.8 | 8 | 80 |
+| Train | 93.3 % | 83.3 to 100 | 6 | 60 |
+| Held out | 90.0 % | 70.0 to 100 | 2 | 20 |
+
+54 minutes; 36 s per variant (median), 1.2 tool calls per variant. No hand-over (there was no second model).
+
+### The six failures, all the model's
+
+| Family | Variants | What happened |
+| --- | --- | --- |
+| Delete a file | 2 of 10, both in French | "I cannot delete files from the chat": it never tried the shell. Catalogued on 13 Nov |
+| Recall a name | 2 of 10, the same wording ("Remind me: my dog's name?") | It took "remind me" for "remember": saved the fact it already had, three times, and answered nothing |
+| Read, then set | 1 of 10 | It read the brightness and said it had set it. It had not: no command, no question. Catalogued on 13 Nov |
+| Join a wifi | 1 of 10 ("join the Casa-Lopez wifi") | It scanned and asked for the password in the chat, which the prompt forbids, instead of the connect command |
+
+### What it says
+
+1. **The machinery holds:** eighty conversations in sessions that start clean, no run lost, and every failure read by hand was a real one. No verdict had to be corrected.
+2. **The variants do their job.** Four of the eight families pass in some variants and fail in others, and what the failing ones share can be read off: a language, a wording. With one conversation per task each of these would have been a coin: 100 % or 0 %.
+3. **The interval is honest about how little eight families say:** 15 points wide. The pilot's gate of 10 points needs the hundred held-out variants the plan asks for, and more families than variants.
+4. Three of the four failures were already in the list of 13 Nov; the benchmark finds them again without being told where to look.
+
+### Next
+
+- The same run after shortening the fixed prompt to 2,000 tokens, compared variant by variant.
