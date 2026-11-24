@@ -239,7 +239,7 @@ Confirmed in the Lambda account on 23 Nov 2026: the credits expire around 4 Nove
 
 - [ ] Choose the small model once the candidates are measured.
 - [x] Approve the shell design: what is blocked, what asks for confirmation and what goes through. Approved on 13 Nov 2026 as built ([SHELL-DESIGN.md](SHELL-DESIGN.md)); it can still be adjusted until the interface is frozen.
-- [ ] Approve the task format and the list of categories before the 30–50 tasks are written. Waits until the features are built (13 Nov): the tasks depend on the interface that is left.
+- [ ] Approve the task format and the list of categories before the 30–50 tasks are written. Waits until the features are built (13 Nov): the tasks depend on the interface that is left. **The list of families was approved on 24 Nov 2026** (forty-five, in [BENCH-TASK-FORMAT.md](BENCH-TASK-FORMAT.md)); the format's own questions (variants per family, the held-out share, judged checks) are still open.
 - [ ] Go-ahead for every Lambda instance start (instance, hours and share of the budget).
 - [ ] After the pilot: whether the small model keeps the shell and whether to go on with it.
 - [ ] Where the sandbox instances run: VPS, Scaleway or AWS.

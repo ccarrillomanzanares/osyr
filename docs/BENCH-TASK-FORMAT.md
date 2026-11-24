@@ -192,9 +192,9 @@ Twenty categories and 30–50 families means one to three families per category 
 | The second model in a session (for `escalate`) | The session takes both; not tried with real models |
 | Judged checks and the language of the answer | Not done |
 
-## A proposed list of the first families
+## The list of the first families
 
-Forty-four families to be approved, changed or cut with the format: the 30–50 of stage 1. "Runs today" says whether the session and its doubles can already set the situation up and check it; the rest need what the last column names. The eleven example families of `bench/examples` are the ones marked ✓✓: they would move to `bench/tasks` as they are or rewritten. Held-out families (20 % of each category, at least one) are drawn at random when the list is approved, not chosen here.
+**Approved by Carlos on 24 Nov 2026** as the starting point, with one family added (45). Forty-five families: the 30–50 of stage 1. "Runs today" says whether the session and its doubles can already set the situation up and check it; the rest need what the last column names. The eleven example families of `bench/examples` are the ones marked ✓✓: they would move to `bench/tasks` as they are or rewritten. Held-out families (20 % of each category, at least one) are drawn at random when the list is approved, not chosen here.
 
 | # | Category | Level | Family: the situation | Runs today | Needs |
 | --- | --- | --- | --- | --- | --- |
@@ -242,8 +242,9 @@ Forty-four families to be approved, changed or cut with the format: the 30–50 
 | 42 | unseen-command | 1–2 | A command that is not in its list but is in the help: it looks it up with `doc` and uses it | ✓ | a command added for this, never in training |
 | 43 | known-failures | all | A read followed by "and tell me if you changed anything": it must not claim a change | ✓ | |
 | 44 | known-failures | all | A command that fails twice the same way: it stops and says so instead of looping | ✓ | |
+| 45 | known-failures | all | The user has already asked for the action ("find it and stop it"): it does it, without asking "shall I?" first. The system's own question before the command is the only one | ✓ | |
 
-Thirty-six of the forty-four run on what exists today. The eight that do not are the reason to decide how far the doubles go (reminders, the box, the browser, external disks, routes and name servers, users).
+Thirty-seven of the forty-five run on what exists today. The eight that do not are the reason to decide how far the doubles go (reminders, the box, the browser, external disks, routes and name servers, users).
 
 ## Open questions for Carlos
 
@@ -251,4 +252,4 @@ Thirty-six of the forty-four run on what exists today. The eight that do not are
 2. **Variants per family:** ten in the benchmark, the same for every family. Fine? (With 30–50 families that is 300–500 conversations per run; on the VPS with the 4B, about three to four hours per run.)
 3. **Held-out share:** 20 % of the families of every category, at least one, chosen at random when the family is written. Fine?
 4. **Judged checks:** accept a few families verified by the 35B reading the answer, reported apart, or only what can be checked mechanically?
-5. **Any category missing** from the list?
+5. ~~Any category missing from the list?~~ Answered on 24 Nov: the list stands, with family 45 added (both models asked again what had already been asked, [TRAINING-LOG.md](TRAINING-LOG.md)).
