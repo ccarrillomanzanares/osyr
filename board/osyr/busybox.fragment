@@ -2,3 +2,13 @@
 # chpasswd: osyr-firstboot changes the password without passing it on the
 # command line (it reads it from standard input).
 CONFIG_CHPASSWD=y
+# tar with -z, -J and -j, and telling the compression by itself when unpacking:
+# 'tar -czf' is what people and models type first (24 Nov: the benchmark's
+# compress-folder family). bzip2 to go with -j.
+CONFIG_FEATURE_SEAMLESS_GZ=y
+CONFIG_FEATURE_SEAMLESS_XZ=y
+CONFIG_FEATURE_SEAMLESS_BZ2=y
+CONFIG_FEATURE_TAR_AUTODETECT=y
+CONFIG_BZIP2=y
+CONFIG_BUNZIP2=y
+CONFIG_BZCAT=y

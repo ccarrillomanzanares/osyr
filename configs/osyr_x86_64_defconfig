@@ -104,6 +104,11 @@ BR2_PACKAGE_OPENSSH=y
 # 'osyr update code': updates scripts and configuration from the repository
 BR2_PACKAGE_GIT=y
 BR2_PACKAGE_ZSTD=y
+# zip: the archive people send by mail, and the first thing asked for to compress a folder
+# (unzip, gzip, xz and tar -z come from busybox: board/osyr/busybox.fragment)
+BR2_PACKAGE_ZIP=y
+# xz itself: busybox's only unpacks, and 'tar -cJf' calls it to pack
+BR2_PACKAGE_XZ=y
 
 # --- Network: wired with networkd, wifi with iwd ----------------------------
 BR2_PACKAGE_IWD=y

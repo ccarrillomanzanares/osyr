@@ -407,3 +407,13 @@ The first run of the day gave the 4B 3 of 10 on the service family. Reading the 
 - **It goes on until the turn runs out** when a command cannot work (`stop-after-failing`: `modprobe`, `apt`, `box install`, `update`), and asks "shall I?" after finding what the user had asked it to remove (`disk-full-old-logs`, 7 of 10 never reach a command).
 
 **State of the list:** 36 of the 45 families are written and all 36 have been run and read at least once with the 4B. None has been run with the 2B or the 35B after today's repairs. The three runs and the intervals the format asks for have not been made.
+
+**The same evening, after two of the missing features were built** (`zip` and a `tar` that compresses in the image; `edit` with an empty `old` adds at the end). The 4B again, ten variants, one run, two at a time:
+
+| Family | Before | After |
+| --- | --- | --- |
+| `compress-folder` | 3/10 | 8/10 |
+| `add-line-to-list` | 0/10 | 1/10 |
+| `create-note` (nothing changed for it) | 7/10 | 7/10 |
+
+`compress-folder`: `zip -r` is the first command in 8 of 10 and now works; the two failures are the same two variants as before, where the 4B renames the folder instead of packing it. `add-line-to-list`: the 4B used the new way of `edit` on the right file once, and it passed. Of the nine failures, five wrote to `~/Documentos` or `~/Documenti` (the folder that does not exist: the three failures of `create-note` are the same thing), and four called `write` with the new line alone on the right file. Building the feature moved one variant; what is left is the translated folder name (the interface) and the model. n = 10, one run: the 3 to 8 is a large step on the same variants, the 0 to 1 is not a result.

@@ -626,6 +626,7 @@ Built ahead of stage 1 on top of the disposable session and the doubles, followi
   - `update-image-boots-b`: nothing came out of the console after the restart, as on 16 Nov. Run on its own (`ONLY=update-image`) the thirteen checks pass, as on 17 Nov. Not understood: twice at the end of a whole run, never alone.
   - `vision-on-demand`: the known one of timing without KVM (the vision server is still loading at 300 s); failed in both runs.
   The whole run has not been repeated on the rebuilt image.
+- **Archive tools and adding to a file (24 Nov, from the benchmark's first reading):** `zip` (the image had only `unzip`), the real `xz` (busybox's only unpacks) and busybox's `tar` with `-z`, `-J`, `-j` and detection when unpacking (`board/osyr/busybox.fragment`); `bzip2` from busybox. New check `archive-tools` in the `system` part: image rebuilt, `ONLY=system` 19 of 19. `edit` with an empty `old` adds `new` at the end of the file, on its own line, with the same confirmation and undo (`tests/edits_cases.py`, 37 of 37). Neither is in a published image.
 
 ## Administration tasks without a real system: a prototype (24 Nov)
 

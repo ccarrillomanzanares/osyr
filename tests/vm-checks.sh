@@ -27,6 +27,12 @@ pkill -STOP -x swayidle
 cyc=$(journalctl -b --no-pager | grep -c 'ordering cycle')
 [ "$cyc" = 0 ] && [ "$(findmnt -n -o FSTYPE /tmp)" = tmpfs ] && pass boot-no-cycles || \
     fail boot-no-cycles "$cyc cycle(s); /tmp is $(findmnt -n -o FSTYPE /tmp)"
+# Compressing a folder the ways people type it: zip, and tar with -z, -J and -j
+ad=$(mktemp -d) && mkdir "$ad/f" && echo hello > "$ad/f/a.txt" && (cd "$ad" && zip -qr f.zip f && tar -czf f.tar.gz f &&
+    tar -cJf f.tar.xz f && tar -cjf f.tar.bz2 f && mkdir out && tar -xf f.tar.gz -C out && unzip -q f.zip -d out2) 2>/tmp/arch.err
+[ "$(cat "$ad/out/f/a.txt" 2>/dev/null)$(cat "$ad/out2/f/a.txt" 2>/dev/null)" = hellohello ] && [ -s "$ad/f.tar.xz" ] && [ -s "$ad/f.tar.bz2" ] \
+    && pass archive-tools || fail archive-tools "$(tr '\n' ' ' < /tmp/arch.err | cut -c1-200)"
+rm -rf "$ad"
 [ -z "$(systemctl --failed --no-legend)" ] && pass services-ok || fail services-ok "$(systemctl --failed --no-legend | tr '\n' ' ')"
 [ "$(systemctl is-active sshd)" != active ] && pass sshd-off || fail sshd-off "sshd is running"
 # Firewall: table loaded and input closed by default (output is tested by
