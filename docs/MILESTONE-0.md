@@ -598,7 +598,9 @@ The last of the "first priority" features of stage 0 of [TRAINING-PLAN.md](TRAIN
 - **It asks first,** as decided on 13 Nov, because the conversation leaves the computer: yes, always for that provider (a saved permission, listed and removed with `/permissions`), or no. A "no" goes back to the local model, which is told not to insist.
 - **Then the second model goes on with the same turn:** it gets the conversation so far and the same tools (without `ask_server`), runs its commands under the same questions and protections, and answers. The next message is the local model's again. What the user asked to remember is not sent, as with any remote provider.
 - If the server does not answer, the local model is told to do what it can and say so.
-- **Tried:** seven cases with a scripted model in `tests/turn_cases.py` (no server, declined, accepted and going on there, back to the local model, "always" not asked again). **Not tried with real models**, and not built into an image. The description costs about 100 tokens of the fixed prompt when a second model exists: to be measured against the 2,000 limit.
+- **Tried:** eight cases with a scripted model in `tests/turn_cases.py` (no server, declined, accepted and going on there, back to the local model, "always" not asked again, what the second model is shown).
+- **Tried with real models (24 Nov):** the 4B on the VPS handing a service that does not start to the VPS's 35B, in the benchmark's sessions, four conversations in which the user asks for the hand-over outright. The 4B called `ask_server` in the four. The first time the 35B then answered "the task has been handed over": it read the small model's call back as if someone else had the task. **Now it gets the conversation without that call, and a note in its system prompt saying the task is its own.** Tried again: in two of the four it read the service's log, corrected the file, restarted the service with `sudo` and confirmed it; in the other two it looked elsewhere (packages, the hardware test) and ran out of steps. Five minutes each on the VPS's processor.
+- It costs 113 tokens of the fixed prompt when a second model exists (2,113 with the shell). Not built into an image.
 
 ## The benchmark's runner (23 Nov)
 
@@ -609,3 +611,22 @@ Built ahead of stage 1 on top of the disposable session and the doubles, followi
 - The session gained what this needs: `--env OSYR_NAME=VALUE`, `--share DIR`, an empty home folder (`OSYR_SANDBOX_SKEL=0`) and the model server's socket (`llama.sock`), alone or with a second model's gate.
 - Eight example families in `bench/examples` (brightness, volume, wifi with a password, a note to read, a name to recall, read-then-set, a "no", deleting a file), in several languages and with spoken variants. They are there to try the machinery.
 - **Tried:** `tests/bench_cases.py` (native phase): the draws, the verdicts on made-up conversations and the intervals. The first whole run of the examples with the 4B is in [TRAINING-LOG.md](TRAINING-LOG.md).
+
+## The fixed prompt back under its limit, and small things (24 Nov) — for the next image
+
+- **The fixed prompt was at 2,150 tokens** (the limit is 2,000 until the model is fine-tuned): the lines for `box`, `app`, `ai advise` and `ai local` had gone in since it was last measured. Cut to **2,000** with the shell (1,696 without it, 2,353 with the write tools) by saying the same in fewer words: `/install`, `/update` and `/report` in one sentence, shorter descriptions of the shell, the voices, the reminders, the box and the clipboard. No command was taken out. Measured before and after on the benchmark's example families: 74 and 72 of 80, a difference inside its interval ([TRAINING-LOG.md](TRAINING-LOG.md)).
+- **No reasoning with the user's own server either.** The chat asked only the local model not to reason; a 35B added with `/pair` reasoned on every answer, which on a processor is most of the wait. The chat now asks any provider that is a llama.cpp server (`ai.is_llama_cpp`: its `/v1/models` gives the model's training context); other providers get no field they do not know.
+- **`osyr ui screenshot`**: a picture of the screen on request, saved where the Print Screen key saves them; in the agent's list, without a question. One of the "then" features of the plan.
+- **`osyr sys power`** gives the battery's charge; **`osyr files read`** finds a file whose name is given with `_` for `-` or the other way; **`osyr bt connect`** and **`net wifi connect`** take a name of several words without quotes. All three came from watching the 35B use the system in the web sandbox.
+- **`osyr ai second [name|off]`**: which provider hard tasks are handed to.
+- Tests: the case files of the native phase pass (shell guard 251, edits 33, box 34, turns 18, advise, models, image, sandbox, bench). The native phase as a whole was run on 24 Nov: see below. Nothing of this is built into an image or tried in QEMU.
+
+## Administration tasks without a real system: a prototype (24 Nov)
+
+The gap [TRAINING-READINESS.md](TRAINING-READINESS.md) names: the plan's goal is an administrator, and nothing simulated services, logs, disks or `sudo`.
+
+- **A whole system to change:** `sandbox/session --system` mounts the image's root with an overlay in memory, so every file can be written and all of it goes with the session. Nothing outside is touched.
+- **`tests/doubles/admin.py`** stands in for `systemctl`, `journalctl`, `df`, `du` and `sudo`, from the scenario's `system` table: services with a state, a log and the conditions under which they start (a file that contains or lacks a text, another service, free space); disks whose use follows the files under a folder (the big files of a task are holes, their size counts); a password for `sudo`, remembered five minutes. Changing a service needs `sudo`; `/etc` is closed to writing and `sudo` opens it while its command runs.
+- **Two example families** use it (`bench/examples`): a service that does not start because of a misspelt word in its configuration file (four services), and a full disk whose biggest file has to be found and deleted. With the untrained 4B: 3 and 6 of 10, against 90 % on the level 1 examples.
+- **Limits:** outside `/etc` the system's files can be written without `sudo`; there are no real processes behind the services (`ps` shows none); users, mounts, timers and packages have no double yet. Whether the benchmark's administration tasks are built this way, or on the real image in a virtual machine, is to be decided with the task format.
+- Tests: `admin-*` in `tests/sandbox_cases.py`.

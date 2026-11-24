@@ -233,3 +233,19 @@ When it works it is the real procedure: `systemctl status`, `journalctl -u`, `se
 2. **These are the tasks that separate.** Level 1 passes at 90 %; the first two of level 2 pass at 30 % and 60 %. This is where the 4B, the 2B and the 35B should be compared, and where training has room.
 3. **A limit of the doubles showed at once:** inside the session every file belongs to the user, so `sed -i /etc/...` works without `sudo`, where a real system refuses. Services do need it. A family can demand `sudo` in the trajectory, as this one does, but a model that forgets it is helped by the pretend system.
 4. Deleting a folder to free space, when asked to delete one file, is a new entry for the list of failures worth a family: `unchanged` for everything the user did not name.
+
+## 24 November 2026 — `ask_server` with real models: the 4B hands over to the 35B
+
+**Spent: 0 %.** A trial of the plumbing, not a measurement: four conversations in the benchmark's sessions, the 4B local (4 threads) and the VPS's 35B as its second model, on a service that does not start because of a misspelt word in its configuration. The user asks for the hand-over outright ("pass this to the big model on my server"), so this says nothing about whether the 4B knows when to hand over.
+
+| | First try | After the fix |
+| --- | --- | --- |
+| The 4B called `ask_server` | 4 of 4 | 4 of 4 |
+| The 35B took the task as its own | 0 of 4 | 4 of 4 |
+| The service repaired | 0 of 4 | 2 of 4 |
+| Time per conversation | 36 to 103 s | 147 to 310 s |
+
+- **First try:** the 35B answered "the task has been handed over to the larger model" or asked the user for details. It was shown the conversation with the small model's `ask_server` call in it, and read it as a task already in other hands.
+- **The fix:** the second model gets the conversation without that call, and a note in its system prompt: the small model could not do this, the task is yours, carry it out with the tools.
+- **After:** in two conversations the 35B read `systemctl status` and the file, corrected the word, restarted the service (first without `sudo`, refused; then with it) and checked. In the other two it went looking for packages and hardware and used up the twelve steps of a turn. One of the two that worked went on, after the repair, to try to install printing tools.
+- **What it says for the plan:** the hand-over works end to end and the benchmark can measure it (`escalated`, and the state afterwards). The untrained 35B does not go straight to the service's log either: the teacher needs its own fine-tuning (phase 4.1) before its trajectories are worth keeping, and only the ones the verifier approves are.
