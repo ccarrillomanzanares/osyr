@@ -342,7 +342,7 @@ The first run of the day gave the 4B 3 of 10 on the service family. Reading the 
 
 ### What it says
 
-1. **Two families, three faults of their own, in a day.** The fourth label is not a rare case: each new family needs one read of its failures with one model before it counts, and that read is part of writing it. Forty-four families at ten variants is some eight hours of the 4B on the VPS for that first pass.
+1. **Two families, three faults of their own, in a day.** The fourth label is not a rare case: each new family needs one read of its failures with one model before it counts, and that read is part of writing it. Forty-four families at ten variants, at about 110 s a variant with two servers side by side, would be some seven hours of the 4B on the VPS for that first pass (an estimate from these two families).
 2. **Ten variants do not separate two models on one family.** What separates them is the whole set (the plan's intervals over families); a single family's score is for reading its failures.
 3. **The 35B and `sudo` is the first thing to look at in its trajectories** before any of them is kept as a teacher's: a teacher that hands the administrator's command back to the user teaches exactly the wrong thing. Not yet tried: the same family with the 35B's repetition penalties off, which needs a server of our own.
 4. The 35B measured alone is quick (51 s a variant on the new family); measured while two 4B servers ran on the same sixteen processors its first two variants hit the eleven-minute limit. Runs that are compared must not share the machine.
