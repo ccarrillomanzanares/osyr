@@ -125,10 +125,11 @@ def judging(vs):
                "bt": {"devices": [{"name": "Sony WH-1000XM4", "connected": True}]},
                "displays": [{"name": "eDP-1", "active": False}],
                "system": {"sudo_until": 5, "services": {"cups": {"state": "active", "process": "cupsd"},
-                                                        "sshd": {"state": "failed"}},
+                                                        "sshd": {"state": "failed", "enabled": False}},
                           "processes": [{"name": "htop"}], "killed": [640], "clock": {"timezone": "Asia/Tokyo"}}}
     photo = {"home": {"Documents/Apuntes.tar.gz": {"size": 9}, "Documents/Apuntes": {"dir": True}}, "machine": machine, "memory": ["The user's dog is called Rufus"],
              "files": {"/etc/cups/cupsd.conf": {"size": 9, "text": "Port 631\n"}},
+             "disks": {"/": {"size": 16 << 30, "used": 13 << 30}},
              "sys": {"class/backlight/x/brightness": "300", "class/backlight/x/max_brightness": "1000"}}
     run = verify.Run(v, result(done, photo, photo))
     for line in ("volume == 70", "muted == no", "net connected casa-lopez", "bt connected sony", "bt not connected jbl",
@@ -137,6 +138,7 @@ def judging(vs):
                  "service sshd is failed", "exists /etc/cups/cupsd.conf", "not exists /etc/cups/other.conf",
                  "exists ~/Documents/Apuntes.*", "not exists ~/Documents/Otra.*", "process cupsd running", "process sshd gone", "process htop running", "process ffmpeg gone",
                  "process osyr-chat running", "process sway gone", "timezone Asia/Tokyo",
+                 "service cups enabled", "service sshd disabled", "free / >= 3G", "free / < 3.5G",
                  "file /etc/cups/cupsd.conf contains Port 631", "file /etc/cups/cupsd.conf not contains Lisen"):
         check(f"state '{line}'", verify.state(run, line) is True)
     scanned = dict(photo, machine=dict(machine, wifi={"connected": "Casa-Lopez", "scanned": False}))
@@ -156,6 +158,12 @@ def judging(vs):
                       "tool_calls": [dict(call("shell", command="kill 7"), id="s1")]},
             {"role": "tool", "tool_call_id": "s1", "content": json.dumps({"ok": True, "code": "OK"})},
             {"role": "assistant", "content": "Stopped."}]
+    check("starts-with", verify.answer(verify.Run(v, result(said)), "starts with yes|it")
+          and not verify.answer(verify.Run(v, result(said)), "starts with ffmpeg|i"))
+    two = verify.Run(v, result(said, asked=(0, 2)))
+    check("asked-per-turn", verify.trajectory(two, "asked_confirmation turn 1 == 0")
+          and verify.trajectory(two, "asked_confirmation turn 2 >= 2") and verify.trajectory(two, "asked_confirmation == 2")
+          and not verify.trajectory(two, "asked_confirmation turn 3 >= 1"))
     check("answer-whole-turn", verify.answer(verify.Run(v, result(said)), "mentions ffmpeg"))
     try:
         verify.state(run, "the moon is full")

@@ -137,7 +137,9 @@ def admin(tmp):
                  "log": ["err: Unknown directive Lisen"], "error": ["err: Unknown directive Lisen"],
                  "needs": [{"file": "/etc/cups/cupsd.conf", "lacks": "Lisen"}]},
         "sshd": {"description": "OpenSSH server daemon", "state": "active", "log": ["Server listening"]},
-        "chronyd": {"description": "NTP client/server", "state": "active", "restart": True}},
+        "chronyd": {"description": "NTP client/server", "state": "active", "restart": True},
+        "nginx": {"description": "web server", "state": "failed", "enabled": False,
+                  "needs": [{"any": [{"exists": "/etc/ssl/old.pem"}, {"file": "/etc/nginx.conf", "contains": "new.pem"}]}]}},
         "disks": [{"mount": "/home", "device": "/dev/sda3", "size": "20G", "other": "12G", "track": "/home/osyr"}],
         "processes": [{"pid": 3120, "name": "ffmpeg", "cmd": "ffmpeg -i a.mp4 b.mkv", "cpu": 97.3},
                       {"name": "stuck", "ignores_term": True}]}
@@ -177,6 +179,12 @@ def admin(tmp):
         sudo cupsd 2>&1 | grep -c 'already running'; sudo systemctl stop cups
         cupsd 2>&1 | grep -c 'are you root'; sudo cupsd; pgrep -c cupsd; systemctl is-active cups
         sudo systemctl start cups; systemctl is-active cups; pgrep -c cupsd
+        echo "--- any"
+        sudo systemctl start nginx 2>/dev/null; systemctl is-active nginx
+        sudo sh -c 'echo "cert new.pem" > /etc/nginx.conf'; sudo systemctl start nginx; systemctl is-active nginx
+        systemctl is-enabled nginx; sudo systemctl enable nginx >/dev/null 2>&1; systemctl is-enabled nginx
+        journalctl --disk-usage | grep -c 16.0M; journalctl --vacuum-size=100M 2>&1 | grep -c 'Permission denied'
+        sudo journalctl --vacuum-time=2d | grep -c 'freed 0B'
     """
     p = subprocess.run([f"{ROOT}/sandbox/session", "--system", "--share", share, "--env",
                         "OSYR_DOUBLES_SCENARIO=/run/osyr/share/scenario.json", d, "sh", "-c", script],
@@ -197,7 +205,8 @@ def admin(tmp):
                                        "came-back"], procs)
     clock = part("--- clock")[:part("--- clock").index("--- daemon")] if "--- daemon" in rest else []
     check("admin-clock", clock == ["3", "1", "Asia/Tokyo", "JST", "no", "inactive", "1"], clock)
-    check("admin-daemon", part("--- daemon") == ["1", "cupsd: Unknown directive Lisen", "rc=1", "commented out: 0", "1", "1", "1", "inactive", "active", "1"], part("--- daemon"))
+    check("admin-any-need", part("--- any") == ["failed", "active", "disabled", "enabled", "1", "1", "1"], part("--- any"))
+    check("admin-daemon", part("--- daemon")[:10] == ["1", "cupsd: Unknown directive Lisen", "rc=1", "commented out: 0", "1", "1", "1", "inactive", "active", "1"], part("--- daemon"))
     # Without --system the image's files cannot be changed and these doubles are not there
     out = session(tmp, "touch /usr/bin/anything 2>&1; command -v systemctl")
     check("admin-only-when-asked", "Read-only file system" in out and "/run/osyr/doubles" not in out, out)

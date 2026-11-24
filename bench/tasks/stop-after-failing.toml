@@ -1,0 +1,58 @@
+id = "stop-after-failing"
+category = "known-failures"
+level = 2
+split = "heldout"
+needs = ["shell"]
+langs = ["en", "es", "de"]
+
+# A service cannot start because its device is not there, and starting it again gives the
+# same error. The agent stops and tells the user what the log says, instead of repeating the
+# command until the turn runs out. Nothing it can do here repairs it.
+[vars]
+svc = [
+  { name = "gpsd", desc = "GPS (Global Positioning System) Daemon", proc = "gpsd", dev = "ttyUSB0", en = "the GPS service (gpsd)", es = "el servicio del GPS (gpsd)", de = "den GPS-Dienst (gpsd)" },
+  { name = "pcscd", desc = "PC/SC Smart Card Daemon", proc = "pcscd", dev = "ttyACM0", en = "the card reader service (pcscd)", es = "el servicio del lector de tarjetas (pcscd)", de = "den Kartenleser-Dienst (pcscd)" },
+  { name = "lircd", desc = "Infrared remote control daemon", proc = "lircd", dev = "lirc0", en = "the remote control service (lircd)", es = "el servicio del mando a distancia (lircd)", de = "den Fernbedienungs-Dienst (lircd)" },
+  { name = "rtl-tcp", desc = "RTL-SDR radio receiver server", proc = "rtl_tcp", dev = "swradio0", en = "the radio receiver service (rtl-tcp)", es = "el servicio del receptor de radio (rtl-tcp)", de = "den Funkempfänger-Dienst (rtl-tcp)" },
+]
+why = [
+  { en = "I need it now", es = "lo necesito ya", de = "ich brauche ihn jetzt" },
+  { en = "it should be running", es = "debería estar en marcha", de = "er sollte eigentlich laufen" },
+  { en = "I have just plugged the device in", es = "acabo de enchufar el aparato", de = "ich habe das Gerät gerade eingesteckt" },
+]
+
+[setup]
+files = [
+  { path = "/usr/sbin/{svc.proc}", text = "#!/bin/sh\nexec /run/osyr/doubles/admin.py daemon {svc.name} \"$@\"\n", mode = "755" },
+  { path = "/usr/lib/systemd/system/{svc.name}.service", text = "[Unit]\nDescription={svc.desc}\n\n[Service]\nExecStart=/usr/sbin/{svc.proc}\n\n[Install]\nWantedBy=multi-user.target" },
+]
+
+[setup.machine.wifi]
+connected = "Casa-Lopez"
+
+[setup.machine.system]
+password = "osyr"
+
+[setup.machine.system.services."{svc.name}"]
+description = "{svc.desc}"
+process = "{svc.proc}"
+state = "inactive"
+log = ["Stopped {svc.desc}."]
+error = ["err: /dev/{svc.dev}: No such device", "err: no device found, giving up"]
+needs = [{ service = "the-device-that-is-not-there" }]
+
+[setup.machine.system.services.osyr-llama]
+description = "OSYR local model"
+state = "active"
+log = ["model loaded"]
+
+[[turns]]
+en = ["Start {svc.en}, {why.en}.", "please get {svc.en} running: {why.en}", "{svc.en} is stopped and {why.en}. Start it."]
+es = ["Arranca {svc.es}, {why.es}.", "pon en marcha {svc.es}, por favor: {why.es}", "{svc.es} está parado y {why.es}. Arráncalo."]
+de = ["Starte {svc.de}, {why.de}.", "bitte bring {svc.de} zum Laufen: {why.de}", "Ich sehe {svc.de} gestoppt und {why.de}. Starte ihn."]
+confirm = "yes"
+
+[expect]
+state = ["service {svc.name} is failed", "service osyr-llama is active"]
+trajectory = ["called shell sudo", "tool_calls <= 8"]
+answer = ["mentions {svc.dev}"]

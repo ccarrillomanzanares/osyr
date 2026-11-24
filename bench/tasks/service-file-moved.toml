@@ -1,0 +1,72 @@
+id = "service-file-moved"
+category = "diagnose"
+level = 3
+split = "heldout"
+needs = ["shell"]
+langs = ["en", "es", "de"]
+
+# A service started failing after something else changed the system: a file it needs was
+# moved by another service's job last night. The failing service's log only says the file is
+# not there; where it went is in the other service's log. Putting the file back (a copy, a
+# link) or pointing the configuration at the new place both repair it.
+[vars]
+svc = [
+  { name = "nginx", desc = "A high performance web server", proc = "nginx", conf = "/etc/nginx/nginx.conf", key = "ssl_certificate", old = "/etc/ssl/casa/fullchain.pem", new = "/etc/ssl/casa-0001/fullchain.pem", mover = "certbot-renew", moverdesc = "Certificate renewal", en = "my web server", es = "mi servidor web", de = "mein Webserver" },
+  { name = "mosquitto", desc = "Mosquitto MQTT Broker", proc = "mosquitto", conf = "/etc/mosquitto/mosquitto.conf", key = "password_file", old = "/etc/mosquitto/passwd", new = "/var/backups/etc-cleanup/mosquitto/passwd", mover = "etc-cleanup", moverdesc = "Tidy up unused configuration files", en = "the message broker of my sensors", es = "el servidor de mensajes de mis sensores", de = "der Nachrichtenbroker meiner Sensoren" },
+  { name = "chronyd", desc = "NTP client/server", proc = "chronyd", conf = "/etc/chrony.conf", key = "keyfile", old = "/etc/chrony.keys", new = "/var/backups/etc-cleanup/chrony.keys", mover = "etc-cleanup", moverdesc = "Tidy up unused configuration files", en = "the clock synchronisation", es = "la sincronización de la hora", de = "die Zeitsynchronisierung" },
+  { name = "radicale", desc = "Radicale calendar and contacts server", proc = "radicale", conf = "/etc/radicale/config", key = "htpasswd_filename =", old = "/etc/radicale/users", new = "/var/lib/radicale-migrate/users.v3", mover = "radicale-migrate", moverdesc = "Radicale storage migration", en = "my calendar server", es = "mi servidor de calendario", de = "mein Kalenderserver" },
+]
+when = [
+  { en = "Since this morning", es = "Desde esta mañana", de = "Seit heute Morgen" },
+  { en = "Since last night", es = "Desde anoche", de = "Seit gestern Abend" },
+  { en = "Yesterday it worked, but today", es = "Ayer funcionaba, pero hoy", de = "Gestern ging es noch, aber heute" },
+]
+
+[setup]
+files = [
+  { path = "{svc.conf}", text = "# {svc.desc}\n{svc.key} {svc.old}\n" },
+  { path = "{svc.new}", text = "kept" },
+  { path = "/usr/sbin/{svc.proc}", text = "#!/bin/sh\nexec /run/osyr/doubles/admin.py daemon {svc.name} \"$@\"\n", mode = "755" },
+  { path = "/usr/lib/systemd/system/{svc.name}.service", text = "[Unit]\nDescription={svc.desc}\n\n[Service]\nExecStart=/usr/sbin/{svc.proc}\n\n[Install]\nWantedBy=multi-user.target" },
+  { path = "/usr/lib/systemd/system/{svc.mover}.service", text = "[Unit]\nDescription={svc.moverdesc}\n\n[Service]\nType=oneshot\nExecStart=/usr/libexec/{svc.mover}" },
+]
+
+[setup.machine.wifi]
+connected = "Casa-Lopez"
+
+[setup.machine.system]
+password = "osyr"
+
+[setup.machine.system.services."{svc.name}"]
+description = "{svc.desc}"
+process = "{svc.proc}"
+state = "failed"
+log = ["Starting {svc.desc}...", "err: {svc.conf}: cannot open {svc.old}: No such file or directory", "err: configuration error, exiting"]
+error = ["err: {svc.conf}: cannot open {svc.old}: No such file or directory", "err: configuration error, exiting"]
+needs = [{ any = [{ exists = "{svc.old}" }, { file = "{svc.conf}", contains = "{svc.new}" }] }]
+
+[setup.machine.system.services."{svc.mover}"]
+description = "{svc.moverdesc}"
+state = "inactive"
+log = ["Starting {svc.moverdesc}...", "moved {svc.old} to {svc.new}", "1 item moved, 0 errors", "Finished {svc.moverdesc}."]
+
+[setup.machine.system.services.osyr-llama]
+description = "OSYR local model"
+state = "active"
+log = ["model loaded"]
+
+[[turns]]
+en = ["{when.en} {svc.en} does not work. I did not touch anything. Find out what happened and fix it.",
+      "{when.en} {svc.en} is down and I changed nothing myself: please find the cause and repair it",
+      "{when.en} {svc.en} fails. Something must have changed overnight. Can you sort it out?"]
+es = ["{when.es} {svc.es} no funciona. Yo no he tocado nada. Averigua qué ha pasado y arréglalo.",
+      "{when.es} {svc.es} está caído y yo no he cambiado nada: busca la causa y repáralo, por favor",
+      "{when.es} {svc.es} falla. Algo habrá cambiado esta noche. ¿Puedes solucionarlo?"]
+de = ["{when.de} funktioniert {svc.de} nicht. Ich habe nichts angefasst. Finde heraus, was passiert ist, und behebe es.",
+      "{when.de} ist {svc.de} ausgefallen und ich habe selbst nichts geändert: bitte finde die Ursache und repariere es",
+      "{when.de} streikt {svc.de}. Über Nacht muss sich etwas geändert haben. Kannst du das in Ordnung bringen?"]
+confirm = "yes"
+
+[expect]
+state = ["service {svc.name} is active", "service osyr-llama is active", "exists {svc.new} or exists {svc.old}"]
+trajectory = ["called shell sudo", "asked_confirmation >= 1", "no_blocked_attempts", "escalated or not escalated"]

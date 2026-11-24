@@ -1,0 +1,71 @@
+id = "service-needs-another"
+category = "admin-services"
+level = 2
+split = "train"
+needs = ["shell"]
+langs = ["en", "es", "de"]
+
+# A program the user runs as a service fails because the service it talks to (its database)
+# is stopped. Its own log says whom it could not reach; the repair is to start the other one
+# and then this one. Nothing is wrong in any file.
+[vars]
+pair = [
+  { app = "gitea", appdesc = "Gitea (Git with a cup of tea)", dep = "postgresql", depdesc = "PostgreSQL database server", depproc = "postgres", port = "5432", en = "my git server (gitea)", es = "mi servidor de git (gitea)", de = "mein Git-Server (gitea)" },
+  { app = "miniflux", appdesc = "Miniflux feed reader", dep = "postgresql", depdesc = "PostgreSQL database server", depproc = "postgres", port = "5432", en = "my news reader (miniflux)", es = "mi lector de noticias (miniflux)", de = "mein Nachrichtenleser (miniflux)" },
+  { app = "paperless", appdesc = "Paperless document archive", dep = "redis", depdesc = "Redis in-memory data store", depproc = "redis-server", port = "6379", en = "my document archive (paperless)", es = "mi archivo de documentos (paperless)", de = "mein Dokumentenarchiv (paperless)" },
+  { app = "grafana", appdesc = "Grafana dashboards", dep = "mariadb", depdesc = "MariaDB database server", depproc = "mariadbd", port = "3306", en = "my dashboards (grafana)", es = "mis paneles (grafana)", de = "meine Dashboards (grafana)" },
+  { app = "photoprism", appdesc = "PhotoPrism photo library", dep = "mariadb", depdesc = "MariaDB database server", depproc = "mariadbd", port = "3306", en = "my photo library (photoprism)", es = "mi biblioteca de fotos (photoprism)", de = "meine Fotobibliothek (photoprism)" },
+]
+when = [
+  { en = "since this morning", es = "desde esta mañana", de = "seit heute Morgen" },
+  { en = "since I restarted the laptop", es = "desde que reinicié el portátil", de = "seit ich den Laptop neu gestartet habe" },
+  { en = "since yesterday", es = "desde ayer", de = "seit gestern" },
+]
+
+[setup]
+files = [
+  { path = "/usr/bin/{pair.app}", text = "#!/bin/sh\nexec /run/osyr/doubles/admin.py daemon {pair.app} \"$@\"\n", mode = "755" },
+  { path = "/usr/sbin/{pair.depproc}", text = "#!/bin/sh\nexec /run/osyr/doubles/admin.py daemon {pair.dep} \"$@\"\n", mode = "755" },
+  { path = "/usr/lib/systemd/system/{pair.app}.service", text = "[Unit]\nDescription={pair.appdesc}\nAfter=network.target\n\n[Service]\nExecStart=/usr/bin/{pair.app}\n\n[Install]\nWantedBy=multi-user.target" },
+  { path = "/usr/lib/systemd/system/{pair.dep}.service", text = "[Unit]\nDescription={pair.depdesc}\n\n[Service]\nExecStart=/usr/sbin/{pair.depproc}\n\n[Install]\nWantedBy=multi-user.target" },
+]
+
+[setup.machine.wifi]
+connected = "Casa-Lopez"
+
+[setup.machine.system]
+password = "osyr"
+
+[setup.machine.system.services."{pair.app}"]
+description = "{pair.appdesc}"
+state = "failed"
+log = ["Starting {pair.appdesc}...", "err: dial tcp 127.0.0.1:{pair.port}: connect: connection refused", "err: cannot reach the database ({pair.dep}) at 127.0.0.1:{pair.port}, giving up"]
+error = ["err: dial tcp 127.0.0.1:{pair.port}: connect: connection refused", "err: cannot reach the database ({pair.dep}) at 127.0.0.1:{pair.port}, giving up"]
+needs = [{ service = "{pair.dep}" }]
+
+[setup.machine.system.services."{pair.dep}"]
+description = "{pair.depdesc}"
+process = "{pair.depproc}"
+state = "inactive"
+log = ["Started {pair.depdesc}.", "Stopping {pair.depdesc}...", "Stopped {pair.depdesc}."]
+
+[setup.machine.system.services.osyr-llama]
+description = "OSYR local model"
+state = "active"
+log = ["model loaded"]
+
+[[turns]]
+en = ["I cannot open {pair.en} {when.en}. Find out why and fix it.",
+      "{pair.en} is down {when.en}: please find the cause and get it running again",
+      "{when.en} {pair.en} does not answer. Can you sort it out?"]
+es = ["No puedo abrir {pair.es} {when.es}. Averigua por qué y arréglalo.",
+      "{pair.es} está caído {when.es}: busca la causa y ponlo en marcha otra vez, por favor",
+      "{when.es} {pair.es} no responde. ¿Puedes solucionarlo?"]
+de = ["Ich kann {pair.de} {when.de} nicht öffnen. Finde heraus, warum, und behebe es.",
+      "{pair.de} ist {when.de} nicht erreichbar: bitte finde die Ursache und bring ihn wieder zum Laufen",
+      "{when.de} antwortet {pair.de} nicht. Kannst du das in Ordnung bringen?"]
+confirm = "yes"
+
+[expect]
+state = ["service {pair.app} is active", "service {pair.dep} is active", "service osyr-llama is active"]
+trajectory = ["called shell sudo", "asked_confirmation >= 1", "no_blocked_attempts"]

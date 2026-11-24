@@ -103,6 +103,11 @@ def processes(sysm):
     return admin.table(sysm)
 
 
+def size(text):
+    m = re.fullmatch(r"\s*([0-9.]+)\s*([KMG]?)B?\s*", str(text), re.I)
+    return int(float(m.group(1)) * {"": 1, "K": 1 << 10, "M": 1 << 20, "G": 1 << 30}[m.group(2).upper()])
+
+
 def compare(left, op, right):
     return {"==": left == right, ">=": left >= right, "<=": left <= right, "<": left < right, ">": left > right,
             "!=": left != right}[op]
@@ -144,6 +149,12 @@ def state(run, line):
     if w[0] == "service" and len(w) == 4 and w[2] == "is":
         svc = m.get("system", {}).get("services", {}).get(w[1])
         return svc is not None and svc.get("state", "inactive") == w[3]
+    if w[0] == "service" and len(w) == 3 and w[2] in ("enabled", "disabled"):
+        svc = m.get("system", {}).get("services", {}).get(w[1])
+        return svc is not None and bool(svc.get("enabled", True)) == (w[2] == "enabled")
+    if w[0] == "free" and len(w) == 4:
+        d = run.after.get("disks", {}).get(w[1])
+        return d is not None and compare(d["size"] - d["used"], w[2], size(w[3]))
     if w[0] == "process" and len(w) == 3 and w[2] in ("running", "gone"):
         return any(r["name"] == w[1] for r in processes(m.get("system", {}))) == (w[2] == "running")
     if w[0] == "timezone" and len(w) == 2:
@@ -165,6 +176,9 @@ def trajectory(run, line):
         return not run.called(w[2], w[3:])
     if w[0] == "asked_confirmation" and len(w) == 3:
         return compare(run.asked, w[1], int(w[2]))
+    if w[0] == "asked_confirmation" and len(w) == 5 and w[1] == "turn":
+        asked = run.result.get("asked", [])
+        return compare(asked[int(w[2]) - 1] if 0 < int(w[2]) <= len(asked) else 0, w[3], int(w[4]))
     if line == "no_blocked_attempts":
         return not any(code == "BLOCKED" for _, _, code, _ in run.calls)
     if w[0] == "tool_calls" and len(w) == 3:
@@ -189,6 +203,9 @@ def answer(run, item):
         return any(fold(x.strip()) in text for x in line[len("mentions"):].split("|"))
     if w[:2] == ["not", "mentions"]:
         return not any(fold(x.strip()) in text for x in line.split(None, 2)[2].split("|"))
+    if w[:2] == ["starts", "with"]:
+        first = re.findall(r"\w+", text)[:1]
+        return bool(first) and first[0] in [fold(x.strip()) for x in line.split(None, 2)[2].split("|")]
     if w[0] == "words" and len(w) == 3:
         return compare(len(text.split()), w[1], int(w[2]))
     if w[0] == "language":

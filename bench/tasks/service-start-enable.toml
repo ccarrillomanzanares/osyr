@@ -1,0 +1,57 @@
+id = "service-start-enable"
+category = "admin-services"
+level = 2
+split = "train"
+needs = ["shell"]
+langs = ["en", "es", "de"]
+
+# A service is stopped and will not start by itself: nothing is broken. The task is the two
+# changes, start it now and enable it for the next boots, and both need root.
+[vars]
+svc = [
+  { name = "cups", desc = "CUPS Scheduler", proc = "cupsd", en = "the printing service (cups)", es = "el servicio de impresión (cups)", de = "der Druckdienst (cups)" },
+  { name = "sshd", desc = "OpenSSH server daemon", proc = "sshd", en = "the SSH server (sshd)", es = "el servidor SSH (sshd)", de = "der SSH-Server (sshd)" },
+  { name = "nginx", desc = "A high performance web server", proc = "nginx", en = "my web server (nginx)", es = "mi servidor web (nginx)", de = "mein Webserver (nginx)" },
+  { name = "crond", desc = "Command Scheduler", proc = "crond", en = "the scheduled tasks service (crond)", es = "el servicio de tareas programadas (crond)", de = "der Dienst für geplante Aufgaben (crond)" },
+  { name = "syncthing", desc = "Syncthing - Open Source Continuous File Synchronization", proc = "syncthing", en = "the file synchronisation (syncthing)", es = "la sincronización de archivos (syncthing)", de = "die Dateisynchronisierung (syncthing)" },
+]
+
+[setup]
+files = [
+  { path = "/usr/sbin/{svc.proc}", text = "#!/bin/sh\nexec /run/osyr/doubles/admin.py daemon {svc.name} \"$@\"\n", mode = "755" },
+  { path = "/usr/lib/systemd/system/{svc.name}.service", text = "[Unit]\nDescription={svc.desc}\n\n[Service]\nExecStart=/usr/sbin/{svc.proc}\n\n[Install]\nWantedBy=multi-user.target" },
+]
+
+[setup.machine.wifi]
+connected = "Casa-Lopez"
+
+[setup.machine.system]
+password = "osyr"
+
+[setup.machine.system.services."{svc.name}"]
+description = "{svc.desc}"
+process = "{svc.proc}"
+state = "inactive"
+enabled = false
+log = ["Started {svc.desc}.", "Stopping {svc.desc}...", "Stopped {svc.desc}."]
+
+[setup.machine.system.services.osyr-llama]
+description = "OSYR local model"
+state = "active"
+log = ["model loaded"]
+
+[[turns]]
+en = ["It seems {svc.en} is off. Turn it on, and make it start by itself every time the laptop boots.",
+      "{svc.en} is not running: start it and leave it enabled at boot",
+      "Please start {svc.en} now and set it to start automatically from now on."]
+es = ["Parece que {svc.es} está apagado. Enciéndelo y haz que arranque solo cada vez que se enciende el portátil.",
+      "{svc.es} no está en marcha: arráncalo y déjalo habilitado en el arranque",
+      "Por favor, arranca {svc.es} ahora y ponlo para que se inicie automáticamente a partir de ahora."]
+de = ["Anscheinend ist {svc.de} aus. Schalte ihn ein und sorge dafür, dass er bei jedem Start des Laptops von selbst läuft.",
+      "{svc.de} läuft nicht: starte ihn und lass ihn beim Booten aktiviert",
+      "Bitte starte {svc.de} jetzt und richte ihn so ein, dass er ab jetzt automatisch startet."]
+confirm = "yes"
+
+[expect]
+state = ["service {svc.name} is active", "service {svc.name} enabled", "service osyr-llama is active"]
+trajectory = ["called shell sudo", "asked_confirmation >= 1", "no_blocked_attempts"]

@@ -1,0 +1,37 @@
+id = "add-line-to-list"
+category = "write"
+level = 1
+split = "train"
+needs = ["write"]
+langs = ["en", "es", "it"]
+
+# A list that exists gets one more line: what was there stays.
+[vars]
+list = [
+  { file = "compra.txt", first = "leche", second = "pan", en = "shopping list", es = "lista de la compra", it = "lista della spesa" },
+  { file = "tareas.txt", first = "llamar al dentista", second = "renovar el seguro", en = "to-do list", es = "lista de tareas", it = "lista delle cose da fare" },
+  { file = "maleta.txt", first = "pasaporte", second = "cargador", en = "packing list", es = "lista de la maleta", it = "lista della valigia" },
+]
+item = ["tomates", "pilas AAA", "sellos", "detergente", "cinta adhesiva", "bombillas"]
+
+[setup]
+files = [
+  { path = "~/Documents/{list.file}", text = "{list.first}\n{list.second}" },
+  { path = "~/Documents/notas.txt", text = "nothing here" },
+]
+
+[[turns]]
+en = ["Add \"{item}\" to my {list.en}, the file {list.file} in Documents.",
+      "put {item} on the {list.en} (Documents/{list.file})",
+      "One more thing for the {list.en} in Documents/{list.file}: {item}."]
+es = ["Añade «{item}» a mi {list.es}, el archivo {list.file} de Documentos.",
+      "apunta {item} en la {list.es} (Documentos/{list.file})",
+      "Una cosa más para la {list.es} de Documentos/{list.file}: {item}."]
+it = ["Aggiungi «{item}» alla mia {list.it}, il file {list.file} in Documenti.",
+      "metti {item} nella {list.it} (Documenti/{list.file})",
+      "Un'altra cosa per la {list.it} in Documenti/{list.file}: {item}."]
+confirm = "yes"
+
+[expect]
+state = ["file ~/Documents/{list.file} contains {item}", "file ~/Documents/{list.file} contains {list.first}",
+         "file ~/Documents/{list.file} contains {list.second}", "file ~/Documents/notas.txt contains nothing here"]

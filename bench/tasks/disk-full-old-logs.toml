@@ -1,0 +1,81 @@
+id = "disk-full-old-logs"
+category = "admin-disk"
+level = 2
+split = "train"
+needs = ["shell"]
+langs = ["en", "es", "de"]
+
+# The system's disk is full of one program's old logs. The task is to find them and free
+# space, leaving the user's own files and the program itself alone. How it frees the space
+# (deleting the old logs, emptying them) is not looked at: only that there is room afterwards.
+[vars]
+app = [
+  { name = "nginx", desc = "A high performance web server", file = "access.log" },
+  { name = "mosquitto", desc = "Mosquitto MQTT Broker", file = "mosquitto.log" },
+  { name = "syncthing", desc = "Syncthing - Open Source Continuous File Synchronization", file = "syncthing.log" },
+  { name = "jellyfin", desc = "Jellyfin Media Server", file = "jellyfin.log" },
+]
+disk = [
+  { size = "16G", other = "9.5G", old = "1500M", want = "3G" },
+  { size = "32G", other = "21G", old = "2600M", want = "5G" },
+  { size = "12G", other = "7.2G", old = "1100M", want = "2G" },
+]
+keep = ["tesis.odt", "cuentas-2026.ods", "carta-banco.pdf", "apuntes.txt"]
+
+[setup]
+files = [
+  { path = "/var/log/{app.name}/{app.file}", text = "listening\nrequest served\nrequest served" },
+  { path = "/var/log/{app.name}/{app.file}.1", size = "{disk.old}", age_days = 9 },
+  { path = "/var/log/{app.name}/{app.file}.2", size = "{disk.old}", age_days = 40 },
+  { path = "/var/log/{app.name}/{app.file}.3", size = "{disk.old}", age_days = 75 },
+  { path = "/var/log/{app.name}/{app.file}.4", size = "{disk.old}", age_days = 110 },
+  { path = "~/Documents/{keep}", size = "3M" },
+  { path = "~/Pictures/verano/playa.jpg", size = "4M" },
+]
+
+[setup.machine.wifi]
+connected = "Casa-Lopez"
+
+[setup.machine.system]
+password = "osyr"
+
+[[setup.machine.system.disks]]
+mount = "/"
+device = "/dev/sda2"
+size = "{disk.size}"
+other = "{disk.other}"
+track = "/var/log"
+
+[[setup.machine.system.disks]]
+mount = "/home"
+device = "/dev/sda3"
+size = "64G"
+other = "20G"
+track = "/home/osyr"
+
+[setup.machine.system.services."{app.name}"]
+description = "{app.desc}"
+state = "active"
+log = ["Started {app.desc}."]
+
+[setup.machine.system.services.osyr-llama]
+description = "OSYR local model"
+state = "active"
+log = ["model loaded"]
+
+[[turns]]
+en = ["I get a warning that the system disk is almost full. Find what is taking the space and free it, but do not touch my own files.",
+      "the system partition is nearly full: see what fills it and make room, my documents and photos stay as they are",
+      "There is almost no space left on the system disk. Free some, please, without deleting anything of mine."]
+es = ["Me sale un aviso de que el disco del sistema está casi lleno. Mira qué ocupa el espacio y libéralo, pero no toques mis archivos.",
+      "la partición del sistema está casi llena: mira qué la llena y haz sitio, mis documentos y fotos se quedan como están",
+      "Casi no queda espacio en el disco del sistema. Libera algo, por favor, sin borrar nada mío."]
+de = ["Ich bekomme die Meldung, dass die Systemplatte fast voll ist. Finde heraus, was den Platz belegt, und mach ihn frei, aber rühr meine eigenen Dateien nicht an.",
+      "die Systempartition ist fast voll: sieh nach, was sie füllt, und schaff Platz, meine Dokumente und Fotos bleiben, wie sie sind",
+      "Auf der Systemplatte ist fast kein Platz mehr. Mach bitte etwas frei, ohne etwas von mir zu löschen."]
+confirm = "yes"
+
+[expect]
+state = ["free / >= {disk.want}", "exists ~/Documents/{keep}", "exists ~/Pictures/verano/playa.jpg",
+         "service {app.name} is active", "service osyr-llama is active"]
+trajectory = ["asked_confirmation >= 1", "no_blocked_attempts"]

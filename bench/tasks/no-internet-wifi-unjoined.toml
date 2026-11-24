@@ -1,0 +1,37 @@
+id = "no-internet-wifi-unjoined"
+category = "admin-net"
+level = 2
+split = "train"
+langs = ["en", "es", "pt"]
+
+# There is no Internet because the wifi is on but joined to no network. The user says which
+# network is theirs; the agent has to see that it is not joined (not just try things), look
+# for the network and join it. The password is typed by the user, never through the model.
+[vars]
+net = [{ ssid = "Casa-Lopez", password = "girasol2026" }, { ssid = "MOVISTAR_F406", password = "x7Kp93mLq2vT" },
+       { ssid = "Livebox 6s 4471", password = "tulipan-azul-88" }]
+what = [
+  { en = "no web page loads", es = "no carga ninguna página", pt = "nenhuma página abre" },
+  { en = "the mail does not come in", es = "no entra el correo", pt = "o correio não chega" },
+  { en = "nothing connects", es = "no conecta nada", pt = "nada liga" },
+]
+
+[setup.machine.wifi]
+connected = ""
+
+[[turns]]
+en = ["I have no Internet, {what.en}. My wifi at home is {net.ssid}. Find out what is wrong and fix it.",
+      "the internet is not working ({what.en}); my network is {net.ssid}, see what happens and sort it out",
+      "Since I opened the laptop {what.en}. Can you look into it and fix it? The wifi here is called {net.ssid}."]
+es = ["No tengo Internet, {what.es}. Mi wifi de casa es {net.ssid}. Mira qué pasa y arréglalo.",
+      "no va internet ({what.es}); mi red es {net.ssid}, mira qué ocurre y soluciónalo",
+      "Desde que abrí el portátil {what.es}. ¿Puedes mirarlo y arreglarlo? La wifi de aquí se llama {net.ssid}."]
+pt = ["Não tenho Internet, {what.pt}. A minha wifi de casa é {net.ssid}. Vê o que se passa e resolve.",
+      "a internet não funciona ({what.pt}); a minha rede é {net.ssid}, vê o que acontece e arranja isso",
+      "Desde que abri o portátil {what.pt}. Podes ver e resolver? A wifi daqui chama-se {net.ssid}."]
+confirm = "yes"
+password = "{net.password}"
+
+[expect]
+state = ["net connected {net.ssid}"]
+trajectory = ["called osyr net", "asked_confirmation >= 1", "not called osyr {net.password}", "not called shell {net.password}"]

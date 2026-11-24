@@ -1,0 +1,81 @@
+id = "service-disk-full"
+category = "diagnose"
+level = 3
+split = "train"
+needs = ["shell"]
+langs = ["en", "es", "de"]
+
+# A service does not start because the disk it writes to is full. Its last log lines are the
+# general ones ("could not initialise storage"); the line that says why ("No space left on
+# device") is three lines up. What fills the disk is one big file nobody needs, under /var.
+# The repair is two steps: make room, then start the service. Doing it or handing it to the
+# second model are both right.
+[vars]
+svc = [
+  { name = "postgresql", desc = "PostgreSQL database server", proc = "postgres", data = "/var/lib/postgresql/data/pg_wal/000000010000000000000041", en = "my database (postgresql)", es = "mi base de datos (postgresql)", de = "meine Datenbank (postgresql)" },
+  { name = "mariadb", desc = "MariaDB database server", proc = "mariadbd", data = "/var/lib/mysql/ib_logfile0", en = "my database (mariadb)", es = "mi base de datos (mariadb)", de = "meine Datenbank (mariadb)" },
+  { name = "mosquitto", desc = "Mosquitto MQTT Broker", proc = "mosquitto", data = "/var/lib/mosquitto/mosquitto.db", en = "the message broker of my sensors (mosquitto)", es = "el servidor de mensajes de mis sensores (mosquitto)", de = "der Nachrichtenbroker meiner Sensoren (mosquitto)" },
+  { name = "influxdb", desc = "InfluxDB time series database", proc = "influxd", data = "/var/lib/influxdb/wal/0001.wal", en = "the database of my measurements (influxdb)", es = "la base de datos de mis medidas (influxdb)", de = "die Datenbank meiner Messwerte (influxdb)" },
+]
+junk = ["/var/crash/core.backup-tool.4411", "/var/tmp/old-export-2024.tar", "/var/cache/thumbs-rebuild/tmp.bin", "/var/spool/abandoned-upload.part"]
+disk = [
+  { size = "16G", other = "8G", junk = "7900M" },
+  { size = "32G", other = "19G", junk = "13200M" },
+]
+
+[setup]
+files = [
+  { path = "{junk}", size = "{disk.junk}", age_days = 200 },
+  { path = "/usr/sbin/{svc.proc}", text = "#!/bin/sh\nexec /run/osyr/doubles/admin.py daemon {svc.name} \"$@\"\n", mode = "755" },
+  { path = "/usr/lib/systemd/system/{svc.name}.service", text = "[Unit]\nDescription={svc.desc}\n\n[Service]\nExecStart=/usr/sbin/{svc.proc}\n\n[Install]\nWantedBy=multi-user.target" },
+  { path = "~/Documents/notas.txt", text = "nothing here" },
+]
+
+[setup.machine.wifi]
+connected = "Casa-Lopez"
+
+[setup.machine.system]
+password = "osyr"
+
+[[setup.machine.system.disks]]
+mount = "/"
+device = "/dev/sda2"
+size = "{disk.size}"
+other = "{disk.other}"
+track = "/var"
+
+[[setup.machine.system.disks]]
+mount = "/home"
+device = "/dev/sda3"
+size = "64G"
+other = "20G"
+track = "/home/osyr"
+
+[setup.machine.system.services."{svc.name}"]
+description = "{svc.desc}"
+process = "{svc.proc}"
+state = "failed"
+log = ["Starting {svc.desc}...", "err: write {svc.data}: No space left on device", "checkpoint aborted", "closing listeners", "err: fatal: could not initialise storage", "err: exiting"]
+error = ["err: write {svc.data}: No space left on device", "checkpoint aborted", "closing listeners", "err: fatal: could not initialise storage", "err: exiting"]
+needs = [{ free = "/", min = "500M" }]
+
+[setup.machine.system.services.osyr-llama]
+description = "OSYR local model"
+state = "active"
+log = ["model loaded"]
+
+[[turns]]
+en = ["{svc.en} stopped working. Find out why and fix it.",
+      "something is wrong with {svc.en}: it will not start. Please find the cause and repair it",
+      "I cannot use {svc.en} since today, can you sort it out?"]
+es = ["{svc.es} ha dejado de funcionar. Averigua por qué y arréglalo.",
+      "algo le pasa a {svc.es}: no arranca. Busca la causa y repáralo, por favor",
+      "No puedo usar {svc.es} desde hoy, ¿puedes solucionarlo?"]
+de = ["{svc.de} funktioniert nicht mehr. Finde heraus, warum, und behebe es.",
+      "mit {svc.de} stimmt etwas nicht: der Dienst startet nicht. Bitte finde die Ursache und repariere es",
+      "Ich kann {svc.de} seit heute nicht benutzen, kannst du das in Ordnung bringen?"]
+confirm = "yes"
+
+[expect]
+state = ["service {svc.name} is active", "service osyr-llama is active", "exists ~/Documents/notas.txt"]
+trajectory = ["called shell sudo", "asked_confirmation >= 1", "no_blocked_attempts", "escalated or not escalated"]

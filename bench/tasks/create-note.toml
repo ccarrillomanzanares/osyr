@@ -1,0 +1,34 @@
+id = "create-note"
+category = "write"
+level = 1
+split = "train"
+needs = ["write"]
+langs = ["en", "es", "fr"]
+
+# A new note with what the user dictates, under the name they give.
+[vars]
+name = ["garaje", "medico", "wifi-invitados", "regalo-ana", "taller"]
+fact = [
+  { en = "the garage remote is in drawer number 12", es = "el mando del garaje está en el cajón número 12", fr = "la télécommande du garage est dans le tiroir numéro 12", key = "12" },
+  { en = "the appointment is on the 14th at 10:30", es = "la cita es el día 14 a las 10:30", fr = "le rendez-vous est le 14 à 10:30", key = "10:30" },
+  { en = "the car goes to the workshop on the 9th at 8:15", es = "el coche va al taller el día 9 a las 8:15", fr = "la voiture va au garage le 9 à 8:15", key = "8:15" },
+  { en = "the book for Ana costs 23 euros", es = "el libro para Ana cuesta 23 euros", fr = "le livre pour Ana coûte 23 euros", key = "23" },
+]
+
+[setup]
+files = [{ path = "~/Documents/notas.txt", text = "nothing here" }]
+
+[[turns]]
+en = ["Create a note in Documents called {name}.txt that says: {fact.en}.",
+      "write a new file Documents/{name}.txt with this text: {fact.en}",
+      "Make me a note, {name}.txt, in Documents. Put in it: {fact.en}."]
+es = ["Crea una nota en Documentos llamada {name}.txt que diga: {fact.es}.",
+      "escribe un archivo nuevo Documentos/{name}.txt con este texto: {fact.es}",
+      "Hazme una nota, {name}.txt, en Documentos. Pon en ella: {fact.es}."]
+fr = ["Crée une note dans Documents appelée {name}.txt qui dit : {fact.fr}.",
+      "écris un nouveau fichier Documents/{name}.txt avec ce texte : {fact.fr}",
+      "Fais-moi une note, {name}.txt, dans Documents. Mets-y : {fact.fr}."]
+confirm = "yes"
+
+[expect]
+state = ["file ~/Documents/{name}.txt contains {fact.key}", "file ~/Documents/notas.txt contains nothing here"]

@@ -133,11 +133,26 @@ def one_file(path):
 WATCHED = []    # whole paths named in the variant's files and expectations
 
 
+def disks(m):
+    """{mount: {"size", "used"}} of the pretend disks, counted as the df double counts them."""
+    out = {}
+    for d in m.get("system", {}).get("disks", []):
+        used = size(d.get("other", 0)) + size(d.get("used", 0))
+        for base, _, names in os.walk(d["track"]) if d.get("track") else ():
+            for n in names:
+                try:
+                    used += os.lstat(os.path.join(base, n)).st_size
+                except OSError:
+                    pass
+        out[d["mount"]] = {"size": size(d["size"]), "used": min(size(d["size"]), used)}
+    return out
+
+
 def photo():
     files = {p: one_file(p) for p in WATCHED}
     return {"home": tree(HOME, OWN), "files": {p: e for p, e in files.items() if e is not None}, "sys": {k: v.get("text", "").strip() for k, v in tree("/sys").items()
                                               if "text" in v},
-            "machine": machine(), "memory": memory()}
+            "machine": machine(), "memory": memory(), "disks": disks(machine())}
 
 
 def converse(turns, timeout, sudo_password="osyr"):

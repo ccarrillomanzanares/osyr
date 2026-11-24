@@ -40,7 +40,8 @@ the service's "needs" as 'nginx -t' or 'sshd -t' would check a configuration.
 
 A service starts only if all its "needs" hold: {"file": P, "contains": T},
 {"file": P, "lacks": T} (the file's commented lines do not count), {"exists": P}, {"missing": P}, {"service": NAME}
-(that one is active), {"free": MOUNT, "min": "500M"}. Otherwise it fails and
+(that one is active), {"free": MOUNT, "min": "500M"}, {"any": [need, ...]} (one of
+them is enough: a fault with more than one repair). Otherwise it fails and
 writes its "error" lines in its log. Changing a service needs root: sudo
 checks the password, remembers it for five minutes and runs the command with
 OSYR_DOUBLE_ROOT=1. In a session with a whole system the files under /etc are
@@ -127,6 +128,8 @@ def holds(need, sysm):
     if "free" in need:
         d = next((x for x in sysm.get("disks", []) if x["mount"] == need["free"]), None)
         return d is None or size(d["size"]) - disk_used(d) >= size(need.get("min", 0))
+    if "any" in need:
+        return any(holds(n, sysm) for n in need["any"])
     return True
 
 
@@ -310,6 +313,17 @@ def journalctl(argv):
             reverse = True
         elif a in ("-f", "--follow"):
             die("journalctl: following the log is not possible here; use -n <lines>")
+        elif a == "--disk-usage":
+            # the journal is small here: a full disk is never its doing
+            print("Archived and active journals take up 16.0M in the file system.")
+            return 0
+        elif a.startswith("--vacuum-") or a in ("--rotate", "--flush"):
+            if not ROOT:
+                die("journalctl: Failed to vacuum: Permission denied" if a.startswith("--vacuum")
+                    else "journalctl: Failed to send rotate request: Permission denied")
+            if a.startswith("--vacuum-"):
+                print("Vacuuming done, freed 0B of archived journals from /var/log/journal.")
+            return 0
         elif a.startswith("-") and not a.startswith("--") and "e" in a and "u" in a and i + 1 < len(argv):
             units.append(unit(argv[i + 1]))     # -xeu NAME
             i += 1
