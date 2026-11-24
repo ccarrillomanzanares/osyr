@@ -204,3 +204,32 @@ The untrained 4B is not usable on the reference 16 GB laptop (HP 15s: 25.9 tok/s
 ### Next
 
 - The same run after shortening the fixed prompt to 2,000 tokens, compared variant by variant.
+
+## 24 November 2026 — the shorter prompt, and two administration families (examples, the 4B)
+
+**Spent: 0 %.** Same conditions as the entry above (Qwen3.5-4B Q4_K_M, 4 threads on the VPS, temperature 0, one run). **Not a benchmark.** Two changes since: the fixed prompt cut from 2,150 to 2,000 tokens (the same commands in fewer words), and two more example families, of level 2, on the prototype of administration doubles (`tests/doubles/admin.py`): a service that does not start because of a misspelt word in its configuration, and a full disk whose biggest file has to be found and deleted.
+
+### The shorter prompt, on the eighty variants of the entry above
+
+| | 2,150 tokens | 2,000 tokens |
+| --- | --- | --- |
+| Passed | 74 of 80 | 72 of 80 |
+| Difference, variant by variant | | −2.5 points, 95 % interval −10.0 to 0.0 |
+
+The interval includes zero. The two variants lost are both of the family that reads a note: in one the model looked at the screen instead of reading the file, in the other it ran `cat /home/user/meeting.txt`. Neither sentence about files and `look` was touched by the cut. Seventy-eight variants came out the same. Read as: no sign that the cut hurts, and not enough tasks to see a small effect; the cut stays. With the prompt saved between sessions the median variant took 24 s instead of 36.
+
+### The two administration families
+
+| Family | Passed | What the failures were |
+| --- | --- | --- |
+| A service with a misspelt word in its configuration | 3 of 10 | It finds the cause in the log almost every time. Then: it explains the fix and stops without making it; or it corrects the file and restarts the service without `sudo`, is refused, and does not try with it; or it wanders (the network, the wifi) before looking at the service |
+| A full disk | 6 of 10 | Twice it named the folder, not the file. Once it deleted the whole folder that held the big file, and a bill with it. Once it told the user to run `du` themselves |
+
+When it works it is the real procedure: `systemctl status`, `journalctl -u`, `sed -i` on the file, `sudo systemctl restart`, the password typed by the user, `systemctl status` again.
+
+### What it says
+
+1. **Administration tasks can be run without a real system,** at the cost of 60 to 250 s each with the 4B on the VPS. The doubles gave the model what it needed to succeed and to fail in ways a real system would show.
+2. **These are the tasks that separate.** Level 1 passes at 90 %; the first two of level 2 pass at 30 % and 60 %. This is where the 4B, the 2B and the 35B should be compared, and where training has room.
+3. **A limit of the doubles showed at once:** inside the session every file belongs to the user, so `sed -i /etc/...` works without `sudo`, where a real system refuses. Services do need it. A family can demand `sudo` in the trajectory, as this one does, but a model that forgets it is helped by the pretend system.
+4. Deleting a folder to free space, when asked to delete one file, is a new entry for the list of failures worth a family: `unchanged` for everything the user did not name.
