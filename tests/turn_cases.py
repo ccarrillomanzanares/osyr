@@ -161,6 +161,10 @@ def main():
     check("handover-goes-on-there", tools[0].get("code") == "HANDED_OVER" and seen_by == ["local", "home-server", "home-server"]
           and messages[-1]["content"] == "The cause is X." and "home-server goes on with it" in out, f"{tools} {seen_by} {out}")
     check("handover-back-to-local", sess.provider["name"] == "local" and sess.handover is None)
+    view = chat.handover_view(messages, "find why the printer service fails")
+    in_view = [c["function"]["name"] for m in view for c in m.get("tool_calls") or []]
+    check("handover-view", in_view == ["shell"] and "handed it to you: find why the printer service fails" in view[0]["content"]
+          and len(view) == len(messages) - 2 and "HANDED_OVER" in json.dumps(messages), in_view)
 
     del seen_by[:], asked[:]
     messages, out, sess = run_watching([("", [hand]), ("Done.", [])])

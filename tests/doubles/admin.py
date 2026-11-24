@@ -26,13 +26,16 @@ A service starts only if all its "needs" hold: {"file": P, "contains": T},
 (that one is active), {"free": MOUNT, "min": "500M"}. Otherwise it fails and
 writes its "error" lines in its log. Changing a service needs root: sudo
 checks the password, remembers it for five minutes and runs the command with
-OSYR_DOUBLE_ROOT=1 (the files themselves are the session's and can be written
-without it: a limit of the doubles, not of the real system).
+OSYR_DOUBLE_ROOT=1. In a session with a whole system the files under /etc are
+closed to writing (OSYR_SYSTEM_LOCKED=1, see sandbox/inside.sh) and sudo opens
+them while its command runs; the rest of the system's files are the session's
+and can be written without it, which a real system would refuse.
 
 Standard library only.
 """
 import getpass
 import os
+import subprocess
 import sys
 import time
 
@@ -378,10 +381,19 @@ def sudo(argv):
     if not command:
         return 0
     os.environ["OSYR_DOUBLE_ROOT"] = "1"
+    # In a session with a whole system (--system) the settings in /etc are closed to writing,
+    # as they are to a normal user; they open while a command runs as root
+    locked = os.environ.get("OSYR_SYSTEM_LOCKED") == "1"
+    quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    if locked:
+        subprocess.call(["chmod", "-R", "u+w", "/etc"], **quiet)
     try:
-        os.execvp(command[0], command)
+        return subprocess.call(command)
     except OSError:
         die(f"sudo: {command[0]}: command not found")
+    finally:
+        if locked:
+            subprocess.call(["chmod", "-R", "a-w", "/etc"], **quiet)
 
 
 DOUBLES = {"systemctl": systemctl, "journalctl": journalctl, "df": df, "du": du, "sudo": sudo}

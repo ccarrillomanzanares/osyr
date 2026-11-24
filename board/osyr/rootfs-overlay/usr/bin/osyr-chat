@@ -487,9 +487,36 @@ class Session:
         print(f'{DIM}[now using {p["name"]}: {p.get("model") or "local model"}, {where}]{RESET}')
 
 
+HANDOVER_NOTE = ("\n\nYou are the larger model on the user's server. The small model on their computer could "
+                 "not do this task and handed it to you: {task}\nThe task is yours now. Carry it out yourself, "
+                 "step by step, with the tools, until it is done, and then tell the user what you found and "
+                 "did. Do not hand it on, and do not tell the user to wait or to do it themselves.")
+
+
+def handover_view(messages, task):
+    """The conversation as the second model gets it: without the small model's ask_server call
+    (read back, it looks as if the task were already in someone else's hands) and with a note
+    in the system prompt saying whose task it is now."""
+    out, dropping = [], False
+    for m in messages:
+        calls = m.get("tool_calls") or []
+        if m.get("role") == "assistant" and any(c["function"]["name"] == "ask_server" for c in calls):
+            dropping = True      # and the results that answer it, which come right after
+            continue
+        if dropping and m.get("role") == "tool":
+            continue
+        dropping = False
+        out.append(m)
+    if out and out[0]["role"] == "system":
+        out[0] = dict(out[0], content=out[0]["content"] + HANDOVER_NOTE.format(task=task))
+    return out
+
+
 def request(messages, sess, stream=True):
     if messages and messages[0]["role"] == "system":
         messages = [{"role": "system", "content": system_prompt(sess.provider["local"])}] + messages[1:]
+    if getattr(sess, "handover", None) is not None and not sess.provider["local"]:
+        messages = handover_view(messages, getattr(sess, "handover_task", ""))
     body = {"messages": messages, "stream": stream, "max_tokens": sess.ctx.reply_tokens()}
     if stream:
         body["stream_options"] = {"include_usage": True}
@@ -969,7 +996,7 @@ def run_ask_server(task, sess):
         dbg("unreachable", **pinfo(p), error=str(err)[:300])
         return {"ok": False, "code": "SERVER_UNREACHABLE", "data": {"provider": p["name"]},
                 "hint": "The larger model does not answer. Do what you can yourself and tell the user."}
-    sess.handover = p
+    sess.handover, sess.handover_task = p, task[:1000]
     return {"ok": True, "code": "HANDED_OVER", "data": {"task": task[:1000]},
             "hint": "You are the larger model and the task is yours now: carry it out with the tools and "
                     "answer the user."}

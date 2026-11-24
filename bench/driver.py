@@ -215,6 +215,10 @@ def main():
                                                          if isinstance(x, str)))
     WATCHED.extend(sorted({p for p in named if p.startswith("/")}))
     password = variant.get("setup", {}).get("machine", {}).get("system", {}).get("password", "osyr")
+    if os.environ.get("OSYR_SYSTEM_LOCKED") == "1":
+        # A whole system to administer: its settings are closed to a normal user, as on a real
+        # one; the sudo double opens them while its command runs (tests/doubles/admin.py)
+        os.system("chmod -R a-w /etc 2>/dev/null")
     before = photo()
     t0 = time.time()
     finished, terminal, asked = converse(variant["turns"], float(variant.get("timeout", 600)), password)

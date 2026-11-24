@@ -114,6 +114,7 @@ set -- bwrap \
     --setenv XDG_RUNTIME_DIR /run/user/1000 \
     --setenv OSYR_DOUBLES_STATE /run/osyr/hw/state.json --setenv OSYR_INTERNET 1 \
     --setenv OSYR_SANDBOX 1 --setenv OSYR_SANDBOX_CONTEXT "$CONTEXT" \
+    $( [ "$SYSTEM" = 1 ] && printf '%s' "--setenv OSYR_SYSTEM_LOCKED 1" ) \
     --chdir /home/osyr \
     ${CODE:+--ro-bind "$CODE/usr/lib/osyr" /usr/lib/osyr} \
     ${CODE:+--ro-bind "$CODE/usr/bin/osyr-chat" /usr/bin/osyr-chat} \
