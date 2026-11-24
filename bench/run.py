@@ -23,6 +23,8 @@ writes the trajectories, the verdicts and the report.
     --write          with the write and edit tools (OSYR_WRITE=1)
     --threads N      llama-server threads with --model (default 4)
     --minutes N      time limit of one variant (default 12)
+    --jobs N         variants at once (default 1): with --model, that many model servers, each with
+                     its --threads; with --provider, that many conversations at once on it
     --second URL     a second model for ask_server: an OpenAI-compatible base address, reached
                      from the session through a model gate (sandbox/modelgate.py)
     --second-key-file F, --second-key-header H, --second-name HOST   its key, the header the key
@@ -70,7 +72,7 @@ def merge(base, patch):
     return patch
 
 
-def start_server(model, threads, log):
+def start_server(model, threads, log, slots="slots"):
     """The image's llama-server on a free local port, as tests/run.py starts it."""
     import socket
     s = socket.socket()
@@ -79,7 +81,7 @@ def start_server(model, threads, log):
     s.close()
     flags = open("/proc/cpuinfo").read()
     variant = "haswell" if " avx2" in flags else "sandybridge" if " avx" in flags else "x64"
-    slots = os.path.join(os.path.dirname(log), "slots")
+    slots = os.path.join(os.path.dirname(log), os.path.basename(log).replace("llama-server", "slots").replace(".log", ""))
     os.makedirs(slots, exist_ok=True)
     env = dict(os.environ, GGML_BACKEND_PATH=f"{TARGET}/usr/lib/ggml/libggml-cpu-{variant}.so")
     cmd = [f"{TARGET}/lib/ld-linux-x86-64.so.2", "--library-path", f"{TARGET}/usr/lib:{TARGET}/lib",
@@ -162,6 +164,7 @@ def main():
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--minutes", type=int, default=12)
+    ap.add_argument("--jobs", type=int, default=1)
     ap.add_argument("--provider")
     ap.add_argument("--second")
     ap.add_argument("--second-key-file")
@@ -199,18 +202,27 @@ def main():
           + (f" ({len(done)} already done)" if done else "")
           + (f"; skipped for what they need: {', '.join(skipped)}" if skipped else ""), flush=True)
 
-    proc = None
+    procs, servers = [], []
     if opts.model:
-        proc, port = start_server(os.path.abspath(opts.model), opts.threads, os.path.join(out, "llama-server.log"))
-        host = "127.0.0.1"
+        for j in range(opts.jobs):   # one model server per job: each chat wants a server's only slot
+            proc, port = start_server(os.path.abspath(opts.model), opts.threads,
+                                      os.path.join(out, f"llama-server{j or ''}.log"))
+            procs.append(proc)
+            servers.append(("127.0.0.1", port))
     elif opts.server:
         host, _, port = opts.server.rpartition(":")
-        host, port = host or "127.0.0.1", int(port)
+        servers = [(host or "127.0.0.1", int(port))]
     else:
-        host, port = None, 0
+        servers = [(None, 0)] * opts.jobs
     t0 = time.time()
-    try:
-        for i, (r, v) in enumerate(todo, 1):
+    lock, queue, count = threading.Lock(), list(todo), [0]
+
+    def work(host, port):
+        while True:
+            with lock:
+                if not queue:
+                    return
+                r, v = queue.pop(0)
             res = one(v, r, host, port, opts)
             verdict = verify.verify(v, res)
             name = v["id"].replace("#", "-") + f"-run{r}.json"
@@ -219,13 +231,22 @@ def main():
             row = {"id": v["id"], "family": v["family"], "n": v["n"], "run": r, "lang": v["lang"], "mode": v["mode"],
                    "category": v["category"], "level": v["level"], "split": v["split"],
                    **{k: verdict[k] for k in ("pass", "failed", "handover", "calls", "asked", "seconds")}}
-            with open(results, "a") as f:
-                f.write(json.dumps(row, ensure_ascii=False) + "\n")
-            print(f"[{i}/{len(todo)}] {'pass' if verdict['pass'] else 'FAIL'} {v['id']} run {r} "
-                  f"({v['lang']}{' voice' if v['mode'] == 'voice' else ''}, {verdict['seconds']} s)"
-                  + ("" if verdict["pass"] else f": {verdict['failed'][0]}"), flush=True)
+            with lock:
+                count[0] += 1
+                with open(results, "a") as f:
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+                print(f"[{count[0]}/{len(todo)}] {'pass' if verdict['pass'] else 'FAIL'} {v['id']} run {r} "
+                      f"({v['lang']}{' voice' if v['mode'] == 'voice' else ''}, {verdict['seconds']} s)"
+                      + ("" if verdict["pass"] else f": {verdict['failed'][0]}"), flush=True)
+
+    try:
+        workers = [threading.Thread(target=work, args=srv) for srv in servers]
+        for w in workers:
+            w.start()
+        for w in workers:
+            w.join()
     finally:
-        if proc:
+        for proc in procs:
             proc.terminate()
     text = (f"# Benchmark run: {label}\n\n{time.strftime('%Y-%m-%d %H:%M')} · families from "
             f"`{os.path.relpath(opts.tasks, ROOT)}` · shell {'off' if opts.no_shell else 'on'}, "
