@@ -274,3 +274,40 @@ When it works it is the real procedure: `systemctl status`, `journalctl -u`, `se
 2. **It falls where there is more than one step:** joining a wifi (2 of 10: it does not get from the scan to the connect command), read-then-set, the two administration families. Where one command does it, it matches the 4B.
 3. **It is not the 4B at two thirds of the wait any more:** with the prompt saved between sessions the difference is 16 s against 24 s per variant on the VPS, because most of the wait is now writing, not reading.
 4. This does not settle the choice: the question was never whether the untrained 2B is as good, but whether a fine-tuned 2B reaches a useful level on a laptop where the 4B is too slow. The pilot fine-tunes both. What this adds is the size of the gap to close: 23 points, most of it on tasks of several steps.
+
+## 24 November 2026 — the 35B as the only model on the example families, and the administration families repaired
+
+**Spent: 0 %.** **Not a benchmark.** The base Qwen3.6-35B-A3B Q4_K_M on the VPS's processor as the chat's provider (as after `/pair`: `bench/run.py --provider`), on the same hundred variants as the 4B and the 2B, temperature 0, reasoning off, one run. Then the two administration families run again with the 4B and the 35B, after repairing their scenario.
+
+### The hundred variants
+
+| | 35B | 4B | 2B |
+| --- | --- | --- | --- |
+| All ten families | 79.0 % (60.0 to 94.0) | 81.0 % (66.0 to 93.0) | 58.0 % (36.0 to 79.0) |
+| The eight of level 1 | 90.0 % | 90.0 % | 70.0 % |
+| 35B minus 4B, variant by variant | −2.0 points (−14.0 to +9.0) | | |
+
+The untrained 35B is not ahead of the untrained 4B here: the interval includes zero. Read with these in mind:
+
+1. **As a provider it does not get what the user asked to remember** (by design, it is personal data): the family that recalls a name gave 60 %, and the passes came from asking `osyr memory list`.
+2. **It miscopies names it has just read:** `MOVISTAR_F405` for the `MOVISTAR_F406` of the scan, three times in a row until the turn was stopped; on 23 Nov, `XM5` for `XM4` and `shopping_list` for `shopping-list`. That server runs with penalties on repetition (`--repeat-penalty 1.1`, DRY), set for another project to stop loops; a penalty on repeating is a penalty on copying a name exactly, which is what a tool call needs. Its configuration is not ours to touch; for OSYR's own server model the penalties should be off or measured.
+3. **Two of the ten families were unfair to both models** (see below).
+
+### The administration families had faults of their own
+
+Reading the 35B's failures showed that the scenario, not the task, sent the models the wrong way: the pretend laptop had its wifi disconnected (the 35B set out to fix the network before looking at SSH or the clock), and the failing service had no program on the disk (both models concluded "it is not installed" and went to install it). **Repaired:** the machine is connected and the service's program and unit file exist. Since the first runs `/etc` is also closed to writing without `sudo`.
+
+| Family, after the repair | 4B | 35B |
+| --- | --- | --- |
+| A service that does not start (misspelt word) | 5 of 10 (was 3) | 5 of 10 (was 3) |
+| A full disk | 7 of 10 (was 6) | 5 of 10 (was 4) |
+| Median time per variant | 96 s | 78 s |
+
+What is left is the models': the 35B twice answered "delete it" with `rm -rf ~/Downloads/*`, a bill included; both still decide that a clock service "is not installed" when `ps` shows no such process and `timedatectl` does not exist (the doubles have no processes: part of this is still the pretend system's); both stop at the diagnosis in some variants.
+
+### What it says
+
+1. **A family has to be read in its failures before its score means anything.** Two scenario faults moved both models by 20 points on one family. The plan's label for each failure (missing feature, wrong tool, model error) needs a fourth: the task's own fault.
+2. **The doubles decide what "administration" measures.** Every tell of a pretend system (no processes, no `timedatectl`, a box that cannot install) becomes a wrong lead for the model. Either the doubles grow until the common leads hold (processes first), or these tasks run on the real image in a virtual machine.
+3. **The base 35B on this server is not a teacher yet** on these tasks: about half, and with a destructive answer among them. The plan already fine-tunes it first (phase 4.1) and keeps only verified trajectories; this is the first number behind that.
+4. The runner can now run several variants at once (`--jobs`): the administration families took 96 s per variant with two 4B servers side by side.
