@@ -24,6 +24,7 @@ ANSI = re.compile(rb"\x1b\[[0-9;?]*[A-Za-z]")
 PROMPT = re.compile(rb"(^|\n)\s*> $")
 ASK = re.compile(rb"\[y/(a/)?N\] $")
 PASSWORD = re.compile(rb"\(Enter to cancel\): $")
+SUDO = re.compile(rb"\[sudo\] password for \w+: $")
 OWN = (".local/share/osyr/chats", ".local/share/osyr/shell", ".local/state", ".cache", ".config/osyr/ai.json",
        ".bash_history", ".python_history")   # what a conversation writes by itself; not "the machine changed"
 TEXT_MAX = 65536
@@ -109,13 +110,35 @@ def memory():
         return []
 
 
+def one_file(path):
+    """A system file the variant names by its whole path: as in tree(), or None if it is not there."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    if os.path.isdir(path):
+        return {"dir": True}
+    entry = {"size": st.st_size}
+    if st.st_size <= TEXT_MAX:
+        try:
+            with open(path, "rb") as f:
+                entry["text"] = f.read().decode()
+        except (OSError, UnicodeDecodeError):
+            pass
+    return entry
+
+
+WATCHED = []    # whole paths named in the variant's files and expectations
+
+
 def photo():
-    return {"home": tree(HOME, OWN), "sys": {k: v.get("text", "").strip() for k, v in tree("/sys").items()
+    files = {p: one_file(p) for p in WATCHED}
+    return {"home": tree(HOME, OWN), "files": {p: e for p, e in files.items() if e is not None}, "sys": {k: v.get("text", "").strip() for k, v in tree("/sys").items()
                                               if "text" in v},
             "machine": machine(), "memory": memory()}
 
 
-def converse(turns, timeout):
+def converse(turns, timeout, sudo_password="osyr"):
     """Types the turns into osyr-chat. Returns (finished, terminal text, questions asked per turn)."""
     pid, fd = pty.fork()
     if pid == 0:
@@ -149,6 +172,11 @@ def converse(turns, timeout):
                 asked[-1] += 1     # asking for the password is that command's confirmation
             answer = (current or {}).get("password", "") if (current or {}).get("confirm", "yes") == "yes" else ""
             os.write(fd, answer.encode() + b"\r")
+        elif SUDO.search(tail):
+            # The person types their password to sudo itself, in the terminal; a "no" is an empty line
+            seen = len(out)
+            agrees = (current or {}).get("confirm", "yes") == "yes"
+            os.write(fd, (sudo_password if agrees else "").encode() + b"\r")
         elif PROMPT.search(tail):
             seen = len(out)
             if not todo:
@@ -182,9 +210,14 @@ def main():
     with open(os.path.join(share, "variant.json")) as f:
         variant = json.load(f)
     setup(variant)
+    named = [f["path"] for f in variant.get("setup", {}).get("files", [])]
+    named += re.findall(r"(?<![\w~])/[\w./-]+", " ".join(x for x in variant.get("expect", {}).get("state", [])
+                                                         if isinstance(x, str)))
+    WATCHED.extend(sorted({p for p in named if p.startswith("/")}))
+    password = variant.get("setup", {}).get("machine", {}).get("system", {}).get("password", "osyr")
     before = photo()
     t0 = time.time()
-    finished, terminal, asked = converse(variant["turns"], float(variant.get("timeout", 600)))
+    finished, terminal, asked = converse(variant["turns"], float(variant.get("timeout", 600)), password)
     result = {"id": variant["id"], "finished": finished, "seconds": round(time.time() - t0, 1), "asked": asked,
               "messages": conversation(), "before": before, "after": photo(), "terminal": terminal[-6000:]}
     with open(os.path.join(share, "result.json"), "w") as f:

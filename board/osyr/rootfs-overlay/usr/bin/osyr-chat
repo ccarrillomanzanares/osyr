@@ -106,14 +106,10 @@ SYSTEM = (
     "Use the look tool only when the user asks about what is on the screen, and the clipboard "
     "tool when they mention what they copied or want something copied. For the user's files "
     "(find one, read one) use the osyr tool's files commands, never look. "
-    "{limit} To install OSYR on the computer's disk, tell the user to "
-    "type /install in this chat while OSYR runs from the USB (it erases the whole disk, and asks "
-    "first). You cannot run it for them. "
-    "OSYR updates: tell the user to type /update in this chat (it shows what would change and "
-    "asks before applying; /update undo puts back the previous version). You cannot apply them. "
-    "If the user reports a problem with OSYR or the computer that you cannot solve, suggest "
-    "typing /report: it asks what happened and sends logs and hardware data to the OSYR team "
-    "(it asks before including their conversations). "
+    "{limit} Three things only the user can do, by typing them in this chat; you cannot run them: "
+    "/install puts OSYR on the computer's disk while it runs from the USB (it erases the whole disk); "
+    "/update applies OSYR updates (/update undo goes back); "
+    "/report sends logs and hardware data to the OSYR team: suggest it for a problem you cannot solve. "
     "For how to do something in OSYR, read the help with the osyr tool ('doc <words>') "
     "and answer from it; for the full help, tell them to press Super+F1. "
     "The osyr tool's commands are written without their program name; when you tell the user a "
@@ -135,15 +131,14 @@ SYSTEM = SYSTEM.format(shell=(SHELL_TEXT if SHELL else "") + (WRITE_TEXT if WRIT
 SHELL_TOOL = {"type": "function", "function": {
     "name": "shell",
     "description": (
-        "Run a command in bash as the user and get its output (JSON: exit, stdout, stderr). Use it only "
-        "for what the osyr tool's commands do not cover. Commands that only read run at once; commands "
-        "that change something ask the user first. For administrator tasks write sudo in front: the user "
-        "is asked, and types the password themselves. No keyboard: never editors or programs that ask "
-        "questions (use options like -y or --no-pager). It starts in the user's folder (~); a cd is remembered. Long output is trimmed; the "
-        "result says where the whole output is. Never allowed from here: erasing or formatting disks, "
-        "changing the boot or the system itself, reading keys and passwords, turning off OSYR's own "
-        "protections. If a result says BLOCKED, tell the user they can run it themselves in a terminal; "
-        "do not look for another way to do the same thing."),
+        "Run a bash command as the user; the result is JSON (exit, stdout, stderr). Only for what the "
+        "osyr tool's commands do not cover. Commands that only read run at once; commands that change "
+        "something ask the user first. For administrator tasks write sudo in front: the user types the "
+        "password. No keyboard: never editors or programs that ask questions (use -y, --no-pager). "
+        "It starts in the user's folder (~); a cd is remembered. Long output is trimmed; the result "
+        "says where all of it is. Never allowed: erasing or formatting disks, changing the boot or the "
+        "system, reading keys and passwords, turning off OSYR's protections. If a result says BLOCKED, "
+        "tell the user they can run it in a terminal; do not look for another way."),
     "parameters": {"type": "object", "properties": {
         "command": {"type": "string", "description": "e.g. 'df -h' or 'sudo systemctl restart bluetooth'"},
         "timeout": {"type": "integer", "description": "seconds, default 60, at most 600"}},
@@ -190,21 +185,21 @@ TOOLS = [
             "- audio status: volume and devices | audio volume <0-100|up|down> | "
             "audio mute <on|off> | audio test\n"
             "- audio voice status: your voice and listening mode | audio voice speaker <n>: another "
-            "voice for spoken answers | audio voice listen fast|accurate: fast = quicker, more mistakes "
-            "(status and speaker take --lang <code> for another language's voice)\n"
+            "voice | audio voice listen fast|accurate: fast = quicker, more mistakes\n"
             "- ui brightness: read the screen brightness | ui brightness <percent>: set it, "
             "e.g. 'ui brightness 80' for 80% | ui brightness up|down: one small step\n"
             "- ui lock: when the screen locks by itself | ui lock <minutes|off>: change it\n"
-            "- ui display list | ui display extend | ui display mirror\n"
+            "- ui display list | ui display extend | ui display mirror | "
+            "ui screenshot: save a picture of the screen as a file\n"
             "- bt status | bt scan | bt connect <name>\n"
             "- sys selftest: test the hardware | sys thermal: CPU temperature and throttling | "
             "sys power: battery charge, plugged in or not, power profile\n"
             "- ai status | ai list: providers | ai models [provider]: models it offers\n"
-            "- ai advise: whether this computer is fast enough for the local model, and the choices | "
-            "ai local list: models on this computer (to change them, tell the user to type /model)\n"
+            "- ai advise: is this computer fast enough for the local model | "
+            "ai local list: models on this computer (to change them, the user types /model)\n"
             "- ai use <provider|local> [--model <id>]: switch AI (to add one, tell the user to type /pair)\n"
-            "- remind add <when> <text>: reminder/alarm, spoken and on screen; when = 10m, 2h, "
-            "1h30m, 18:30, 'tomorrow 9:00' or '2026-10-30 09:00' (quote it if it has spaces)\n"
+            "- remind add <when> <text>: reminder or alarm; when = 10m, 1h30m, 18:30, "
+            "'tomorrow 9:00' or '2026-10-30 09:00' (quoted if it has spaces)\n"
             "- remind list | remind cancel <id>\n"
             "- disk list: connected USB sticks and external disks (their files: files list <path>) | "
             "disk eject <name>: before unplugging one\n"
@@ -214,15 +209,13 @@ TOOLS = [
             "text files) | files list [folder] | files read <path or name> [--from <n>]: text or PDF, in parts"
             + (" | files undo: put back the previous version of the last file you changed with write or edit"
                if WRITE else "") + "\n"
-            "- box install <program>: install a program OSYR does not have (a Debian package name, e.g. "
-            "vlc; the only way to install software: there is no apt outside it; it takes minutes) | "
-            "box search <english words> | box remove <program> | box list | box run <command>: run a "
-            "program without a window that was installed this way\n"
+            "- box install <program>: install a program (a Debian package name, e.g. vlc; the only "
+            "way to install software: no apt outside it; it takes minutes) | box search <english words> | "
+            "box remove <program> | box list | box run <command>: run an installed program that has no window\n"
             "- app list: applications, and which are open | app run <id> [file]: open one | app stop <id>\n"
-            "- doc <english words>: the OSYR help on a subject (shortcuts, screen lock, updates, "
-            "browser, install...); use it before explaining how to do something in OSYR\n"
-            "- memory list: what you remember about the user | memory forget <n|all> "
-            "(to save something, use the remember tool)\n"
+            "- doc <english words>: the OSYR help on a subject; use it before explaining how to do "
+            "something in OSYR\n"
+            "- memory list: what you remember about the user | memory forget <n|all>\n"
             "- web open <address or search words>: open it in the browser and read it | web read [--more] | "
             "web go <n>: follow link n | web click <n>: press button n | web fill <n> <text>: type into field n "
             "(never passwords or card numbers: the user types those) | web back | web status | web close"),
@@ -232,9 +225,8 @@ TOOLS = [
     {"type": "function", "function": {
         "name": "clipboard",
         "description": ("Read the text the user has copied (action 'get'), or copy a text so the "
-                        "user can paste it (action 'set'). Use it when the user mentions what they "
-                        "copied or asks you to copy something. Never use it to remember facts "
-                        "(that is the remember tool)."),
+                        "user can paste it (action 'set'). Never to remember facts (that is the "
+                        "remember tool)."),
         "parameters": {"type": "object", "properties": {
             "action": {"type": "string", "enum": ["get", "set"]},
             "text": {"type": "string", "description": "for 'set': the text to copy"}},
@@ -258,12 +250,11 @@ TOOLS[1:1] = ([SHELL_TOOL] if SHELL else []) + (WRITE_TOOLS if WRITE else [])
 # Only offered to the local model, and only when there is a second model to hand the task to
 ASK_SERVER_TOOL = {"type": "function", "function": {
     "name": "ask_server",
-    "description": ("Hand the whole task to the larger model on the user's server, which goes on with your "
-                    "tools. Only when the task is beyond you: a fault whose cause must be found across "
-                    "several logs or steps, or something you tried and could not solve. Never for simple "
-                    "requests: it sends the conversation off this computer and takes longer."),
+    "description": ("Hand the whole task to the larger model on the user's server. Only when it is "
+                    "beyond you: a fault to diagnose across several steps, or something you tried and "
+                    "could not solve. Never for simple requests: the conversation leaves this computer."),
     "parameters": {"type": "object", "properties": {
-        "task": {"type": "string", "description": "what has to be done, in a sentence or two"}},
+        "task": {"type": "string", "description": "what has to be done, in a sentence"}},
         "required": ["task"]}}}
 
 
@@ -275,7 +266,7 @@ def tools_now(local=True):
 # Queries the agent can run without asking (they change nothing)
 READ_ONLY = [("net", "status"), ("net", "wifi", "scan"), ("audio", "status"), ("audio", "voice", "status"),
              ("ai", "status"), ("ai", "list"), ("ai", "models"), ("ai", "advise"), ("ai", "local", "list"), ("ai", "gpu", "status"),
-             ("ui", "display", "list"), ("bt", "status"), ("bt", "scan"), ("sys", "selftest"),
+             ("ui", "display", "list"), ("ui", "screenshot"), ("bt", "status"), ("bt", "scan"), ("sys", "selftest"),
              ("sys", "thermal"),
              ("remind", "add"), ("remind", "list"), ("remind", "cancel"), ("doc",), ("files",), ("disk", "list"),
              ("memory", "list"), ("memory", "add"), ("backup", "status"),
@@ -507,10 +498,14 @@ def request(messages, sess, stream=True):
     if TEMPERATURE is not None:
         body["temperature"] = TEMPERATURE
     p = sess.provider
-    if p["local"]:
-        # No reasoning in milestone 0: on a CPU every token counts. Only for the
-        # local one: a strict API rejects parameters it does not know.
+    if "llama_cpp" not in p:
+        p["llama_cpp"] = aiconf.is_llama_cpp(p)  # asked once per session and provider
+    if p["llama_cpp"]:
+        # No reasoning: on a CPU every token counts (the 35B on a server's processor spent most
+        # of each answer thinking). Only for a llama.cpp server, the local one or the user's own:
+        # a strict API rejects parameters it does not know.
         body["chat_template_kwargs"] = {"enable_thinking": False}
+    if p["local"]:
         body["id_slot"] = SLOT
         if SEED is not None:
             body["seed"] = SEED
