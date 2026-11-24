@@ -27,7 +27,7 @@ class Run:
         self.variant, self.result = variant, result
         self.before, self.after = result.get("before", {}), result.get("after", {})
         self.calls = []        # (tool, argument text, result code, turn)
-        self.answers = []      # the agent's last words in each turn
+        self.answers = []      # what the agent said in each turn
         turn, pending = -1, {}
         for m in result.get("messages", []):
             role = m.get("role")
@@ -45,7 +45,8 @@ class Run:
                     self.calls.append([fn.get("name", ""), text, None, turn])
                     pending[c.get("id")] = len(self.calls) - 1
                 if m.get("content") and turn >= 0:
-                    self.answers[turn] = m["content"]
+                    # everything it said in the turn: the user reads what comes before a command too
+                    self.answers[turn] = (self.answers[turn] + "\n" + m["content"]).strip()
             elif role == "tool":
                 i = pending.get(m.get("tool_call_id"))
                 if i is not None:

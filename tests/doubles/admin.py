@@ -39,7 +39,7 @@ A service's own program can be a double too: 'admin.py daemon NAME -t' checks
 the service's "needs" as 'nginx -t' or 'sshd -t' would check a configuration.
 
 A service starts only if all its "needs" hold: {"file": P, "contains": T},
-{"file": P, "lacks": T}, {"exists": P}, {"missing": P}, {"service": NAME}
+{"file": P, "lacks": T} (the file's commented lines do not count), {"exists": P}, {"missing": P}, {"service": NAME}
 (that one is active), {"free": MOUNT, "min": "500M"}. Otherwise it fails and
 writes its "error" lines in its log. Changing a service needs root: sudo
 checks the password, remembers it for five minutes and runs the command with
@@ -112,7 +112,8 @@ def holds(need, sysm):
     if "file" in need:
         try:
             with open(need["file"]) as f:
-                text = f.read()
+                # a commented line is not a setting: commenting a bad one out repairs the file
+                text = "".join(line for line in f if not line.lstrip().startswith(("#", ";")))
         except OSError:
             return False
         return (need.get("contains") is None or need["contains"] in text) and \

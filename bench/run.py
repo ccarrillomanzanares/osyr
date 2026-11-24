@@ -50,8 +50,8 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "sandbox"))
+sys.path.insert(0, HERE)      # first: sandbox/ has a report.py of its own
 import families  # noqa: E402
 import modelgate  # noqa: E402
 import relay  # noqa: E402

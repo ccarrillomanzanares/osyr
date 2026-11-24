@@ -151,6 +151,12 @@ def judging(vs):
           and not verify.trajectory(run, "looked_up_doc"))
     check("answers", verify.answer(run, "mentions nothing|deleted") and verify.answer(run, "not mentions sorry")
           and verify.answer(run, "words <= 5") and verify.answer(run, "language == en") is None)
+    # What it said before a command counts as said: the name is often there, not in the last words
+    said = [done[0], {"role": "assistant", "content": "It is ffmpeg. I will stop it.",
+                      "tool_calls": [dict(call("shell", command="kill 7"), id="s1")]},
+            {"role": "tool", "tool_call_id": "s1", "content": json.dumps({"ok": True, "code": "OK"})},
+            {"role": "assistant", "content": "Stopped."}]
+    check("answer-whole-turn", verify.answer(verify.Run(v, result(said)), "mentions ffmpeg"))
     try:
         verify.state(run, "the moon is full")
         check("unknown-assertion", False)

@@ -173,6 +173,7 @@ def admin(tmp):
         echo "--- daemon"
         printf '#!/bin/sh\nexec /run/osyr/doubles/admin.py daemon cups "$@"\n' > /usr/sbin/cupsd; chmod 755 /usr/sbin/cupsd
         cupsd -t 2>&1 | grep -c 'ok'; echo 'Lisen x' >> /etc/cups/cupsd.conf; cupsd -t 2>&1; echo "rc=$?"
+        sed -i 's/^Lisen/# Lisen/' /etc/cups/cupsd.conf; cupsd -t >/dev/null 2>&1; echo "commented out: $?"
     """
     p = subprocess.run([f"{ROOT}/sandbox/session", "--system", "--share", share, "--env",
                         "OSYR_DOUBLES_SCENARIO=/run/osyr/share/scenario.json", d, "sh", "-c", script],
@@ -193,7 +194,7 @@ def admin(tmp):
                                        "came-back"], procs)
     clock = part("--- clock")[:part("--- clock").index("--- daemon")] if "--- daemon" in rest else []
     check("admin-clock", clock == ["3", "1", "Asia/Tokyo", "JST", "no", "inactive", "1"], clock)
-    check("admin-daemon", part("--- daemon") == ["1", "cupsd: Unknown directive Lisen", "rc=1"], part("--- daemon"))
+    check("admin-daemon", part("--- daemon") == ["1", "cupsd: Unknown directive Lisen", "rc=1", "commented out: 0"], part("--- daemon"))
     # Without --system the image's files cannot be changed and these doubles are not there
     out = session(tmp, "touch /usr/bin/anything 2>&1; command -v systemctl")
     check("admin-only-when-asked", "Read-only file system" in out and "/run/osyr/doubles" not in out, out)
