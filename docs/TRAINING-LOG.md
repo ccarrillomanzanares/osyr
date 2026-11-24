@@ -311,3 +311,38 @@ What is left is the models': the 35B twice answered "delete it" with `rm -rf ~/D
 2. **The doubles decide what "administration" measures.** Every tell of a pretend system (no processes, no `timedatectl`, a box that cannot install) becomes a wrong lead for the model. Either the doubles grow until the common leads hold (processes first), or these tasks run on the real image in a virtual machine.
 3. **The base 35B on this server is not a teacher yet** on these tasks: about half, and with a destructive answer among them. The plan already fine-tunes it first (phase 4.1) and keeps only verified trajectories; this is the first number behind that.
 4. The runner can now run several variants at once (`--jobs`): the administration families took 96 s per variant with two 4B servers side by side.
+
+## 24 November 2026 (later) — processes and the clock in the pretend system, and three more faults of the tasks' own
+
+**Spent: 0 %.** **Not a benchmark.** The administration doubles gained processes and the clock (`ps`, `pgrep`, `top`, `kill`, `timedatectl`; see [MILESTONE-0.md](MILESTONE-0.md)) and a third administration family, a program hogging the processor that has to be found and ended (`runaway-process`). The 4B (local, two servers side by side) and the base 35B (the VPS's, as the only provider), ten variants each, temperature 0, reasoning off, one run.
+
+| Family | 4B | 35B |
+| --- | --- | --- |
+| A program hogging the processor | 9 of 10 | 7 of 10 |
+| A service that does not start (misspelt word), after the repairs below | 8 of 10 (was 5) | 3 of 10 (was 5) |
+| Median time per variant, the two families | 101 s and 121 s | 51 s and 89 s |
+
+With ten variants a family's interval is some 50 points wide (the report gives 50 to 100 for the 4B's 8 of 10): none of these differences is established, the 35B's fall from 5 to 3 included.
+
+### The faults that were the tasks'
+
+The first run of the day gave the 4B 3 of 10 on the service family. Reading the failures before using the number, as the morning's entry asks:
+
+1. **The log named a line that was not there.** It said "line 18" (or 7, or 12) of a file of three lines; a model deleted line 18 and went on from there. The log now names the line the word is on.
+2. **Commenting the bad line out did not count as a repair.** The service looked for the word anywhere in the file, comments included, and so did the family's own check. Three of the 4B's failures were this. A commented line is no longer a setting, and the family only asks that the service runs.
+3. **The verifier judged an answer by its last words.** "It is `ffmpeg`, I will stop it", a command, then "Done": the name was not in the last message. An answer is now everything the agent said in the turn. Two of the 4B's three failures on the new family were this (7 of 10 before, 9 after, the same conversations judged again).
+4. Apart from the tasks: `bench/run.py` wrote no report since the sandbox got a `report.py` of its own (it was importing that one); the verdicts were saved all the same.
+
+### What is left is the models'
+
+- **The 35B does not use `sudo` here.** In six of its seven failures on the service family it found the cause, tried the fix without `sudo`, was refused, and told the user to type the `sudo` command in a terminal. The 4B, with the same prompt ("for administrator tasks write sudo in front"), writes it. In the morning's run the 35B did use it in the variants it passed; at temperature 0 a change in what a command prints is enough to move it.
+- **Both ask again what was already asked.** "Find what is using the processor and close it": the 35B three times, the 4B once, found the program and asked "shall I stop it?" The system's own question before a command already covers that.
+- The 4B once repaired the file and started the program by hand instead of the service; once it gave the user the commands instead of running them.
+- With processes to look at and a clock that answers, no conversation ended in "it is not installed" this time.
+
+### What it says
+
+1. **Two families, three faults of their own, in a day.** The fourth label is not a rare case: each new family needs one read of its failures with one model before it counts, and that read is part of writing it. Forty-four families at ten variants is some eight hours of the 4B on the VPS for that first pass.
+2. **Ten variants do not separate two models on one family.** What separates them is the whole set (the plan's intervals over families); a single family's score is for reading its failures.
+3. **The 35B and `sudo` is the first thing to look at in its trajectories** before any of them is kept as a teacher's: a teacher that hands the administrator's command back to the user teaches exactly the wrong thing. Not yet tried: the same family with the 35B's repetition penalties off, which needs a server of our own.
+4. The 35B measured alone is quick (51 s a variant on the new family); measured while two 4B servers ran on the same sixteen processors its first two variants hit the eleven-minute limit. Runs that are compared must not share the machine.

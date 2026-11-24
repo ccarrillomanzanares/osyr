@@ -141,6 +141,11 @@ def log(svc, *lines):
 
 def start(name, svc, sysm):
     if all(holds(n, sysm) for n in svc.get("needs", [])):
+        # (a copy of its program started by hand gives way: the pretend system is kind here)
+        sysm["processes"] = [p for p in sysm.get("processes", [])
+                             if not (p.get("by_hand") and p["name"] == svc.get("process", name))]
+        if not sysm["processes"]:
+            del sysm["processes"]
         svc["state"] = "active"
         svc["since"] = time.time()
         log(svc, f"Started {svc.get('description', name)}.")
@@ -1084,8 +1089,10 @@ def timedatectl(argv):
 # --- a service's own program ----------------------------------------------------------
 
 def daemon(argv):
-    """'admin.py daemon NAME [-t ...]': the service's program asked to check its configuration,
-    or started by hand. It says what its service would say and ends: nothing stays running."""
+    """'admin.py daemon NAME [-t ...]': the service's program asked to check its configuration
+    (-t, -T, --test, configtest), or started by hand: then, if the configuration is right, one
+    more pretend process of that name is left running, outside its service (which stays as it
+    was, as it would: nobody told systemd)."""
     if not argv:
         die("admin.py daemon: which service?", 2)
     name = unit(argv[0])
@@ -1097,12 +1104,23 @@ def daemon(argv):
             die(f"admin.py daemon: no service '{name}' in the scenario", 2)
         ok = all(holds(n, sysm) for n in svc.get("needs", []))
         proc = svc.get("process", name)
-    if not ok:
-        for line in svc.get("error", ["err: configuration error"]):
-            print(f"{proc}: {line[5:] if line.startswith('err: ') else line}", file=sys.stderr)
-        return 1
-    if len(argv) > 1:
-        print(f"{proc}: the configuration file syntax is ok", file=sys.stderr)
+        test = any(a in ("-t", "-T", "-tt", "--test", "configtest", "-Q") for a in argv[1:])
+        if not ok:
+            for line in svc.get("error", ["err: configuration error"]):
+                print(f"{proc}: {line[5:] if line.startswith('err: ') else line}", file=sys.stderr)
+            return 1
+        if test:
+            print(f"{proc}: the configuration file syntax is ok", file=sys.stderr)
+            return 0
+        if any(r["name"] == proc for r in table(sysm)):
+            die(f"{proc}: could not start: Address already in use (is {proc} already running?)")
+        if not ROOT:
+            die(f"{proc}: could not start: Permission denied (are you root?)")
+        procs = sysm.setdefault("processes", [])
+        for i, p in enumerate(procs):
+            p["pid"] = extra_pid(p, i)
+        procs.append({"pid": 5000 + 13 * len(procs), "name": proc, "cmd": " ".join([f"/usr/sbin/{proc}", *argv[1:]]),
+                      "user": "root", "ppid": 1, "by_hand": True})
     return 0
 
 
