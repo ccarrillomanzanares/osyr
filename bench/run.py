@@ -5,6 +5,12 @@ writes the trajectories, the verdicts and the report.
 
     bench/run.py --model FILE.gguf [options]     starts the image's llama-server with it
     bench/run.py --server HOST:PORT [options]    uses a llama-server that is already running
+    bench/run.py --provider URL [options]        the model is a provider (an OpenAI-compatible base
+                                                 address), as after /pair: the chat reaches it through
+                                                 a model gate and treats it as remote (what the user
+                                                 asked to remember is not sent). Its key, header and
+                                                 host name: --second-key-file, --second-key-header,
+                                                 --second-name
 
     --tasks DIR      the families (default: bench/examples)
     --only TEXT      only the families whose id contains TEXT
@@ -111,11 +117,12 @@ def one(variant, run, host, port, opts):
         with open(os.path.join(share, "variant.json"), "w") as f:
             json.dump(dict(variant, timeout=opts.minutes * 60 - 60), f, ensure_ascii=False)
         shutil.copy(os.path.join(HERE, "driver.py"), share)
-        gate = None
-        if opts.upstream is not None:   # the second model, behind its gate: the chat's ask_server
+        gate = srv = None
+        if opts.upstream is not None:   # a provider behind its gate: the second model, or the only one
             gate = modelgate.Gate(os.path.join(work, "model.sock"), opts.upstream, 100).start()
-        srv = relay.listen_socket(os.path.join(work, "llama.sock"), host, port)
-        threading.Thread(target=relay.serve_forever, args=(srv, (host, port)), daemon=True).start()
+        if port:
+            srv = relay.listen_socket(os.path.join(work, "llama.sock"), host, port)
+            threading.Thread(target=relay.serve_forever, args=(srv, (host, port)), daemon=True).start()
         env = ["OSYR_SANDBOX=0", "OSYR_SANDBOX_SKEL=0", "OSYR_TEMPERATURE=0", f"OSYR_SEED={run + 1}",
                "OSYR_DOUBLES_SCENARIO=/run/osyr/share/scenario.json",
                f"OSYR_SHELL={0 if opts.no_shell else 1}", f"OSYR_WRITE={1 if opts.write else 0}"]
@@ -126,7 +133,8 @@ def one(variant, run, host, port, opts):
             cmd += ["--env", e]
         cmd += [work, "python3", "/run/osyr/share/driver.py", "/run/osyr/share"]
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=opts.minutes * 60 + 60)
-        srv.close()
+        if srv is not None:
+            srv.close()
         if gate is not None:
             gate.close()
         try:
@@ -154,18 +162,21 @@ def main():
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--minutes", type=int, default=12)
+    ap.add_argument("--provider")
     ap.add_argument("--second")
     ap.add_argument("--second-key-file")
     ap.add_argument("--second-key-header", default="Authorization")
     ap.add_argument("--second-name")
     opts = ap.parse_args()
-    if bool(opts.model) == bool(opts.server):
-        ap.error("give --model FILE or --server HOST:PORT")
+    if sum(map(bool, (opts.model, opts.server, opts.provider))) != 1:
+        ap.error("give --model FILE, --server HOST:PORT or --provider URL")
+    if opts.provider and opts.second:
+        ap.error("--provider is the only model: no --second with it")
 
     opts.upstream = None
-    if opts.second:
+    if opts.second or opts.provider:
         key = open(opts.second_key_file).read().strip() if opts.second_key_file else None
-        opts.upstream = modelgate.Upstream(opts.second, key, opts.second_key_header, "", 1, opts.second_name,
+        opts.upstream = modelgate.Upstream(opts.second or opts.provider, key, opts.second_key_header, "", 1, opts.second_name,
                                            {"chat_template_kwargs": {"enable_thinking": False}})
     fams = [f for f in families.load_all(opts.tasks)
             if opts.only in f["id"] and opts.split in ("all", f["split"])]
@@ -175,7 +186,7 @@ def main():
     skipped = [f["id"] for f in fams if not set(f["needs"]) <= have]
     fams = [f for f in fams if set(f["needs"]) <= have]
     todo = [(r, v) for r in range(opts.runs) for f in fams for v in families.variants(f, opts.variants)]
-    label = opts.label or os.path.splitext(os.path.basename(opts.model or opts.server.replace(":", "-")))[0]
+    label = opts.label or os.path.splitext(os.path.basename(opts.model or (opts.server or "provider").replace(":", "-")))[0]
     out = os.path.join(opts.out, label)
     os.makedirs(os.path.join(out, "runs"), exist_ok=True)
     results = os.path.join(out, "results.jsonl")
@@ -192,9 +203,11 @@ def main():
     if opts.model:
         proc, port = start_server(os.path.abspath(opts.model), opts.threads, os.path.join(out, "llama-server.log"))
         host = "127.0.0.1"
-    else:
+    elif opts.server:
         host, _, port = opts.server.rpartition(":")
         host, port = host or "127.0.0.1", int(port)
+    else:
+        host, port = None, 0
     t0 = time.time()
     try:
         for i, (r, v) in enumerate(todo, 1):
