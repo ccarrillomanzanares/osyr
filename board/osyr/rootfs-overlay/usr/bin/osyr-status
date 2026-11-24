@@ -84,7 +84,7 @@ def battery_alert(name, cap, st):
     if name in SUSPEND_AT:
         if time.monotonic() >= SUSPEND_AT[name]:
             del SUSPEND_AT[name]
-            # sudo: without polkit, logind does not let osyr suspend (sudoers.d/osyr-power)
+            # sudo: without polkit, logind does not let osyr suspend (sudoers.d/zz-osyr-power)
             r = subprocess.run(["sudo", "-n", "/usr/bin/systemctl", "suspend"], capture_output=True, text=True)
             if r.returncode != 0:
                 notify.send("Could not suspend", "Save your work and plug in the charger: "

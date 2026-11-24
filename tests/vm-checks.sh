@@ -410,8 +410,10 @@ for i in $(seq 120); do osyr backup status --json | grep -q '"running": null' &&
 b="$d/OSYR-backup/osyr"
 [ "$c" = OK ] && [ -f "$b/Documents/bk-test.txt" ] && [ ! -e "$b/.config/osyr" ] && osyr backup status | grep -q "Last backup to OSYRTEST" && \
     pass backup-run || fail backup-run "code=$c $(osyr backup status 2>&1 | tail -2 | tr '\n' ' ')"
+# (sudo -k: a password typed a moment ago must not be what lets it through)
+sudo -k
 [ "$(osyr disk eject OSYRTEST --json | jcode)" = OK ] && ! grep -q /run/media/osyr/OSYRTEST /proc/mounts && pass disk-eject || \
-    fail disk-eject "$(osyr disk eject OSYRTEST 2>&1 | tail -2)"
+    fail disk-eject "$(osyr disk eject OSYRTEST --json 2>&1 | tail -c 400 | tr '\n' ' '); $(grep OSYRTEST /proc/mounts | tr '\n' ' ')"
 ! findmnt -rno TARGET | grep -q '^/run/media/osyr/.*vda' && pass disk-not-system || fail disk-not-system "?"
 [ "$(systemctl is-active osyr-diskwatch)" = active ] && pass diskwatch-running || fail diskwatch-running "$(systemctl status osyr-diskwatch --no-pager 2>&1 | tail -3 | tr '\n' ' ')"
 

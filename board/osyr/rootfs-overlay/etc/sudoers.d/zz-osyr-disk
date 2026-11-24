@@ -1,3 +1,5 @@
 # OSYR: eject a disk mounted by osyr-automount without a password (only that;
 # the program only accepts names under /run/media/osyr).
+# The name sorts after 'wheel' on purpose: sudo applies the last rule that matches,
+# and wheel's (with a password) would win over this one.
 osyr ALL=(root) NOPASSWD: /usr/lib/osyr/osyr-automount eject *

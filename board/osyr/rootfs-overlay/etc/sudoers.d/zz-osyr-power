@@ -1,3 +1,5 @@
 # OSYR: suspend without a password when the battery runs out (osyr-status).
 # Without polkit, logind only lets root suspend; only this exact command.
+# The name sorts after 'wheel' on purpose: sudo applies the last rule that matches,
+# and wheel's (with a password) would win over this one.
 osyr ALL=(root) NOPASSWD: /usr/bin/systemctl suspend

@@ -624,9 +624,9 @@ def vm():
         s.send(f"curl -s -o /tmp/vm-checks.sh http://10.0.2.2:{hport}/vm-checks.sh && HOST=10.0.2.2 "
                f"GITPORT={hport} MOCKPORT={mport} PAIRPORT={pport} sh /tmp/vm-checks.sh </dev/null 2>&1; "
                f"echo CHECKS-END")
-        # (\n in front: not the echo of the command. 90 min: without KVM the checks took 46 min
+        # (\n in front: not the echo of the command. 120 min: without KVM the checks took 46 min
         # before the box ones, which download Debian and install two programs)
-        s.wait(rb"\nCHECKS-END\r?\n", 5400)
+        s.wait(rb"\nCHECKS-END\r?\n", 7200)
         out = s.text()
         open(f"{RESULTS}/vm-checks.txt", "w").write(out)
         for m in re.finditer(r"^(PASS|FAIL) (\S+)(?:: (.*))?$", out, re.M):

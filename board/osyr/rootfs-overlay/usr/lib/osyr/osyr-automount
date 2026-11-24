@@ -7,7 +7,7 @@ as root:
   osyr-automount remove sdb1   on unplugging (or stopping the service): unmounts
   osyr-automount eject <name>  unmounts so it can be removed without losing data;
                                the osyr user can ask for it with sudo without a
-                               password (/etc/sudoers.d/osyr-disk), and only
+                               password (/etc/sudoers.d/zz-osyr-disk), and only
                                for what is mounted under /run/media/osyr
 It never touches the disk the system runs from (the OSYR USB stick or the
 installed disk). Encrypted ones (LUKS) are not mounted: a notice is shown.

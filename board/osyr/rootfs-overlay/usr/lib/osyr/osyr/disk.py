@@ -2,7 +2,7 @@
 
 They are mounted by themselves on plugging in, at /run/media/osyr/<name>. Before
 removing them, "osyr disk eject <name>" finishes writing and unmounts them (with
-passwordless sudo, only for that: /etc/sudoers.d/osyr-disk).
+passwordless sudo, only for that: /etc/sudoers.d/zz-osyr-disk).
 """
 import os
 import shutil
