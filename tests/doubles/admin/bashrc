@@ -1,0 +1,3 @@
+# Read by the shells of a session with a whole system (BASH_ENV, see sandbox/session):
+# kill is asked of the pretend processes (tests/doubles/admin.py), not of the shell itself
+enable -n kill

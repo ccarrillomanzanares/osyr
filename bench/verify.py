@@ -5,7 +5,9 @@ The assertions are the fixed vocabulary of docs/BENCH-TASK-FORMAT.md; a family
 needs no code of its own.
 """
 import json
+import os
 import re
+import sys
 
 from families import fold
 
@@ -88,6 +90,15 @@ class Run:
         return any(t == tool and all(fold(w) in fold(a) for w in words) for t, a, _, _ in self.calls)
 
 
+def processes(sysm):
+    """The pretend processes of a photographed machine, as the doubles would list them."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "doubles"))
+    import admin
+    sysm = dict(sysm)
+    sysm.setdefault("services", {})
+    return admin.table(sysm)
+
+
 def compare(left, op, right):
     return {"==": left == right, ">=": left >= right, "<=": left <= right, "<": left < right, ">": left > right,
             "!=": left != right}[op]
@@ -129,6 +140,10 @@ def state(run, line):
     if w[0] == "service" and len(w) == 4 and w[2] == "is":
         svc = m.get("system", {}).get("services", {}).get(w[1])
         return svc is not None and svc.get("state", "inactive") == w[3]
+    if w[0] == "process" and len(w) == 3 and w[2] in ("running", "gone"):
+        return any(r["name"] == w[1] for r in processes(m.get("system", {}))) == (w[2] == "running")
+    if w[0] == "timezone" and len(w) == 2:
+        return m.get("system", {}).get("clock", {}).get("timezone") == w[1]
     if w[0] == "memory":
         neg = w[1] == "not"
         text = fold(line.split("contains", 1)[1].strip())

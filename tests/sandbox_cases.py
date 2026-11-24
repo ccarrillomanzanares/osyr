@@ -136,8 +136,11 @@ def admin(tmp):
         "cups": {"description": "CUPS Scheduler", "state": "failed", "process": "cupsd",
                  "log": ["err: Unknown directive Lisen"], "error": ["err: Unknown directive Lisen"],
                  "needs": [{"file": "/etc/cups/cupsd.conf", "lacks": "Lisen"}]},
-        "sshd": {"description": "OpenSSH server daemon", "state": "active", "log": ["Server listening"]}},
-        "disks": [{"mount": "/home", "device": "/dev/sda3", "size": "20G", "other": "12G", "track": "/home/osyr"}]}
+        "sshd": {"description": "OpenSSH server daemon", "state": "active", "log": ["Server listening"]},
+        "chronyd": {"description": "NTP client/server", "state": "active", "restart": True}},
+        "disks": [{"mount": "/home", "device": "/dev/sda3", "size": "20G", "other": "12G", "track": "/home/osyr"}],
+        "processes": [{"pid": 3120, "name": "ffmpeg", "cmd": "ffmpeg -i a.mp4 b.mkv", "cpu": 97.3},
+                      {"name": "stuck", "ignores_term": True}]}
     with open(f"{share}/scenario.json", "w") as f:
         json.dump(scenario, f)
     d = tempfile.mkdtemp(dir=tmp)
@@ -154,6 +157,22 @@ def admin(tmp):
         sudo systemctl stop sshd; systemctl is-active sshd; systemctl status nothere 2>&1 | grep -c 'could not be found'
         truncate -s 6G ~/big.iso; df -h /home | tail -1; du -sh ~/big.iso | cut -f1; rm ~/big.iso; df -h /home | tail -1
         touch /usr/bin/anything && echo writable-system
+        echo "--- processes"
+        ps aux --sort=-%cpu | sed -n 2p | tr -s ' ' | cut -d' ' -f1-3,11; ps -e | grep -c -E ' (systemd|sway|osyr-chat|chronyd)$'
+        pgrep -x sshd >/dev/null; echo "stopped sshd: $?"; top -bn1 | sed -n 8p | grep -c ffmpeg; uptime | grep -c 'load average: 1'
+        bash -c 'kill 3120; echo "kill rc=$?"; pgrep ffmpeg; echo "left: $?"'
+        bash -c 'kill 1 2>&1; pkill stuck; pgrep -c stuck; pkill -9 stuck; pgrep -c stuck; sleep 30 & kill $!; echo "own job: $?"'
+        old=$(pidof chronyd); bash -c "kill $old 2>&1 | grep -c 'not permitted'"; sudo bash -c "kill $old"; systemctl is-active chronyd
+        [ "$(pidof chronyd)" != "$old" ] && echo came-back
+        echo "--- clock"
+        timedatectl | grep -c -E 'Time zone: Europe/Madrid|synchronized: yes|NTP service: active'
+        timedatectl set-timezone Asia/Tokyo 2>&1 | grep -c 'authentication required'
+        sudo timedatectl set-timezone Asia/Tokyo; timedatectl show -p Timezone --value; date +%Z
+        sudo timedatectl set-ntp false; timedatectl show -p NTPSynchronized --value; systemctl is-active chronyd
+        sudo timedatectl set-time '2027-01-02 03:04:05'; timedatectl | sed -n 1p | grep -c 2027-01-02
+        echo "--- daemon"
+        printf '#!/bin/sh\nexec /run/osyr/doubles/admin.py daemon cups "$@"\n' > /usr/sbin/cupsd; chmod 755 /usr/sbin/cupsd
+        cupsd -t 2>&1 | grep -c 'ok'; echo 'Lisen x' >> /etc/cups/cupsd.conf; cupsd -t 2>&1; echo "rc=$?"
     """
     p = subprocess.run([f"{ROOT}/sandbox/session", "--system", "--share", share, "--env",
                         "OSYR_DOUBLES_SCENARIO=/run/osyr/share/scenario.json", d, "sh", "-c", script],
@@ -162,8 +181,19 @@ def admin(tmp):
     want = ["failed: 1", "failed", "active", "1", "1", "1", "1", "failed", "restart rc=0", "active", "1", "inactive", "1"]
     check("admin-services", lines[:len(want)] == want, p.stdout + p.stderr)
     rest = lines[len(want):]
-    check("admin-disk", len(rest) == 4 and "18G" in rest[0] and "90%" in rest[0] and rest[1] == "6.0G"
-          and "12G" in rest[2] and "60%" in rest[2] and rest[3] == "writable-system", rest)
+    check("admin-disk", len(rest) >= 4 and "18G" in rest[0] and "90%" in rest[0] and rest[1] == "6.0G"
+          and "12G" in rest[2] and "60%" in rest[2] and rest[3] == "writable-system", rest[:4])
+
+    def part(name):
+        return rest[rest.index(name) + 1:] if name in rest else []
+    procs = part("--- processes")[:part("--- processes").index("--- clock")] if "--- clock" in rest else []
+    # The shell's own kill is switched off in these sessions (BASH_ENV), so that it reaches the doubles
+    check("admin-processes", procs == ["osyr 3120 97.3 ffmpeg", "5", "stopped sshd: 1", "1", "1", "kill rc=0", "left: 1",
+                                       "kill: (1): Operation not permitted", "1", "0", "own job: 0", "1", "active",
+                                       "came-back"], procs)
+    clock = part("--- clock")[:part("--- clock").index("--- daemon")] if "--- daemon" in rest else []
+    check("admin-clock", clock == ["3", "1", "Asia/Tokyo", "JST", "no", "inactive", "1"], clock)
+    check("admin-daemon", part("--- daemon") == ["1", "cupsd: Unknown directive Lisen", "rc=1"], part("--- daemon"))
     # Without --system the image's files cannot be changed and these doubles are not there
     out = session(tmp, "touch /usr/bin/anything 2>&1; command -v systemctl")
     check("admin-only-when-asked", "Read-only file system" in out and "/run/osyr/doubles" not in out, out)

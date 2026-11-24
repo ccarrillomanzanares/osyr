@@ -17,8 +17,9 @@
 #   --env OSYR_NAME=VALUE   one more variable inside (several allowed); the benchmark's
 #   --share DIR   a folder of the caller's, writable inside as /run/osyr/share (the benchmark's)
 #   --system      a whole system to administer: every file can be changed (the changes live in
-#                 memory and go with the session) and systemctl, journalctl, df and sudo are the
-#                 administration doubles (tests/doubles/admin.py). The benchmark's
+#                 memory and go with the session) and systemctl, journalctl, df, sudo, the
+#                 process tools (ps, kill, top...) and timedatectl are the administration
+#                 doubles (tests/doubles/admin.py). The benchmark's
 # (options rather than environment: the web service starts it through sudo)
 #
 # If DIR/llama.sock exists instead (sandbox/relay.py --from-socket), the chat inside
@@ -123,7 +124,7 @@ set -- bwrap \
     --setenv XDG_RUNTIME_DIR /run/user/1000 \
     --setenv OSYR_DOUBLES_STATE /run/osyr/hw/state.json --setenv OSYR_INTERNET 1 \
     --setenv OSYR_SANDBOX 1 --setenv OSYR_SANDBOX_CONTEXT "$CONTEXT" \
-    $( [ "$SYSTEM" = 1 ] && printf '%s' "--setenv OSYR_SYSTEM_LOCKED 1" ) \
+    $( [ "$SYSTEM" = 1 ] && printf '%s' "--setenv OSYR_SYSTEM_LOCKED 1 --setenv BASH_ENV /run/osyr/doubles/admin/bashrc" ) \
     --chdir /home/osyr \
     ${CODE:+--ro-bind "$CODE/usr/lib/osyr" /usr/lib/osyr} \
     ${CODE:+--ro-bind "$CODE/usr/bin/osyr-chat" /usr/bin/osyr-chat} \

@@ -19,10 +19,11 @@ line = ["3", "7", "12", "18"]
 # The machine is otherwise in order: the service's program and unit are there and the wifi is
 # connected, so that the only fault to find is the one in the file. (In the first runs the
 # models went after the missing program and the disconnected wifi: faults of the scenario.)
+# The program is a double that checks the configuration as the real one would ('nginx -t').
 [setup]
 files = [
   { path = "{svc.conf}", text = "# {svc.desc}\n# local settings\n{svc.bad}\n" },
-  { path = "/usr/sbin/{svc.proc}", text = "#!/bin/sh\nexec sleep infinity", mode = "755" },
+  { path = "/usr/sbin/{svc.proc}", text = "#!/bin/sh\nexec /run/osyr/doubles/admin.py daemon {svc.name} \"$@\"\n", mode = "755" },
   { path = "/usr/lib/systemd/system/{svc.name}.service", text = "[Unit]\nDescription={svc.desc}\n\n[Service]\nExecStart=/usr/sbin/{svc.proc}\n\n[Install]\nWantedBy=multi-user.target" },
 ]
 

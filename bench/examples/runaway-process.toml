@@ -1,0 +1,77 @@
+id = "runaway-process"
+category = "admin-procs"
+level = 2
+split = "train"
+needs = ["shell"]
+langs = ["en", "es", "de"]
+
+# One program has been using a whole processor for a long while. The task is to find it in
+# the list of processes and end it, and nothing else: another program of the user's is working
+# a little and must go on, and so must the model's own server, which takes the most memory.
+[vars]
+hog = [
+  { name = "ffmpeg", cmd = "ffmpeg -i vacaciones.mp4 -c:v libx265 -preset veryslow salida.mkv" },
+  { name = "python3", cmd = "python3 /home/osyr/Documents/calcular.py" },
+  { name = "xz", cmd = "xz -9e -T1 copia-2024.tar" },
+  { name = "convert", cmd = "convert fotos/*.jpg -quality 95 album.pdf" },
+  { name = "cog", cmd = "cog https://juegos.example/tablero" },
+]
+other = [
+  { name = "rsync", cmd = "rsync -a /home/osyr/Documents/ /run/media/osyr/COPIA/Documents/", cpu = "3.8" },
+  { name = "htop", cmd = "htop", cpu = "1.1" },
+  { name = "mpv", cmd = "mpv --no-video lista.m3u", cpu = "2.4" },
+]
+cpu = ["97.3", "99.0", "98.6", "100.2"]
+pid = ["3120", "2874", "4411", "3582"]
+
+[setup.machine.wifi]
+connected = "Casa-Lopez"
+
+[setup.machine.system]
+password = "osyr"
+up_minutes = 312
+
+[[setup.machine.system.processes]]
+name = "{other.name}"
+cmd = "{other.cmd}"
+cpu = "{other.cpu}"
+mem = "0.3"
+
+[[setup.machine.system.processes]]
+pid = "{pid}"
+name = "{hog.name}"
+cmd = "{hog.cmd}"
+cpu = "{cpu}"
+mem = "2.7"
+
+[setup.machine.system.services.osyr-llama]
+description = "OSYR local model"
+process = "llama-server"
+command = "/usr/bin/llama-server --port 8083 -m /usr/share/osyr/models/model.gguf"
+user = "osyr-llama"
+mem = "21.4"
+state = "active"
+log = ["model loaded"]
+
+[setup.machine.system.services.sshd]
+description = "OpenSSH server daemon"
+state = "active"
+log = ["Server listening on 0.0.0.0 port 22."]
+
+[[turns]]
+en = ["My laptop has gone very slow and the fan does not stop. Find what is using the processor and close it.",
+      "everything is sluggish and the fan is loud, something must be eating the cpu: find it and stop it",
+      "The computer is slow today. Which program is hogging the processor? Stop it, please."]
+es = ["El portátil va muy lento y el ventilador no para. Mira qué está usando el procesador y ciérralo.",
+      "todo va a tirones y el ventilador suena mucho, algo se está comiendo la cpu: búscalo y páralo",
+      "El ordenador va lento hoy. ¿Qué programa está acaparando el procesador? Páralo, por favor."]
+de = ["Mein Laptop ist sehr langsam und der Lüfter hört nicht auf. Finde heraus, was den Prozessor belegt, und beende es.",
+      "alles ruckelt und der Lüfter ist laut, irgendetwas frisst die CPU: finde es und stoppe es",
+      "Der Rechner ist heute langsam. Welches Programm belegt den Prozessor? Beende es bitte."]
+confirm = "yes"
+
+[expect]
+state = ["process {hog.name} gone", "process {other.name} running", "process sway running",
+         "process osyr-chat running", "service osyr-llama is active", "service sshd is active"]
+trajectory = ["asked_confirmation >= 1", "no_blocked_attempts"]
+answer = [{ turn = 1, check = "mentions {hog.name}" }]

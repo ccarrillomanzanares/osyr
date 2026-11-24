@@ -124,7 +124,9 @@ def judging(vs):
     machine = {"audio": {"output": {"volume": 0.7, "muted": False}}, "wifi": {"connected": "Casa-Lopez", "scanned": True},
                "bt": {"devices": [{"name": "Sony WH-1000XM4", "connected": True}]},
                "displays": [{"name": "eDP-1", "active": False}],
-               "system": {"sudo_until": 5, "services": {"cups": {"state": "active"}, "sshd": {"state": "failed"}}}}
+               "system": {"sudo_until": 5, "services": {"cups": {"state": "active", "process": "cupsd"},
+                                                        "sshd": {"state": "failed"}},
+                          "processes": [{"name": "htop"}], "killed": [640], "clock": {"timezone": "Asia/Tokyo"}}}
     photo = {"home": {}, "machine": machine, "memory": ["The user's dog is called Rufus"],
              "files": {"/etc/cups/cupsd.conf": {"size": 9, "text": "Port 631\n"}},
              "sys": {"class/backlight/x/brightness": "300", "class/backlight/x/max_brightness": "1000"}}
@@ -133,6 +135,8 @@ def judging(vs):
                  "display eDP-1 off", "memory contains rufus", "memory not contains password", "brightness == 30",
                  "sysfs class/backlight/x/brightness == 300", "unchanged", "service cups is active",
                  "service sshd is failed", "exists /etc/cups/cupsd.conf", "not exists /etc/cups/other.conf",
+                 "process cupsd running", "process sshd gone", "process htop running", "process ffmpeg gone",
+                 "process osyr-chat running", "process sway gone", "timezone Asia/Tokyo",
                  "file /etc/cups/cupsd.conf contains Port 631", "file /etc/cups/cupsd.conf not contains Lisen"):
         check(f"state '{line}'", verify.state(run, line) is True)
     scanned = dict(photo, machine=dict(machine, wifi={"connected": "Casa-Lopez", "scanned": False}))

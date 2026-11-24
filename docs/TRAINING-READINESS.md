@@ -73,7 +73,8 @@ This decides how many instances can run in parallel in containers.
 | Looking at the screen | Yes with a fixed image (`look --file`) and a vision server; not in the session today | `grim`, the model |
 | Reminders | **No**: they are systemd timers | `systemd-run`, `systemctl` |
 | Services, logs, disk usage, `sudo` | **A prototype since 24 Nov**: `sandbox/session --system` (every file of the image can be changed, in memory) and the doubles of `tests/doubles/admin.py` | `systemctl`, `journalctl`, `df`, `du`, `sudo` |
-| Processes, users, mounts, timers, packages | **No** | `ps`, `useradd`, `mount`, `systemd-run`, `apt` |
+| Processes and the clock | **A prototype since 24 Nov**, in the same doubles: a made-up list of processes (the ones every OSYR laptop has, one per active service, the scenario's own) that can be listed and ended, and a time zone and synchronisation that follow the clock's service. Nothing really runs: `/proc/<pid>` and `htop` do not show them | `ps`, `pgrep`, `pidof`, `top`, `uptime`, `kill`, `pkill`, `killall`, `timedatectl` |
+| Users, mounts, timers, packages | **No** | `useradd`, `mount`, `systemd-run`, `apt` |
 | Installing software and applications | **No** in the session (`podman` needs what the container does not have); tested in the virtual machine | `podman`, `sway` |
 | Backups | Partly: `rsync` to any folder | `rsync` |
 | Voice | Partly: recognition and speech run on files; recording does not | `pw-record` |
@@ -88,7 +89,7 @@ One disposable session per task: the image's root read-only, a home folder in me
 
 1. The small model chosen (4B or 2B), by measuring on real tasks.
 2. The "then" features that touch the system and are not built: VPN and firewall, camera and microphone. Programming, music and video and office documents are covered by installing programs in the box.
-3. How administration tasks are run: the doubles of the prototype, grown to cover users, processes, mounts and timers, or a virtual machine per task.
+3. How administration tasks are run: the doubles of the prototype, grown to cover users, mounts and timers (processes and the clock are in since 24 Nov), or a virtual machine per task.
 4. `ask_server` in the prompt of machines with a second model: 113 tokens over the limit there.
 5. An image built with all of this, and its tests in the virtual machine.
 6. The decisions below.
