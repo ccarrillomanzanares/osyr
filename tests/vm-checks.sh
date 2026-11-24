@@ -185,6 +185,10 @@ osyr-help --plain 2>&1 | grep -q "Keyboard shortcuts" && grep -q 'mod+F1 exec.*o
 # The VM is slow: swayidle will have turned the screen off and grim would have nothing to copy
 SWAYSOCK=$(ls /run/user/$(id -u)/sway-ipc.*.sock 2>/dev/null | head -1) swaymsg 'output * power on' >/dev/null
 sleep 3  # until sway draws a frame, grim fails ("failed to copy output")
+# The same from the command the agent uses
+shot=$(osyr ui screenshot --json | wj 'd["data"].get("path", "")')
+case "$shot" in "~/Pictures/Screenshots/osyr-"*.png) [ -s "$HOME/${shot#\~/}" ] && pass ui-screenshot || fail ui-screenshot "$shot is empty" ;;
+    *) fail ui-screenshot "$(osyr ui screenshot 2>&1)" ;; esac
 f=$(osyr-screenshot) && [ -s "$f" ] && pass screenshot || fail screenshot "$f locked=$(pgrep -x swaylock >/dev/null && echo yes || echo no)"
 # Without a terminal to ask, screenshots and conversations are not included;
 # with --screenshots / --chats, they are
@@ -272,7 +276,12 @@ case "$a" in "3 local"|"3 server") pass ai-advise ;; *) fail ai-advise "$a" ;; e
     [ "$(osyr ai pair --json | jcode)" = AI_PAIR_INTERACTIVE ] && pass ai-pair-json || fail ai-pair-json "?"
     openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /tmp/k.pem 2>/dev/null &&
         qrencode -t ANSIUTF8 https://ccmai.org >/dev/null && pass ai-pair-tools || fail ai-pair-tools "openssl or qrencode"
-    osyr ai use local >/dev/null; osyr ai remove mock >/dev/null
+    osyr ai use local >/dev/null
+    # With the local model in use, the only provider is the second model (the chat's ask_server)
+    [ "$(osyr ai second --json | wj 'd["data"]["second"]')" = mock ] && pass ai-second || fail ai-second "$(osyr ai second 2>&1)"
+    osyr ai second off >/dev/null
+    [ "$(osyr ai second --json | wj 'd["data"]["second"]')" = None ] && pass ai-second-off || fail ai-second-off "$(osyr ai second 2>&1)"
+    osyr ai remove mock >/dev/null
 }
 
 # --- [image-signer] Image update: a manifest signed by another key is rejected ----------------------
@@ -504,6 +513,8 @@ grep -q '^/dev/zram0' /proc/swaps && [ "$(cat /proc/sys/vm/swappiness)" = 150 ] 
 
 # --- [power] Temperature and power -------------------------------------------------------------
 c=$(osyr sys thermal --json | jcode); { [ "$c" = OK ] || [ "$c" = THERMAL_NO_SENSOR ]; } && pass sys-thermal || fail sys-thermal "$c"
+# (the VM has no battery: the field is there and empty)
+osyr sys power --json | grep -q '"battery": null' && pass power-no-battery || fail power-no-battery "$(osyr sys power --json)"
 osyr sys power --json | grep -q '"on_ac": true' && pass power-on-ac || fail power-on-ac "$(osyr sys power 2>&1)"
 [ "$(systemctl show -p Result --value osyr-power.service)" = success ] && pass power-service || \
     fail power-service "$(systemctl status osyr-power.service --no-pager 2>&1 | tail -3 | tr '\n' ' ')"
