@@ -1,0 +1,23 @@
+id = "read-wifi"
+category = "read"
+level = 1
+split = "train"
+langs = ["en", "es", "it"]
+voice = true
+
+# Which wifi the laptop is on. (That it is on none is the family 'read-wifi-none'.)
+[vars]
+ssid = ["Casa-Lopez", "MOVISTAR_F406", "Livebox 6s 4471", "Cafe Central (guests)"]
+
+[setup.machine.wifi]
+connected = "{ssid}"
+
+[[turns]]
+en = ["Which wifi network am I connected to?", "what wifi is this laptop on?", "Tell me the name of the wifi I am using."]
+es = ["¿A qué red wifi estoy conectado?", "¿en qué wifi está este portátil?", "Dime el nombre de la wifi que estoy usando."]
+it = ["A quale rete wifi sono collegato?", "su che wifi è questo portatile?", "Dimmi il nome della wifi che sto usando."]
+
+[expect]
+state = ["unchanged"]
+trajectory = ["called osyr net", "asked_confirmation == 0"]
+answer = ["mentions {ssid}"]

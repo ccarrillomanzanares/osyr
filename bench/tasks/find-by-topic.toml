@@ -1,0 +1,39 @@
+id = "find-by-topic"
+category = "files"
+level = 1
+split = "train"
+langs = ["en", "es", "ca"]
+
+# The user remembers what a document is about, not what it is called: the name does not say it.
+[vars]
+doc = [
+  { file = "doc-0412.txt", text = "Póliza de seguro del coche. Matrícula 4471 KLM. Vence el 3 de marzo.", fact = "4471", en = "the car insurance", es = "el seguro del coche", ca = "l'assegurança del cotxe", ask_en = "the number plate", ask_es = "la matrícula", ask_ca = "la matrícula" },
+  { file = "escaneado_2.txt", text = "Contrato de alquiler del piso. Renta mensual: 780 euros. Fianza de dos meses.", fact = "780", en = "the flat's rental contract", es = "el contrato de alquiler del piso", ca = "el contracte de lloguer del pis", ask_en = "the monthly rent", ask_es = "la renta mensual", ask_ca = "la renda mensual" },
+  { file = "nuevo documento.txt", text = "Receta de la abuela: bizcocho de limón. Horno a 175 grados durante 40 minutos.", fact = "175", en = "grandma's lemon cake recipe", es = "la receta del bizcocho de limón de la abuela", ca = "la recepta del pa de pessic de llimona de l'àvia", ask_en = "the oven temperature", ask_es = "la temperatura del horno", ask_ca = "la temperatura del forn" },
+  { file = "sin-titulo-3.txt", text = "Cita con el dentista: doctora Ferrer, consulta 12, el martes a las 16:30.", fact = "16:30|16.30|4:30|cuatro y media|half past four|quarts de cinc", en = "my dentist appointment", es = "mi cita con el dentista", ca = "la meva cita amb el dentista", ask_en = "the time", ask_es = "la hora", ask_ca = "l'hora" },
+]
+folder = ["Documents", "Downloads"]
+
+[setup]
+files = [
+  { path = "~/{folder}/{doc.file}", text = "{doc.text}" },
+  { path = "~/Documents/lista-compra.txt", text = "Leche, pan, tomates, café." },
+  { path = "~/Documents/ideas.txt", text = "Pintar el pasillo. Llamar a Marta. Revisar la bici." },
+  { path = "~/Downloads/readme.txt", text = "Thank you for downloading. See the licence file." },
+]
+
+[[turns]]
+en = ["I have a document about {doc.en} somewhere but I do not remember its name. What does it say {doc.ask_en} is?",
+      "find the file about {doc.en} and tell me {doc.ask_en}",
+      "Somewhere in my files there is {doc.en}. I need {doc.ask_en} from it."]
+es = ["Tengo un documento sobre {doc.es} en alguna parte pero no recuerdo cómo se llama. ¿Qué pone de {doc.ask_es}?",
+      "busca el archivo de {doc.es} y dime {doc.ask_es}",
+      "En algún sitio de mis archivos está {doc.es}. Necesito {doc.ask_es}."]
+ca = ["Tinc un document sobre {doc.ca} en algun lloc però no recordo com es diu. Què hi diu de {doc.ask_ca}?",
+      "busca el fitxer de {doc.ca} i digue'm {doc.ask_ca}",
+      "En algun lloc dels meus fitxers hi ha {doc.ca}. Necessito {doc.ask_ca}."]
+
+[expect]
+state = ["unchanged"]
+trajectory = ["asked_confirmation == 0"]
+answer = ["mentions {doc.fact}"]

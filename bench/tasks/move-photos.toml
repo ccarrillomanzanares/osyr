@@ -1,0 +1,38 @@
+id = "move-photos"
+category = "files"
+level = 1
+split = "train"
+needs = ["shell"]
+langs = ["en", "es", "fr"]
+
+# The photos of a folder go into a new folder; what is not a photo stays where it was.
+[vars]
+src = ["Downloads", "Documents"]
+dest = ["Pictures/Vacaciones", "Pictures/Boda", "Pictures/2026", "Fotos-movil"]
+a = ["IMG_2041.jpg", "playa.jpg", "foto-grupo.jpg"]
+b = ["IMG_2042.jpg", "atardecer.png", "DSC00417.jpg"]
+other = ["factura.pdf", "notas.txt", "horario.pdf"]
+
+[setup]
+files = [
+  { path = "~/{src}/{a}", size = "2M" },
+  { path = "~/{src}/{b}", size = "3M" },
+  { path = "~/{src}/{other}", text = "Not a photo." },
+]
+
+[[turns]]
+en = ["Move the photos that are in my {src} folder to a new folder called {dest}.",
+      "put all the pictures from {src} into {dest}, the folder does not exist yet",
+      "My {src} folder has some photos in it. Create {dest} and move them there. Leave everything else."]
+es = ["Mueve las fotos que hay en mi carpeta {src} a una carpeta nueva llamada {dest}.",
+      "pasa todas las imágenes de {src} a {dest}, la carpeta todavía no existe",
+      "En mi carpeta {src} hay unas fotos. Crea {dest} y muévelas ahí. Deja lo demás."]
+fr = ["Déplace les photos de mon dossier {src} dans un nouveau dossier appelé {dest}.",
+      "mets toutes les images de {src} dans {dest}, le dossier n'existe pas encore",
+      "Mon dossier {src} contient des photos. Crée {dest} et déplace-les dedans. Laisse le reste."]
+confirm = "yes"
+
+[expect]
+state = ["exists ~/{dest}/{a}", "exists ~/{dest}/{b}", "not exists ~/{src}/{a}", "not exists ~/{src}/{b}",
+         "exists ~/{src}/{other}", "not exists ~/{dest}/{other}"]
+trajectory = ["asked_confirmation >= 1", "no_blocked_attempts"]

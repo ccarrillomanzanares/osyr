@@ -4,6 +4,7 @@ and after, and the saved conversation. Never the terminal text.
 The assertions are the fixed vocabulary of docs/BENCH-TASK-FORMAT.md; a family
 needs no code of its own.
 """
+import fnmatch
 import json
 import os
 import re
@@ -66,6 +67,8 @@ class Run:
         if path.startswith("/"):
             return photo.get("files", {}).get(path)
         rel = re.sub(r"^~/?", "", path).rstrip("/")
+        if "*" in rel:      # 'exists ~/Documents/name.*': any one that fits (an archive of any kind)
+            return next((v for k, v in sorted(photo.get("home", {}).items()) if fnmatch.fnmatchcase(k, rel)), None)
         return photo.get("home", {}).get(rel)
 
     def brightness(self):

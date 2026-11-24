@@ -1,0 +1,26 @@
+id = "read-temperature"
+category = "read"
+level = 1
+split = "train"
+langs = ["en", "es", "de"]
+
+# How hot the processor is, and whether that is a problem: the command says so itself ("hot").
+[vars]
+temp = [{ c = "41", milli = "41000" }, { c = "47", milli = "47000" }, { c = "58", milli = "58000" },
+        { c = "66", milli = "66000" }, { c = "93", milli = "93000" }, { c = "97", milli = "97000" }]
+
+[setup.sysfs]
+"class/hwmon/hwmon0/temp1_input" = "{temp.milli}"
+
+[[turns]]
+en = ["How hot is the processor? Is that a problem?", "cpu temperature, and tell me if I should worry",
+      "The laptop feels warm. What temperature is it at, and is it too much?"]
+es = ["¿A qué temperatura está el procesador? ¿Es un problema?", "temperatura de la cpu, y dime si debo preocuparme",
+      "Noto el portátil caliente. ¿A cuánto está, y es demasiado?"]
+de = ["Wie heiß ist der Prozessor? Ist das ein Problem?", "CPU-Temperatur, und sag mir, ob ich mir Sorgen machen muss",
+      "Der Laptop fühlt sich warm an. Welche Temperatur hat er, und ist das zu viel?"]
+
+[expect]
+state = ["unchanged"]
+trajectory = ["called osyr sys thermal", "asked_confirmation == 0"]
+answer = ["mentions {temp.c}"]

@@ -1,0 +1,27 @@
+id = "two-changes"
+category = "multi-step"
+level = 2
+split = "train"
+langs = ["en", "es", "it"]
+voice = true
+
+# Two changes asked for in one sentence: both have to be made.
+[vars]
+vol = ["20", "35", "50", "65", "80"]
+bright = ["25", "40", "60", "75", "90"]
+
+[[turns]]
+en = ["Set the volume to {vol}% and the screen brightness to {bright}%.",
+      "volume at {vol} and brightness at {bright}, please",
+      "I am going to watch a film: brightness to {bright}% and volume to {vol}%."]
+es = ["Pon el volumen al {vol}% y el brillo de la pantalla al {bright}%.",
+      "volumen al {vol} y brillo al {bright}, por favor",
+      "Voy a ver una película: brillo al {bright}% y volumen al {vol}%."]
+it = ["Imposta il volume al {vol}% e la luminosità dello schermo al {bright}%.",
+      "volume a {vol} e luminosità a {bright}, per favore",
+      "Sto per guardare un film: luminosità al {bright}% e volume al {vol}%."]
+confirm = "yes"
+
+[expect]
+state = ["volume == {vol}", "brightness == {bright}"]
+trajectory = ["asked_confirmation >= 1"]

@@ -1,0 +1,30 @@
+id = "bt-connect-after-scan"
+category = "change"
+level = 1
+split = "train"
+langs = ["en", "es", "pt"]
+
+# The device has never been used with this laptop: it only shows up after a scan, so
+# connecting takes two commands. The headphones that are already paired must stay as they are.
+[vars]
+dev = [{ name = "Sony WH-1000XM4", en = "my Sony headphones", es = "mis auriculares Sony", pt = "os meus auscultadores Sony" },
+       { name = "Logitech M720", en = "my Logitech mouse", es = "mi ratón Logitech", pt = "o meu rato Logitech" }]
+
+[[turns]]
+en = ["Connect {dev.en} by Bluetooth. They are new, switched on and waiting to pair.",
+      "pair {dev.en}, it's the {dev.name}, I have just put it in pairing mode",
+      "I bought a {dev.name}. Connect it to the laptop by Bluetooth.",
+      "there is a {dev.name} next to the laptop, in pairing mode: connect it"]
+es = ["Conecta {dev.es} por Bluetooth. Es nuevo, está encendido y esperando para emparejarse.",
+      "empareja {dev.es}, es el {dev.name}, lo acabo de poner en modo emparejamiento",
+      "Me he comprado un {dev.name}. Conéctalo al portátil por Bluetooth.",
+      "hay un {dev.name} junto al portátil, en modo emparejamiento: conéctalo"]
+pt = ["Liga {dev.pt} por Bluetooth. É novo, está ligado e à espera de emparelhar.",
+      "emparelha {dev.pt}, é o {dev.name}, acabei de o pôr em modo de emparelhamento",
+      "Comprei um {dev.name}. Liga-o ao portátil por Bluetooth.",
+      "há um {dev.name} ao lado do portátil, em modo de emparelhamento: liga-o"]
+confirm = "yes"
+
+[expect]
+state = ["bt connected {dev.name}", "bt not connected JBL"]
+trajectory = ["called osyr bt scan", "called osyr bt connect", "asked_confirmation >= 1"]

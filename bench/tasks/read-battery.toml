@@ -1,0 +1,29 @@
+id = "read-battery"
+category = "read"
+level = 1
+split = "train"
+langs = ["en", "es", "fr"]
+voice = true
+
+[vars]
+charge = ["12", "27", "41", "58", "76", "93"]
+power = [{ online = "1", status = "Charging", en = "plugged|charging|mains|power", es = "enchufad|cargando|corriente|conectad", fr = "branch|charge|secteur" },
+         { online = "0", status = "Discharging", en = "battery|unplugged|not plugged|not charging|discharging", es = "batería|desenchufad|no está enchufad|no está conectad|descargando", fr = "batterie|débranch|pas branch|décharge" }]
+
+[setup.sysfs]
+"class/power_supply/BAT0/capacity" = "{charge}"
+"class/power_supply/BAT0/status" = "{power.status}"
+"class/power_supply/AC/online" = "{power.online}"
+
+[[turns]]
+en = ["How much battery do I have left, and is the charger plugged in?", "battery level? and is it charging",
+      "Tell me the battery charge and whether the laptop is on mains power."]
+es = ["¿Cuánta batería me queda? ¿Está enchufado el cargador?", "nivel de batería, y dime si está cargando",
+      "Dime la carga de la batería y si el portátil está conectado a la corriente."]
+fr = ["Combien de batterie me reste-t-il, et le chargeur est-il branché ?", "niveau de batterie ? et est-ce qu'elle charge",
+      "Dis-moi la charge de la batterie et si le portable est sur secteur."]
+
+[expect]
+state = ["unchanged"]
+trajectory = ["called osyr sys power", "asked_confirmation == 0"]
+answer = ["mentions {charge}"]

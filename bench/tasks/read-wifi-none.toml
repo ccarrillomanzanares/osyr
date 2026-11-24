@@ -1,0 +1,23 @@
+id = "read-wifi-none"
+category = "read"
+level = 1
+split = "train"
+langs = ["en", "es", "it"]
+
+# The wifi is on and joined to nothing: the answer is that, not the name of a network it can see.
+[vars]
+seen = ["Casa-Lopez", "MOVISTAR_F406", "Livebox 6s 4471"]
+
+[setup.machine.wifi]
+connected = ""
+scanned = true
+
+[[turns]]
+en = ["Which wifi network am I connected to?", "what wifi is this laptop on?", "Am I on the wifi right now? Which one?"]
+es = ["¿A qué red wifi estoy conectado?", "¿en qué wifi está este portátil?", "¿Estoy en la wifi ahora mismo? ¿En cuál?"]
+it = ["A quale rete wifi sono collegato?", "su che wifi è questo portatile?", "Sono sulla wifi adesso? Quale?"]
+
+[expect]
+state = ["unchanged"]
+trajectory = ["called osyr net", "asked_confirmation == 0"]
+answer = ["mentions not connected|no wifi|any network|any wifi|isn't connected|is not connected|disconnected|no est|ninguna|sin conexi|desconectad|non è colleg|non sei colleg|nessuna|scolleg|non risulta"]

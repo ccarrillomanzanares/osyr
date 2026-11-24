@@ -127,7 +127,7 @@ def judging(vs):
                "system": {"sudo_until": 5, "services": {"cups": {"state": "active", "process": "cupsd"},
                                                         "sshd": {"state": "failed"}},
                           "processes": [{"name": "htop"}], "killed": [640], "clock": {"timezone": "Asia/Tokyo"}}}
-    photo = {"home": {}, "machine": machine, "memory": ["The user's dog is called Rufus"],
+    photo = {"home": {"Documents/Apuntes.tar.gz": {"size": 9}, "Documents/Apuntes": {"dir": True}}, "machine": machine, "memory": ["The user's dog is called Rufus"],
              "files": {"/etc/cups/cupsd.conf": {"size": 9, "text": "Port 631\n"}},
              "sys": {"class/backlight/x/brightness": "300", "class/backlight/x/max_brightness": "1000"}}
     run = verify.Run(v, result(done, photo, photo))
@@ -135,7 +135,7 @@ def judging(vs):
                  "display eDP-1 off", "memory contains rufus", "memory not contains password", "brightness == 30",
                  "sysfs class/backlight/x/brightness == 300", "unchanged", "service cups is active",
                  "service sshd is failed", "exists /etc/cups/cupsd.conf", "not exists /etc/cups/other.conf",
-                 "process cupsd running", "process sshd gone", "process htop running", "process ffmpeg gone",
+                 "exists ~/Documents/Apuntes.*", "not exists ~/Documents/Otra.*", "process cupsd running", "process sshd gone", "process htop running", "process ffmpeg gone",
                  "process osyr-chat running", "process sway gone", "timezone Asia/Tokyo",
                  "file /etc/cups/cupsd.conf contains Port 631", "file /etc/cups/cupsd.conf not contains Lisen"):
         check(f"state '{line}'", verify.state(run, line) is True)
@@ -195,7 +195,8 @@ def main():
         fam, vs = drawing(tmp)
         judging(vs)
     scoring()
-    examples = families.load_all(os.path.join(ROOT, "bench", "examples"))
+    examples = families.load_all(os.path.join(ROOT, "bench", "examples")) + \
+        families.load_all(os.path.join(ROOT, "bench", "tasks"))
     for f in examples:
         try:
             families.variants(f, 20)       # the benchmark's ten and ten more for training data

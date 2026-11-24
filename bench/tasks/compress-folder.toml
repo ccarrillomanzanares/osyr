@@ -1,0 +1,36 @@
+id = "compress-folder"
+category = "files"
+level = 1
+split = "train"
+needs = ["shell"]
+langs = ["en", "es", "de"]
+
+# A folder into one file, next to it, whatever the kind of archive; the folder stays. (The
+# image has tar, gzip and xz, and no zip.)
+[vars]
+name = ["Proyecto-casa", "Facturas-2025", "Apuntes", "Fotos-boda"]
+where = ["Documents", "Downloads"]
+inside = [{ a = "plano.pdf", b = "presupuesto.txt" }, { a = "enero.pdf", b = "febrero.pdf" }, { a = "tema1.txt", b = "tema2.txt" }]
+
+[setup]
+files = [
+  { path = "~/{where}/{name}/{inside.a}", size = "300K" },
+  { path = "~/{where}/{name}/{inside.b}", text = "Some text that is part of the folder." },
+  { path = "~/{where}/otra-cosa.txt", text = "Not part of it." },
+]
+
+[[turns]]
+en = ["Compress my folder {where}/{name} into a single file and leave it next to the folder.",
+      "make one compressed file out of the {name} folder in {where}, in the same place, I want to send it by mail",
+      "Pack {where}/{name} into an archive, in {where} too. Do not delete the folder."]
+es = ["Comprime mi carpeta {where}/{name} en un solo archivo y déjalo junto a la carpeta.",
+      "haz un archivo comprimido con la carpeta {name} de {where}, en el mismo sitio, quiero enviarla por correo",
+      "Empaqueta {where}/{name} en un archivo, también en {where}. No borres la carpeta."]
+de = ["Komprimiere meinen Ordner {where}/{name} zu einer einzigen Datei und lege sie neben den Ordner.",
+      "mach aus dem Ordner {name} in {where} eine komprimierte Datei, am selben Ort, ich will sie per Mail schicken",
+      "Packe {where}/{name} in ein Archiv, ebenfalls in {where}. Den Ordner nicht löschen."]
+confirm = "yes"
+
+[expect]
+state = ["exists ~/{where}/{name}.*", "exists ~/{where}/{name}/{inside.a}", "exists ~/{where}/otra-cosa.txt"]
+trajectory = ["no_blocked_attempts"]
