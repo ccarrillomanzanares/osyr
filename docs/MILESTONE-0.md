@@ -457,7 +457,7 @@ Decisions in the table of [TRAINING-PLAN.md](TRAINING-PLAN.md): software is inst
 - Known limits: programs that only speak X11 have no screen (no Xwayland in the image): `osyr app run` recognises their error and answers `APP_NEEDS_X11`, with a hint for the assistant to say so and offer another program; an application started by a script under another process name is found by its window's name only; USB disks mounted after the box started are not seen in it.
 - Pending: the full `make test` with shadow in place (first-boot password, screen lock) and a build from scratch.
 
-## Diag of 13 Nov on the HP 15s (v0.32.0) — for the next image
+## Diag of 13 Nov on the HP 15s (v0.32.0) — in v0.33.0
 
 A chat session with the local model on the HP 15s (i5-1035G1, 16 GB), sent with `/report` to look at the session and the CPU.
 
@@ -474,7 +474,7 @@ A chat session with the local model on the HP 15s (i5-1035G1, 16 GB), sent with 
 - Speed on this laptop, cold (`bench.txt`): 25.9 tok/s reading, 5.35 tok/s generating, with `-t 4 -tb 7`. The next diag will say, from `chat.log`, whether the drop is thermal or the firmware's power limit.
 - Tests: `tests/turn_cases.py` (one look per turn, the count per core, the heat in the log); `ai-status-local-model` in `tests/vm-checks.sh`. Not yet built into an image or tried in QEMU.
 
-## Diag of 13 Nov in VirtualBox (v0.32.0, the VPS's 35B as provider) — for the next image
+## Diag of 13 Nov in VirtualBox (v0.32.0, the VPS's 35B as provider) — in v0.33.0
 
 - **The voice got stuck repeating "hola" every second.** In the diag, two minutes after the last answer, `pw-play` was still playing the second sentence (`1.wav`) and the card was `running`. Read as: the emulated card (HDA, STAC9221) stopped taking samples and kept repeating its buffer (32 periods of 1024 at 48 kHz, 0.7 s), with `pw-play` waiting for ever. **Why the card stopped is not known** (not reproduced: there is no VirtualBox on the VPS); WirePlumber's settings for virtual machines were applied (`cpu.vm.name = oracle`, headroom 8192).
 - **Change:** `osyr-say-piper` gives each sentence its length plus 10 s (`timeout`); past that it cuts it and reads no more, so the card goes idle and is suspended. Tried with stand-ins for the voice and the player: a normal reading is unchanged, a stuck one ends in 11 s and leaves no files. Not tried in VirtualBox. The espeak path (languages without a Piper voice) has no limit yet.
@@ -531,7 +531,7 @@ The image ends up in `build/output/images/osyr.img`.
 - **The bench laptop froze twice on 14 Nov; the wifi driver, not the load.** The card is a Realtek RTL8723BE (`rtl8723be`). First time: the link to the router was lost at 09:39 and, at 09:55, a scan to reconnect left a CPU stuck while waking the radio from its idle power saving (`watchdog: BUG: soft lockup ... [iwd]`, in `rtl_ips_nic_on`, 21 times until the power button). Second time: the link was lost at 12:59 and the log ends at 13:01, with the machine found frozen; no lockup line reached the disk, so the same cause is likely, not proven. **Change:** `/etc/modprobe.d/rtl8723be.conf` with `ips=0 fwlps=0` (no power saving for this card). On the bench, with the setting loaded: 20 scans with the wifi disconnected, each seeing networks, reconnection, no lockup. That path froze once in 16 minutes of failed scans, so only days without a freeze will confirm it. Not yet built into an image.
 - Seen with it: after `modprobe -r rtl8723be && modprobe rtl8723be`, iwd saw no network until it was restarted. With a cable plugged in, the system uses it by itself (route metric 100 against 600 for wifi) and the wifi stays connected. When the bench's connection dies, the server keeps the tunnel's port for a long time (no `ClientAliveInterval`; it took from 12:59 to 13:00 this time, and a manual kill in the morning): pending.
 
-## Where the model runs: `osyr ai advise` (14 Nov) — for the next image
+## Where the model runs: `osyr ai advise` (14 Nov) — in v0.33.0
 
 - **Why:** the local 4B is not usable on either of the user's laptops, and nothing told them so: it just started. The person has to see the choices and what each costs on their own machine.
 - **`osyr ai advise [--measure]`** (`osyr/advise.py`): reads memory, AVX2, cores and graphics cards; `--measure` asks the local model for one short answer and keeps its reading and writing speed (`~/.local/state/osyr/ai-speed.json`). From them, the wait for a simple request (two answers of the model: 350 tokens read, 100 written). Up to 15 s is fine, up to 30 s "slow, but usable", beyond that the local model is not recommended. Three choices, one marked as recommended: the model on this computer, a large model on this computer (never available yet: it says whether the machine has the memory), a model on another machine (`/pair`, or the provider already added). It changes nothing.
@@ -539,7 +539,7 @@ The image ends up in `build/output/images/osyr.img`.
 - **Checked against what was measured:** HP 15s (25.9 and 5.35 tok/s) gives 32 s and recommends a server; the VPS (27.9 and 7.5) gives 26 s, and the median task of the candidates there was 29 s. **Run on the bench laptop** (A8-7410, the code copied to the home folder): 80 s to measure, 3.2 and 1.2 tok/s, 193 s for a simple request, a server recommended.
 - Tests: `tests/advise_cases.py` (29 cases, native phase); `ai-advise` in `tests/vm-checks.sh`. The first-start step and the VM check have not run in an image yet.
 
-## A large model on this computer: `osyr ai local` (14 Nov) — for the next image
+## A large model on this computer: `osyr ai local` (14 Nov) — in v0.33.0
 
 - **What:** `osyr ai local list | get <id> | use <small|id> | remove <id>` (`osyr/models.py`); in the chat, `/model`. One model can be downloaded today, `large`: the base Qwen3.6-35B-A3B in Q4_K_M with its vision projector, 23 GB, from Hugging Face (`unsloth/Qwen3.6-35B-A3B-GGUF`, Apache-2.0, the address pinned to one revision). The user's decision: the base model now, replaced by the one fine-tuned for OSYR, served from ccmai.org, when it exists.
 - **Where it lives:** `/home/.osyr/models`. The system partition is 8 to 16 GiB and the model does not fit; in `/home` it also survives image updates. `llama.conf` names it with its full path (`use` writes `MODEL` and `MMPROJ` and restarts the service); if the file is gone, `osyr-llama` falls back to the image's model. The two model services keep `/home` hidden (`ProtectHome=tmpfs`) and see only that folder, read-only.
@@ -548,7 +548,7 @@ The image ends up in `build/output/images/osyr.img`.
 - **Tried:** `tests/models_cases.py` (25 cases, native phase: a cut and resumed download, a wrong checksum, no space, the switch and back). Against the real site, from the VPS: a ranged request on the 22 GB file answers 206, and the projector (0.9 GB) was resumed after its first 10 MB and passed its checksum.
 - **Not tried:** the 35B loaded by OSYR on a machine with 32 GB (the user has none; failures are to come in as GitHub issues), nor its speed there. The service reading a model from `/home` has a VM check (`model-from-home`, `model-service-home-hidden`) that has not run yet.
 
-## The model on a graphics card: `osyr ai gpu` (14 Nov) — for the next image
+## The model on a graphics card: `osyr ai gpu` (14 Nov) — in v0.33.0
 
 - **Build:** `BR2_PACKAGE_LLAMA_CPP_VULKAN` gives one more backend library (`libggml-vulkan.so`) next to the CPU ones, and Mesa gets its Vulkan drivers for AMD (radv) and Intel (anv). llama.cpp compiles its shaders with `glslc`, which Buildroot does not package: `package/shaderc` builds it for the host, with glslang, SPIRV-Tools and SPIRV-Headers at the revisions its `DEPS` names (`external.mk` adds the dependency). **NVIDIA cards are out:** there is no Vulkan driver for them here; the menu says so when it finds one.
 - **Off unless asked:** llama-server offloads by itself to any card it finds (`-ngl auto` is its default), and an integrated card can be slower than the processor. `osyr-llama` passes `--device none` unless `llama.conf` has `GPU=on` (or a device name).
@@ -590,7 +590,7 @@ Two pieces of the plan built ahead of their stage because the web sandbox (`ccma
 - **Two gaps of the product found by the 35B in the sandbox, fixed:** no command told the agent the battery's charge (`osyr sys power` now gives it), and `files read shopping_list.txt` did not find `shopping-list.txt` (a bare name now matches with `-`, `_` and spaces taken as the same when nothing matches exactly).
 - **Not done yet:** the user's own try of the private test; the button on the front page; the two decisions before opening it (whether anything of a conversation is kept: nothing is today; whether the sessions move to another machine). Known limits that stay: `/proc` shows the VPS's processor count and memory; the system files look owned by `nobody` inside; `remember` is not fed back to the model.
 
-## Handing a task to the second model: `ask_server` (23 Nov) — for the next image
+## Handing a task to the second model: `ask_server` (23 Nov) — in v0.33.0
 
 The last of the "first priority" features of stage 0 of [TRAINING-PLAN.md](TRAINING-PLAN.md).
 
@@ -612,7 +612,7 @@ Built ahead of stage 1 on top of the disposable session and the doubles, followi
 - Eight example families in `bench/examples` (brightness, volume, wifi with a password, a note to read, a name to recall, read-then-set, a "no", deleting a file), in several languages and with spoken variants. They are there to try the machinery.
 - **Tried:** `tests/bench_cases.py` (native phase): the draws, the verdicts on made-up conversations and the intervals. The first whole run of the examples with the 4B is in [TRAINING-LOG.md](TRAINING-LOG.md).
 
-## The fixed prompt back under its limit, and small things (24 Nov) — for the next image
+## The fixed prompt back under its limit, and small things (24 Nov) — in v0.33.0
 
 - **The fixed prompt was at 2,150 tokens** (the limit is 2,000 until the model is fine-tuned): the lines for `box`, `app`, `ai advise` and `ai local` had gone in since it was last measured. Cut to **2,000** with the shell (1,696 without it, 2,353 with the write tools) by saying the same in fewer words: `/install`, `/update` and `/report` in one sentence, shorter descriptions of the shell, the voices, the reminders, the box and the clipboard. No command was taken out. Measured before and after on the benchmark's example families: 74 and 72 of 80, a difference inside its interval ([TRAINING-LOG.md](TRAINING-LOG.md)).
 - **No reasoning with the user's own server either.** The chat asked only the local model not to reason; a 35B added with `/pair` reasoned on every answer, which on a processor is most of the wait. The chat now asks any provider that is a llama.cpp server (`ai.is_llama_cpp`: its `/v1/models` gives the model's training context); other providers get no field they do not know.
@@ -625,8 +625,8 @@ Built ahead of stage 1 on top of the disposable session and the doubles, followi
   - `vm-checks-complete`: the checks in the VM no longer fit in 90 minutes without KVM (83 when the last section began; the box takes 15 and the screen 11). The limit is 120. The two checks that were cut (`model-from-home`, `model-service-home-hidden`) pass when run on their own.
   - `update-image-boots-b`: nothing came out of the console after the restart, as on 16 Nov. Run on its own (`ONLY=update-image`) the thirteen checks pass, as on 17 Nov. Not understood: twice at the end of a whole run, never alone.
   - `vision-on-demand`: the known one of timing without KVM (the vision server is still loading at 300 s); failed in both runs.
-  The whole run has not been repeated on the rebuilt image.
-- **Archive tools and adding to a file (24 Nov, from the benchmark's first reading):** `zip` (the image had only `unzip`), the real `xz` (busybox's only unpacks) and busybox's `tar` with `-z`, `-J`, `-j` and detection when unpacking (`board/osyr/busybox.fragment`); `bzip2` from busybox. New check `archive-tools` in the `system` part: image rebuilt, `ONLY=system` 19 of 19. `edit` with an empty `old` adds `new` at the end of the file, on its own line, with the same confirmation and undo (`tests/edits_cases.py`, 37 of 37). Neither is in a published image.
+  The whole run was repeated on the image that was published: 247 of 247 (see "v0.33.0 published" below).
+- **Archive tools and adding to a file (24 Nov, from the benchmark's first reading):** `zip` (the image had only `unzip`), the real `xz` (busybox's only unpacks) and busybox's `tar` with `-z`, `-J`, `-j` and detection when unpacking (`board/osyr/busybox.fragment`); `bzip2` from busybox. New check `archive-tools` in the `system` part: image rebuilt, `ONLY=system` 19 of 19. `edit` with an empty `old` adds `new` at the end of the file, on its own line, with the same confirmation and undo (`tests/edits_cases.py`, 37 of 37). Both are in v0.33.0.
 
 ## Administration tasks without a real system: a prototype (24 Nov)
 
@@ -639,3 +639,10 @@ The gap [TRAINING-READINESS.md](TRAINING-READINESS.md) names: the plan's goal is
 - **Processes and the clock (24 Nov, later):** reading the models' failures showed two tells of the pretend system that sent them the wrong way: `ps` listed only the session's own shell, and `timedatectl` answered that the system had not been booted with systemd. The same doubles now stand in for `ps`, `pgrep`, `pidof`, `top`, `uptime`, `kill`, `pkill`, `killall` and `timedatectl`. The list of processes is made up on every call: the ones every OSYR laptop has (systemd, the desktop, the chat), one per active service, and the scenario's own (`system.processes`, with the share of the processor each uses). Ending a service's process stops the service, or it comes back if the scenario says it restarts; ending someone else's needs `sudo`; a number that is not pretend is a real job of the shell and gets the real signal. The shells of these sessions leave `kill` to the double (`BASH_ENV`). The clock has a time zone (`set-timezone` moves `/etc/localtime`, so `date` agrees) and is in step when its service is active. A service's program can be a double too (`admin.py daemon NAME -t`), so that `nginx -t` or `sshd -t` check the configuration as the real ones would.
 - A third example family uses them: a program that has been hogging the processor, to be found and ended while another program and the model's own server go on (`runaway-process`). The verifier gained `process NAME running|gone` and `timezone ZONE`.
 - Tests: `admin-*` in `tests/sandbox_cases.py`.
+
+## v0.33.0 published (24 Nov)
+
+- **Published on 24 Nov** from the image of `33182da` (`DIRTY=no`): `osyr.img.xz`, `osyr-update.img.xz`, the signed manifest and `osyr.ova`, with the signed tag `v0.33.0` on that commit, pushed to GitHub. It carries everything marked "in v0.33.0" above. The version before it, v0.32.0 (`9ebee2b`), is kept in `build/prev-9ebee2b-*`.
+- **What had been run on that image before publishing:** `make test-vm ONLY=system`, 19 of 19 (`build/test-system-1124c.log`), and the `.ova`'s disk booted in QEMU, BIOS and UEFI, 2 of 2. The whole `make test` had been run on the image of `12976d0` (234 of 238, above), not on this one.
+- **The whole `make test` on the published image, after publishing:** started on 24 Nov at 22:50, ended on 25 Nov: **247 of 247** (`build/test-all-v0.33.0.log`), with `disk-eject`, `update-image-boots-b` and `vision-on-demand` passing this time. A first attempt was cut in the vm phase.
+- **Changelog corrected on 25 Nov** (`3260da3`, website republished; the image and the tag are untouched): a single provider is the second model without `osyr ai second` (`ai.second()`), the assistant asks before the conversation leaves the computer, and `osyr ai second off` turns it off; ejecting a disk and suspending on low battery had never worked without a remembered password, so "they work again" was wrong. Both found by a review of the changelog commit.
